@@ -8,6 +8,7 @@ export const CATEGORIES = [
   "compilers",
   "gpu-cuda",
   "dsa",
+  "rust",
 ] as const;
 
 export type Category = (typeof CATEGORIES)[number];
@@ -95,5 +96,13 @@ export const CATEGORY_META: Record<Category, CategoryMeta> = {
     description:
       "Advanced data structures, algorithmic complexity, and problem-solving under constraints.",
     badgeClassName: "bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/30",
+  },
+  rust: {
+    id: "rust",
+    label: "Rust",
+    shortLabel: "Rust",
+    description:
+      "Ownership, borrowing, lifetimes, and the same systems-level gotchas as C++ resolved a different way.",
+    badgeClassName: "bg-red-500/10 text-red-400 border-red-500/30",
   },
 };

@@ -9,6 +9,7 @@ import { designPatternsQuestions } from "./design-patterns";
 import { compilersQuestions } from "./compilers";
 import { gpuCudaQuestions } from "./gpu-cuda";
 import { dsaQuestions } from "./dsa";
+import { rustQuestions } from "./rust";
 
 export const QUESTIONS_BY_CATEGORY: Record<Category, Question[]> = {
   cpp: cppQuestions,
@@ -20,6 +21,7 @@ export const QUESTIONS_BY_CATEGORY: Record<Category, Question[]> = {
   compilers: compilersQuestions,
   "gpu-cuda": gpuCudaQuestions,
   dsa: dsaQuestions,
+  rust: rustQuestions,
 };
 
 export const ALL_QUESTIONS: Question[] = Object.values(

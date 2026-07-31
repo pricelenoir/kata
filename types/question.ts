@@ -2,7 +2,7 @@ import type { Category } from "./category";
 
 export type Difficulty = "easy" | "medium" | "hard";
 
-export type CodeLanguage = "cpp" | "text" | "bash";
+export type CodeLanguage = "cpp" | "rust" | "text" | "bash";
 
 export interface CodeSnippet {
   language: CodeLanguage;
