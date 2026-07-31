@@ -29,20 +29,20 @@ int main() {
       kind: "multiple-choice",
       choices: [
         'Prints "Alice"',
-        "Undefined behavior — r is a dangling reference",
         "Compile error: cannot bind const reference to local",
         "Prints an empty string",
+        "Undefined behavior: r is a dangling reference",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
       "`name` is a local variable destroyed when `getName()` returns. Binding a `const&` " +
       "to a *temporary at the call site* extends that temporary's lifetime, but that rule " +
-      "does not apply here — `name` is a named local, not a temporary, and returning a " +
+      "does not apply here: `name` is a named local, not a temporary, and returning a " +
       "reference to it does not extend its lifetime. `r` is left dangling; reading through " +
       'it is undefined behavior. In practice it may appear to print "Alice" because the ' +
-      "stack memory hasn't been overwritten yet, which is exactly what makes this bug " +
-      "dangerous — it \"works\" until it doesn't.",
+      "stack memory hasn't been overwritten yet, which is what makes this bug " +
+      "dangerous: it \"works\" until it doesn't.",
     references: [
       "https://en.cppreference.com/w/cpp/language/reference_initialization",
     ],
@@ -81,9 +81,9 @@ int main() {
       correctIndex: 2,
     },
     explanation:
-      "`p1` is a *const pointer* (`int* const`) — the pointer itself is immutable, so " +
+      "`p1` is a *const pointer* (`int* const`): the pointer itself is immutable, so " +
       "reassigning it at (1) fails, but `*p1 = 30` at (2) is fine since the pointee is " +
-      "non-const. `p2` is a *pointer to const* (`const int*`) — the pointer can be " +
+      "non-const. `p2` is a *pointer to const* (`const int*`): the pointer can be " +
       "reassigned freely at (3), but writing through it at (4) fails since the pointee is " +
       "treated as const. Read pointer declarations right-to-left from the variable name.",
   },
@@ -91,7 +91,7 @@ int main() {
     id: "cpp-const-cast-01",
     category: "cpp",
     difficulty: "medium",
-    title: "Modifying a truly-const object through const_cast",
+    title: "const_cast on a reference to a const object",
     tags: ["const-correctness", "const_cast", "undefined-behavior"],
     type: "trace",
     prompt: "What happens when this program runs?",
@@ -114,15 +114,15 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Prints 100 — the underlying memory was overwritten",
-        "Undefined behavior — x was originally declared const, so writing through the cast reference is UB regardless of what gets printed",
+        "Prints 100",
+        "Undefined behavior",
         "Compile error: const_cast cannot remove const from a reference binding",
-        "Prints garbage — x's storage is corrupted",
+        "Prints 42 on every conforming compiler",
       ],
       correctIndex: 1,
     },
     explanation:
-      "`const_cast` only removes the `const` qualifier from the *type* — it does not change " +
+      "`const_cast` only removes the `const` qualifier from the *type*: it does not change " +
       "whether the referred-to object was actually defined `const`. `x` is declared `const int`, " +
       "so it names a genuinely const object; writing through `mr` is undefined behavior per " +
       "[dcl.type.cv], independent of whether the write happens directly or through an " +
@@ -130,15 +130,16 @@ int main() {
       "underlying object is *not* itself const (e.g. it was reached through a `const` pointer/" +
       "reference to an otherwise non-const object). In practice, compilers may fold reads of `x` " +
       "to the compile-time-known value 42 since it is a const-initialized int, so this can print " +
-      "42 even though the memory holding it was overwritten to 100 — a vivid illustration of why " +
-      "this isn't just \"maybe it works\", it's UB the optimizer is entitled to exploit.",
+      "42 even though the memory holding it was overwritten to 100. That mismatch is a vivid " +
+      "illustration that this is UB the optimizer is entitled to exploit, not merely a case that " +
+      "happens to work.",
     references: ["https://en.cppreference.com/w/cpp/language/const_cast"],
   },
   {
     id: "cpp-string-view-01",
     category: "cpp",
     difficulty: "hard",
-    title: "A dangling string_view into a temporary std::string",
+    title: "Returning a string_view from a function taking const std::string&",
     tags: ["string_view", "lifetime", "undefined-behavior"],
     type: "trace",
     prompt: "What happens when this program runs?",
@@ -163,7 +164,7 @@ int main() {
       choices: [
         "Prints hello",
         "Prints hello world",
-        "Undefined behavior — sv dangles because the std::string temporary it views into is destroyed before sv is used",
+        "Undefined behavior: sv is a dangling view",
         "Compile error: cannot bind a std::string_view to a temporary std::string",
       ],
       correctIndex: 2,
@@ -171,16 +172,16 @@ int main() {
     explanation:
       "`getFirstWord(\"hello world\")` passes a `const char*` where `const std::string&` is " +
       "expected, so an implicit temporary `std::string` is materialized to bind to the parameter " +
-      "`s`. `std::string_view` never owns character data — it is just a (pointer, length) view — " +
+      "`s`. `std::string_view` never owns character data; it is just a (pointer, length) view, " +
       "so the returned `string_view` points directly into that temporary's internal buffer. The " +
       "temporary is bound to a function parameter, not directly to a reference at its point of " +
       "declaration, so no lifetime extension applies: it is destroyed at the end of the full " +
       "expression `std::string_view sv = getFirstWord(\"hello world\");`, i.e. immediately after " +
       "`sv` is initialized from it. By the time `std::cout << sv` runs, `sv` is a dangling view " +
-      "into freed (or reused) memory — undefined behavior. In practice this can still print " +
+      "into freed (or reused) memory: undefined behavior. In practice this can still print " +
       "\"hello\" correctly, because \"hello world\" is short enough to live in the temporary " +
       "`std::string`'s small-string-optimization buffer on the stack, and that stack memory often " +
-      "hasn't been overwritten yet by the time `sv` is read — the same \"looks fine until it " +
+      "hasn't been overwritten yet by the time `sv` is read. That's the same \"looks fine until it " +
       "isn't\" trap as the dangling-reference example.",
     references: ["https://en.cppreference.com/w/cpp/string/basic_string_view"],
   },
@@ -213,13 +214,13 @@ int main() {
       choices: [
         "1",
         "0",
-        "Undefined behavior — rp is a dangling reference",
+        "Undefined behavior: rp is a dangling reference",
         "Compile error: cannot bind int*& to an int*",
       ],
       correctIndex: 0,
     },
     explanation:
-      "`int*& rp` is a *reference to a pointer* — `rp` is not a new pointer, it's another name " +
+      "`int*& rp` is a *reference to a pointer*: `rp` is not a new pointer, it's another name " +
       "for `p` itself, the same way `int& r = x` makes `r` another name for `x`. Assigning " +
       "`rp = nullptr` inside `reset` therefore assigns through the alias directly to `p` in " +
       "`main`, not to some local copy of the pointer value. After the call, `p` itself is " +
@@ -231,7 +232,7 @@ int main() {
     id: "cpp-lifetime-extension-01",
     category: "cpp",
     difficulty: "easy",
-    title: "Lifetime extension of a temporary bound directly to a const&",
+    title: "Binding a const reference to a temporary",
     tags: ["references", "lifetime", "temporaries"],
     type: "trace",
     prompt: "What does this program print?",
@@ -250,7 +251,7 @@ int main() {
       kind: "multiple-choice",
       choices: [
         "Prints Hello World",
-        "Undefined behavior — r is a dangling reference",
+        "Undefined behavior: r is a dangling reference",
         "Compile error: cannot bind const std::string& to a temporary",
         "Prints Hello",
       ],
@@ -260,7 +261,7 @@ int main() {
       "`std::string(\"Hello\") + \" World\"` produces a prvalue temporary `std::string`. Because " +
       "that temporary is bound *directly* to the reference `r` at its point of declaration " +
       "(no function call in between), [class.temporary] extends the temporary's lifetime to " +
-      "match `r`'s — here, the rest of `main`. This is the well-behaved counterpart to the " +
+      "match `r`'s (here, the rest of `main`). This is the well-behaved counterpart to the " +
       "dangling-reference example: the rule only fails to help when the temporary is bound to " +
       "a reference *inside* a function and that reference is then returned or stored, since the " +
       "extension applies once, at the original binding, and does not propagate through further " +
@@ -273,7 +274,7 @@ int main() {
     id: "cpp-lifetime-extension-02",
     category: "cpp",
     difficulty: "hard",
-    title: "Lifetime extension does not propagate into a reference member",
+    title: "A const reference member initialized from a temporary",
     tags: ["references", "lifetime", "temporaries", "undefined-behavior"],
     type: "trace",
     prompt: "What happens when this program runs?",
@@ -297,7 +298,7 @@ int main() {
       kind: "multiple-choice",
       choices: [
         "Prints temp",
-        "Undefined behavior — w.ref dangles once the constructor call's full expression ends",
+        "Undefined behavior: w.ref is a dangling reference",
         "Compile error: cannot bind a reference member to a temporary",
         "Prints an empty string",
       ],
@@ -305,7 +306,7 @@ int main() {
     },
     explanation:
       "The temporary `std::string(\"temp\")` is bound to the constructor parameter `s`, and lifetime " +
-      "extension applies once, at that binding — extending the temporary to the lifetime of `s`, " +
+      "extension applies once, at that binding: it extends the temporary to the lifetime of `s`, " +
       "which is just the constructor call. Binding the *member reference* `ref` to `s` in the " +
       "member-initializer list does not re-extend it again: [class.base.init] gives no special " +
       "lifetime treatment to reference members initialized from a reference parameter. So the " +
@@ -313,13 +314,13 @@ int main() {
       "and `w.ref` is left dangling before `main`'s next statement even runs. This is the sharp " +
       "edge of storing `const&` members: it looks identical to the safe direct-binding case but " +
       "isn't, and compilers give no diagnostic. In practice this can still print \"temp\" because " +
-      "the freed stack bytes haven't been reused yet — which is exactly what makes it dangerous.",
+      "the freed stack bytes haven't been reused yet, which is what makes it dangerous.",
   },
   {
     id: "cpp-overload-resolution-01",
     category: "cpp",
     difficulty: "medium",
-    title: "Overload resolution across lvalue, const&, and rvalue reference",
+    title: "Overloads on int&, const int&, and int&&",
     tags: ["overload-resolution", "references", "move-semantics"],
     type: "trace",
     prompt: "What does this program print?",
@@ -353,18 +354,18 @@ int main() {
     },
     explanation:
       "Overload resolution prefers the most specific viable match. `f(x)`: `x` is a modifiable " +
-      "lvalue, so `f(int&)` is an exact match and is preferred over `f(const int&)` (no ambiguity " +
-      "— a non-const lvalue always prefers the non-const overload when both are viable). `f(cx)`: " +
+      "lvalue, so `f(int&)` is an exact match and is preferred over `f(const int&)` (no ambiguity: " +
+      "a non-const lvalue always prefers the non-const overload when both are viable). `f(cx)`: " +
       "`cx` is const, so only `f(const int&)` is viable. `f(5)`: `5` is a prvalue, which binds to " +
       "`int&&` in preference to `const int&` when an rvalue-reference overload exists. " +
       "`f(std::move(x))`: `std::move` is just `static_cast<int&&>(x)`, producing an xvalue, which " +
-      "again prefers `f(int&&)`. This is exactly the mechanism copy/move overloads rely on.",
+      "again prefers `f(int&&)`. This is the mechanism copy and move overloads rely on.",
   },
   {
     id: "cpp-array-decay-01",
     category: "cpp",
     difficulty: "easy",
-    title: "Array-to-pointer decay across a function boundary",
+    title: "sizeof on an array and on an array parameter",
     tags: ["arrays", "pointers", "decay"],
     type: "trace",
     prompt:
@@ -386,16 +387,16 @@ int main() {
     },
     answerFormat: {
       kind: "multiple-choice",
-      choices: ["40 then 40", "40 then 8", "10 then 10", "Compile error: arrays cannot be passed to functions"],
-      correctIndex: 1,
+      choices: ["40 then 40", "10 then 10", "8 then 8", "40 then 8"],
+      correctIndex: 3,
     },
     explanation:
       "In `main`, `arr` genuinely has array type `int[10]`, so `sizeof(arr)` is `10 * sizeof(int) " +
-      "= 40`. A function *parameter* declared `int arr[]` is not actually an array type though — " +
+      "= 40`. A function *parameter* declared `int arr[]` is not actually an array type though: " +
       "per [dcl.fct], a parameter of array type is adjusted to pointer type (`int arr[]` means " +
       "exactly the same thing as `int* arr`). Inside `printSize`, `arr` is just an `int*`, so " +
       "`sizeof(arr)` is `sizeof(int*) = 8`. This is why size information is always lost when an " +
-      "array is passed to a function this way — the callee has no idea how many elements there " +
+      "array is passed to a function this way: the callee has no idea how many elements there " +
       "are unless it's passed separately (or the array is passed by reference, `int (&arr)[10]`, " +
       "which does preserve the array type and its size).",
   },
@@ -403,7 +404,7 @@ int main() {
     id: "cpp-rvo-01",
     category: "cpp",
     difficulty: "easy",
-    title: "Mandatory copy elision (C++17)",
+    title: "Constructor calls when returning a temporary by value",
     tags: ["rvo", "copy-elision", "move-semantics"],
     type: "trace",
     prompt: "Compiled as C++17 or later, what does this program print?",
@@ -428,25 +429,25 @@ int main() {
     },
     answerFormat: {
       kind: "multiple-choice",
-      choices: ["construct", "construct\\nmove", "construct\\ncopy", "construct\\ncopy\\ncopy"],
-      correctIndex: 0,
+      choices: ["construct\\nmove", "construct\\ncopy", "construct\\ncopy\\ncopy", "construct"],
+      correctIndex: 3,
     },
     explanation:
       "`return Noisy();` returns a prvalue, and `Noisy n = make();` initializes `n` directly from " +
       "that prvalue. Since C++17, this case (\"guaranteed copy elision\") is not merely an " +
-      "optimization a compiler is *permitted* to perform — the language rules were changed so " +
+      "optimization a compiler is *permitted* to perform: the language rules were changed so " +
       "that a prvalue used to initialize an object of the same type is constructed directly in " +
       "place, with no temporary and no copy/move constructor call involved at all ([class.copy." +
-      "elision], [dcl.init]). Only the single `Noisy()` constructor call happens. Note this is " +
+      "elision], [dcl.init]). Only the single `Noisy()` constructor call happens. This is " +
       "distinct from NRVO (returning a named local), which remains an optional optimization even " +
-      "in C++17 — see the sibling NRVO question.",
+      "in C++17; see the sibling NRVO question.",
     references: ["https://en.cppreference.com/w/cpp/language/copy_elision"],
   },
   {
     id: "cpp-nrvo-01",
     category: "cpp",
     difficulty: "medium",
-    title: "NRVO is not guaranteed",
+    title: "Returning one of two named locals by value",
     tags: ["nrvo", "copy-elision", "move-semantics"],
     type: "trace",
     prompt: "What does this program print?",
@@ -474,21 +475,21 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "construct\\nconstruct\\nmove",
         "construct\\nconstruct",
         "construct\\nconstruct\\ncopy",
+        "construct\\nconstruct\\nmove",
         "construct\\nmove",
       ],
-      correctIndex: 0,
+      correctIndex: 2,
     },
     explanation:
       "Unlike the mandatory elision for a prvalue return (`return Noisy();`), eliding the copy/" +
       "move of a *named* local variable (NRVO) is only ever an optional optimization, even in " +
-      "C++17 — [class.copy.elision] permits but never requires it. Here `make` has two distinct " +
+      "C++17: [class.copy.elision] permits but never requires it. Here `make` has two distinct " +
       "named candidates, `a` and `b`, that could be returned depending on `flag`; a compiler " +
       "cannot generally elide in this shape because there isn't one single local object it can " +
       "construct `n` in place of ahead of time. So both `a` and `b` are constructed (\"construct\" " +
-      "x2), and returning `a` — a named local about to go out of scope — implicitly selects the " +
+      "x2), and returning `a` (a named local about to go out of scope) implicitly selects the " +
       "move constructor over the copy constructor per the implicit-move-on-return rule " +
       "([class.copy.elision]p3), printing \"move\". Never rely on NRVO for correctness, only as a " +
       "possible performance optimization.",
@@ -497,7 +498,7 @@ int main() {
     id: "cpp-move-semantics-01",
     category: "cpp",
     difficulty: "medium",
-    title: "The state of a moved-from std::string",
+    title: "The state of a std::string after being moved from",
     tags: ["move-semantics", "std::string"],
     type: "trace",
     prompt:
@@ -519,30 +520,30 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "s1.size() is guaranteed to be 0 by the standard",
-        "s1.size() is guaranteed to equal s2.size() (the string wasn't really moved)",
-        "s1 is left in a valid but unspecified state — calling size() is well-defined and legal, but the standard does not guarantee any particular value (commonly 0 in practice for libstdc++/libc++, but not portable to rely on)",
-        "Calling s1.size() is undefined behavior because s1 was moved from",
+        "s1.size() is guaranteed by the standard to be 0",
+        "s1.size() is guaranteed to still equal s2.size()",
+        "s1 is valid but unspecified; size() returns an unspecified value",
+        "Calling s1.size() is undefined behavior until s1 is reassigned",
       ],
       correctIndex: 2,
     },
     explanation:
       "`std::move` casts `s1` to an rvalue reference, causing `s2`'s move constructor to run. " +
       "`std::basic_string`'s move constructor leaves the moved-from object in a *valid but " +
-      "unspecified state* ([lib.types.movedfrom] / the general library-wide moved-from guarantee) " +
-      "— it is still a fully-formed `std::string` object on which any operation with no " +
+      "unspecified state* ([lib.types.movedfrom] / the general library-wide moved-from guarantee): " +
+      "it is still a fully-formed `std::string` object on which any operation with no " +
       "preconditions (like `size()`, `empty()`, or assignment) is well-defined, but the standard " +
       "does not fix what value `size()` returns. In practice, mainstream implementations reset a " +
       "moved-from long string to empty (because they steal its heap buffer and reset the source " +
       "to its default-constructed state), so `0` is what you'll observe on libstdc++/libc++/MSVC " +
-      "STL — but code that depends on that cross-implementation is relying on QoI, not the standard.",
+      "STL, but code that depends on that across implementations is relying on QoI, not the standard.",
     references: ["https://en.cppreference.com/w/cpp/string/basic_string/basic_string"],
   },
   {
     id: "cpp-move-cast-01",
     category: "cpp",
     difficulty: "easy",
-    title: "std::move without a move constructor",
+    title: "std::move on a type with no move constructor",
     tags: ["move-semantics", "std::move"],
     type: "trace",
     prompt: "What does this program print?",
@@ -577,12 +578,12 @@ int main() {
       correctIndex: 0,
     },
     explanation:
-      "`std::move` is nothing more than `static_cast<NoMove&&>(a)` — it does not itself move " +
+      "`std::move` is nothing more than `static_cast<NoMove&&>(a)`: it does not itself move " +
       "anything, it just produces an rvalue-typed expression and lets overload resolution decide " +
       "what happens next. `NoMove` declares a copy constructor, which (per [class.copy.ctor]) " +
       "suppresses the implicit generation of a move constructor entirely. With no `NoMove(NoMove" +
       "&&)` candidate available, the rvalue `std::move(a)` still binds to the copy constructor's " +
-      "`const NoMove&` parameter — the copy constructor runs (\"copy\" is printed), and `a.data` " +
+      "`const NoMove&` parameter: the copy constructor runs (\"copy\" is printed), and `a.data` " +
       "is left completely untouched (\"hello\"). This is the classic trap of assuming `std::move` " +
       "guarantees a move: it only *enables* move overload resolution if a move overload exists.",
   },
@@ -590,7 +591,7 @@ int main() {
     id: "cpp-object-slicing-01",
     category: "cpp",
     difficulty: "medium",
-    title: "Object slicing through a by-value parameter",
+    title: "Passing a Derived object where Base is expected",
     tags: ["object-slicing", "polymorphism", "inheritance"],
     type: "trace",
     prompt: "What does this program print?",
@@ -621,15 +622,15 @@ int main() {
       kind: "multiple-choice",
       choices: [
         "Derived",
-        "Base",
         "Compile error: cannot pass a polymorphic Derived by value as Base",
+        "Base",
         "Undefined behavior",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
       "`print` takes its parameter *by value* as `Base`. Constructing `b` from `d` invokes " +
-      "`Base`'s (implicitly-defined) copy constructor, which only copies the `Base` subobject — " +
+      "`Base`'s (implicitly-defined) copy constructor, which only copies the `Base` subobject: " +
       "`Derived::extra` and, critically, `Derived`'s vtable pointer are not part of a `Base` " +
       "object and are simply not copied. `b` is a genuine, complete `Base` object, not a " +
       "`Derived` disguised as one, so `b.speak()` dispatches virtually to `Base::speak()`. This " +
@@ -640,8 +641,8 @@ int main() {
   {
     id: "cpp-object-slicing-02",
     category: "cpp",
-    difficulty: "hard",
-    title: "Slicing when storing polymorphic objects by value in a container",
+    difficulty: "medium",
+    title: "A vector of Base, filled with Derived",
     tags: ["object-slicing", "polymorphism", "containers"],
     type: "trace",
     prompt: "What does this program print?",
@@ -674,20 +675,20 @@ int main() {
     },
     explanation:
       "`std::vector<Base>` stores `Base` objects by value, contiguously, each occupying exactly " +
-      "`sizeof(Base)` bytes — it is not a container of polymorphic handles like `vector<unique_ptr" +
+      "`sizeof(Base)` bytes; it is not a container of polymorphic handles like `vector<unique_ptr" +
       "<Base>>` would be. `v.push_back(d)` copy-constructs a new `Base` element from `d`, slicing " +
       "off everything that makes `d` a `Derived` (same mechanism as the by-value-parameter " +
       "slicing case). The element stored in `v` is truly, dynamically, a `Base`, so `b.speak()` " +
       "prints \"Base\" once. This is a common real-world bug: reaching for `vector<Base>` for a " +
       "collection of \"shapes\" or \"events\" when polymorphism is required silently produces a " +
-      "container that can never actually hold anything but the base behavior — the fix is a " +
+      "container that can never actually hold anything but the base behavior. The fix is a " +
       "container of pointers or `std::variant`.",
   },
   {
     id: "cpp-shared-ptr-cycle-01",
     category: "cpp",
-    difficulty: "hard",
-    title: "A shared_ptr reference cycle leaks",
+    difficulty: "medium",
+    title: "Two nodes pointing at each other",
     tags: ["shared_ptr", "smart-pointers", "memory-leak"],
     type: "trace",
     prompt: "What does this program print?",
@@ -715,8 +716,8 @@ int main() {
       choices: [
         "end of main\\ndestroyed\\ndestroyed",
         "destroyed\\ndestroyed\\nend of main",
-        "end of main — neither destructor ever runs; the two Nodes leak",
-        "Undefined behavior — double free when a and b go out of scope",
+        "end of main, with no destructor output",
+        "Undefined behavior: double free when a and b go out of scope",
       ],
       correctIndex: 2,
     },
@@ -725,7 +726,7 @@ int main() {
       "After `a->next = b; b->next = a;`, each `Node`'s control block has a use count of 2: one " +
       "from the local variable (`a` or `b`) and one from the other node's `next` member. When " +
       "`a` and `b` go out of scope at the end of `main`, each decrement only brings the " +
-      "respective use count from 2 to 1 — each node is still kept alive by the other's `next` " +
+      "respective use count from 2 to 1. Each node is still kept alive by the other's `next` " +
       "pointer, so neither use count ever reaches 0 and neither destructor runs. \"end of main\" " +
       "prints, but \"destroyed\" never does; the two `Node`s (and their `shared_ptr` cycle) leak " +
       "for the remainder of the program. The standard fix is to make one direction of a " +
@@ -736,7 +737,7 @@ int main() {
     id: "cpp-weak-ptr-lock-01",
     category: "cpp",
     difficulty: "medium",
-    title: "weak_ptr::lock after the last shared_ptr is destroyed",
+    title: "weak_ptr::lock after the owning shared_ptr goes out of scope",
     tags: ["weak_ptr", "shared_ptr", "smart-pointers"],
     type: "trace",
     prompt: "What does this program print?",
@@ -763,19 +764,19 @@ int main() {
       kind: "multiple-choice",
       choices: [
         "42",
-        "expired",
-        "Undefined behavior — dereferencing through a weak_ptr after the owned object is destroyed",
+        "Undefined behavior: dereferencing a dangling weak_ptr",
         "Compile error: weak_ptr has no lock() member",
+        "expired",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
-      "`std::weak_ptr` does not extend the lifetime of the object it observes — it only keeps the " +
+      "`std::weak_ptr` does not extend the lifetime of the object it observes: it only keeps the " +
       "*control block* alive, letting it safely query whether the object still exists. When `sp` " +
       "goes out of scope at the end of the inner block, the last owning `shared_ptr` is destroyed " +
       "and the `int` is deallocated, even though `wp` (and the control block) still exist. " +
       "`wp.lock()` atomically checks the use count and, finding it zero, returns an empty " +
-      "`shared_ptr<int>` rather than a dangling one — this is precisely why `lock()` exists " +
+      "`shared_ptr<int>` rather than a dangling one, which is why `lock()` exists " +
       "instead of some raw `wp.get()`. The empty `shared_ptr` is falsy in the `if`, so \"expired\" " +
       "is printed; there is no UB here specifically because `lock()` was used correctly instead " +
       "of assuming the pointee is still alive.",
@@ -785,7 +786,7 @@ int main() {
     id: "cpp-iterator-invalidation-01",
     category: "cpp",
     difficulty: "medium",
-    title: "vector iterator invalidation on reallocation",
+    title: "Holding a vector iterator across repeated push_back calls",
     tags: ["iterators", "vector", "undefined-behavior"],
     type: "trace",
     prompt: "What happens when this program runs?",
@@ -808,20 +809,20 @@ int main() {
       kind: "multiple-choice",
       choices: [
         "1",
-        "Undefined behavior — it is invalidated once push_back triggers reallocation",
+        "Undefined behavior: it is a dangling iterator",
         "1000",
-        "Compile error: it cannot outlive the push_back calls",
+        "A garbage value, but not undefined behavior",
       ],
       correctIndex: 1,
     },
     explanation:
       "`std::vector` stores its elements in one contiguous heap buffer. When `push_back` needs " +
       "more capacity than the buffer currently has, it allocates a new, larger buffer, moves/" +
-      "copies every existing element over, and frees the old buffer — per [vector.modifiers], " +
+      "copies every existing element over, and frees the old buffer. Per [vector.modifiers], " +
       "this invalidates *all* iterators, pointers, and references into the old buffer, unless the " +
       "new size is within the vector's already-reserved capacity. `v` starts with capacity for " +
       "only 3 elements, so well before the loop reaches 1000 push_backs, at least one reallocation " +
-      "happens, and `it` — which was never refreshed — becomes a dangling iterator into freed " +
+      "happens, and `it`, which was never refreshed, becomes a dangling iterator into freed " +
       "memory. Dereferencing it afterward is undefined behavior, regardless of what value it " +
       "appears to print.",
     references: ["https://en.cppreference.com/w/cpp/container/vector#Iterator_invalidation"],
@@ -830,7 +831,7 @@ int main() {
     id: "cpp-iterator-invalidation-02",
     category: "cpp",
     difficulty: "medium",
-    title: "std::map erase invalidates only the erased iterator",
+    title: "Erasing one key from a three-key map",
     tags: ["iterators", "map", "erase"],
     type: "trace",
     prompt: "What does this program print?",
@@ -852,16 +853,16 @@ int main() {
       kind: "multiple-choice",
       choices: [
         "20",
-        "Undefined behavior — erasing from a map invalidates all of its iterators",
+        "Undefined behavior: erasing from a map invalidates all of its iterators",
         "10",
-        "Compile error: it2 is invalidated at the point of erase and cannot be used",
+        "Undefined behavior: rebalancing may relocate the other elements",
       ],
       correctIndex: 0,
     },
     explanation:
       "`std::map` is node-based (typically a red-black tree): each element lives in its own " +
       "heap-allocated node, and iterators are effectively pointers to nodes. Per [associative." +
-      "reqmts], `erase` invalidates only iterators and references *to the erased element* — every " +
+      "reqmts], `erase` invalidates only iterators and references *to the erased element*: every " +
       "other iterator into the container remains valid, because erasing one node doesn't move or " +
       "reallocate any of the others (unlike `std::vector`, where erase/insert can shift or " +
       "reallocate the whole backing array). `it1` is invalidated by `m.erase(it1)`, but `it2` " +
@@ -882,19 +883,19 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "std::map lookup is O(log n) worst-case (balanced tree); std::unordered_map lookup is O(1) average but O(n) worst-case (hash collisions)",
-        "Both containers guarantee O(1) average lookup; std::map is only preferred for small n",
+        "Both are O(1) average lookup; std::map is preferred only for small n",
         "std::map lookup is O(1); std::unordered_map lookup is O(log n)",
         "Both containers guarantee O(log n) worst-case lookup",
+        "std::map is O(log n) worst-case; std::unordered_map is O(1) average, O(n) worst-case",
       ],
-      correctIndex: 0,
+      correctIndex: 3,
     },
     explanation:
       "`std::map` is required by the standard to be implemented as a balanced binary search tree " +
       "(in practice always a red-black tree), giving `find`/`insert`/`erase` guaranteed O(log n) " +
       "complexity in every case, plus sorted iteration order for free. `std::unordered_map` is a " +
       "hash table: its *average* complexity for those operations is O(1), which is what makes it " +
-      "attractive, but its *worst-case* complexity is O(n) — if many keys collide into the same " +
+      "attractive, but its *worst-case* complexity is O(n): if many keys collide into the same " +
       "bucket (whether from bad luck, a poor hash function, or an adversarial input designed to " +
       "cause collisions), every lookup in that bucket degrades to a linear scan. Neither container " +
       "gives a worst-case O(1) guarantee; that distinction matters a great deal in latency-" +
@@ -907,8 +908,8 @@ int main() {
   {
     id: "cpp-vector-reserve-01",
     category: "cpp",
-    difficulty: "hard",
-    title: "reserve() prevents reallocation within its capacity",
+    difficulty: "medium",
+    title: "A pointer into a vector after reserve() and further push_backs",
     tags: ["vector", "reserve", "iterator-invalidation"],
     type: "trace",
     prompt: "What does this program print?",
@@ -932,21 +933,21 @@ int main() {
       choices: [
         "1",
         "0",
-        "Undefined behavior — p is invalidated by the later push_back calls",
-        "Compile error: cannot take the address of a vector element",
+        "Undefined behavior: p is invalidated by the later push_back calls",
+        "Implementation-defined: reserve is only a hint",
       ],
       correctIndex: 0,
     },
     explanation:
       "`v.reserve(10)` immediately allocates a buffer with capacity for 10 elements and does not " +
       "reallocate again until `size()` would need to exceed that capacity. After `reserve`, the " +
-      "vector holds `1` element (from `push_back(1)`), then 5 more are pushed for a total of 6 — " +
+      "vector holds `1` element (from `push_back(1)`), then 5 more are pushed for a total of 6, " +
       "still within the reserved capacity of 10. Per [vector.reserve], `push_back` only " +
       "invalidates iterators/pointers/references when it actually reallocates; since no " +
       "reallocation occurs here, `p` (taken after the `reserve`) continues to point at the same, " +
       "still-valid storage, and `&v[0]` is unchanged, so `p == &v[0]` is `true` (`1`). This is the " +
       "standard technique for keeping pointers/iterators stable across a known number of " +
-      "insertions — reserve enough capacity up front.",
+      "insertions: reserve enough capacity up front.",
     references: ["https://en.cppreference.com/w/cpp/container/vector/reserve"],
   },
   {
@@ -985,13 +986,13 @@ int main() {
     },
     explanation:
       "`f(42)`: both `f(int)` and the instantiation `f<int>(int)` are exact-match, equally-good " +
-      "candidates by conversion ranking, so [over.match.best]'s explicit tie-break rule applies — " +
+      "candidates by conversion ranking, so [over.match.best]'s explicit tie-break rule applies: " +
       "a non-template function is preferred over an equally-good function template specialization. " +
       "`f(3.14)`: `f<double>(double)` is an exact match for the `double` argument, while `f(int)` " +
       "requires a floating-to-integral conversion (worse than exact match), so the template wins " +
-      "outright — the tie-break rule never comes into play because the candidates aren't equally " +
+      "outright; the tie-break rule never comes into play because the candidates aren't equally " +
       "good. `f('c')`: `f<char>(char)` is an exact match, while `f(int)` requires only an integral " +
-      "*promotion* char→int — promotions rank worse than exact matches, so the template wins again. " +
+      "*promotion* char→int, and promotions rank worse than exact matches, so the template wins again. " +
       "The tie-break toward non-templates only matters when the two candidates are otherwise " +
       "indistinguishable.",
   },
@@ -999,7 +1000,7 @@ int main() {
     id: "cpp-sso-01",
     category: "cpp",
     difficulty: "medium",
-    title: "Small string optimization and pointer stability",
+    title: "std::string::data() before and after assigning a longer string",
     tags: ["std::string", "sso", "implementation-defined"],
     type: "trace",
     prompt:
@@ -1022,11 +1023,11 @@ int main() {
       kind: "multiple-choice",
       choices: [
         "1",
+        "Undefined behavior: p1 dangles once s is reassigned",
         "0",
-        "Undefined behavior — p1 dangles once s is reassigned",
-        "Compile error: std::string::data() returns const char*, cannot compare with !=",
+        "1 on some implementations, 0 on others",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
       "Small String Optimization is not mandated by the standard, but every major implementation " +
@@ -1046,7 +1047,7 @@ int main() {
     id: "cpp-ctad-01",
     category: "cpp",
     difficulty: "easy",
-    title: "CTAD: braces vs. parentheses pick different constructors",
+    title: "CTAD: braces vs. parentheses",
     tags: ["ctad", "templates", "vector"],
     type: "trace",
     prompt: "What does this program print?",
@@ -1065,23 +1066,23 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "3 5",
-        "3 2 (v2 holds the two elements {5, 1})",
+        "3 2",
         "Compile error: std::vector requires an explicit template argument",
         "3 1",
+        "3 5",
       ],
-      correctIndex: 0,
+      correctIndex: 3,
     },
     explanation:
       "Class template argument deduction (C++17) both deduces `T = int` for `std::vector<int>` " +
       "here, but the two initializations select genuinely different constructors, exactly as they " +
       "would with the type spelled out explicitly. `v1{1, 2, 3}` uses brace-init, which prefers " +
-      "the `initializer_list<int>` constructor whenever one exists and is viable — producing a " +
+      "the `initializer_list<int>` constructor whenever one exists and is viable, producing a " +
       "3-element vector holding `1, 2, 3`. `v2(5, 1)` uses parens, which never considers " +
       "`initializer_list` constructors, so overload resolution instead matches `vector(size_type " +
-      "count, const T& value)` — producing a 5-element vector where every element is `1`. So " +
+      "count, const T& value)`, producing a 5-element vector where every element is `1`. So " +
       "`v1.size()` is `3` and `v2.size()` is `5`. The brace-vs-paren distinction (not CTAD itself) " +
-      "is the actual source of the surprise here — it's the same `std::vector(5, 1)` vs. `std::" +
+      "is the actual source of the surprise here: it's the same `std::vector(5, 1)` vs. `std::" +
       "vector{5, 1}` trap that predates CTAD, just easier to trip over once the type name is elided.",
     references: ["https://en.cppreference.com/w/cpp/language/class_template_argument_deduction"],
   },
@@ -1089,7 +1090,7 @@ int main() {
     id: "cpp-structured-bindings-01",
     category: "cpp",
     difficulty: "easy",
-    title: "Structured bindings bind to a hidden copy, not the original",
+    title: "Structured bindings declared with auto",
     tags: ["structured-bindings", "c++17"],
     type: "trace",
     prompt: "What does this program print?",
@@ -1109,16 +1110,16 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "1",
         "100",
-        "Undefined behavior — a and b alias p's members directly",
+        "Undefined behavior: a and b alias p's members directly",
+        "1",
         "Compile error: structured bindings are read-only",
       ],
-      correctIndex: 0,
+      correctIndex: 2,
     },
     explanation:
       "`auto [a, b] = p;` (with `auto`, not `auto&`) introduces a hidden, uniquely-named variable " +
-      "that is *copy-initialized from `p`* — call it `e`. `a` and `b` are not new variables in " +
+      "that is *copy-initialized from `p`* (call it `e`). `a` and `b` are not new variables in " +
       "the usual sense; per [dcl.struct.bind] they are names that refer to `e.first` and " +
       "`e.second`, i.e. to the members of the copy, not of `p`. So `a = 100` mutates the hidden " +
       "copy's `first` member, leaving `p.first` completely unaffected, and the program prints `1`. " +
@@ -1131,7 +1132,7 @@ int main() {
     id: "cpp-concepts-01",
     category: "cpp",
     difficulty: "easy",
-    title: "A concept constraint failure is a clean compile error",
+    title: "Calling a Numeric-constrained template with std::string",
     tags: ["concepts", "templates", "c++20"],
     type: "trace",
     prompt: "Compiled as C++20, what happens when this is compiled?",
@@ -1157,18 +1158,18 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        'Prints "ab" — std::string supports operator+',
-        "Compile error: no matching function for call to add — std::string does not satisfy the Numeric constraint",
+        'Prints "ab"',
         "Undefined behavior",
         'Compile error: ambiguous overload for add(std::string, std::string)',
+        "Compile error: std::string does not satisfy the Numeric constraint",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
       "`add` is constrained with `template <Numeric T>`, shorthand for a `requires Numeric<T>` " +
       "clause. `Numeric<std::string>` evaluates `std::integral<std::string> || std::floating_point" +
       "<std::string>`, both of which are `false`, so the constraint is not satisfied for `T = std" +
-      "::string` — even though `std::string` does support `operator+` and the function body would " +
+      "::string`, even though `std::string` does support `operator+` and the function body would " +
       "otherwise compile just fine. Because the constraint check happens during overload " +
       "resolution rather than by instantiating the body and hoping for the best (as pre-concepts " +
       "SFINAE tricks did), the compiler produces a direct, readable diagnostic (\"candidate " +
@@ -1181,7 +1182,7 @@ int main() {
     id: "cpp-ranges-01",
     category: "cpp",
     difficulty: "hard",
-    title: "Range views are lazy",
+    title: "std::views::filter and a later push_back",
     tags: ["ranges", "views", "c++20"],
     type: "trace",
     prompt: "Compiled as C++20, what does this program print?",
@@ -1205,7 +1206,7 @@ int main() {
         "2 4",
         "2 4 6",
         "1 2 3 4 5 6",
-        "Undefined behavior — v is modified while a view over it exists",
+        "Undefined behavior: v is modified while a view over it exists",
       ],
       correctIndex: 1,
     },
@@ -1214,21 +1215,21 @@ int main() {
       "to `v` and the predicate, but does not eagerly copy or evaluate anything at the point " +
       "`view` is created. No filtering actually happens until the view is iterated. By the time " +
       "the range-`for` loop calls `begin()`/`end()` on `view`, `v` already has `6` appended to it, " +
-      "so the filter walks over `v`'s *current* contents — `{1,2,3,4,5,6}` — and yields the even " +
-      "elements it finds at iteration time: `2 4 6`. (Note this program is not itself UB: `push_" +
+      "so the filter walks over `v`'s *current* contents (`{1,2,3,4,5,6}`) and yields the even " +
+      "elements it finds at iteration time: `2 4 6`. (This program is not itself UB: `push_" +
       "back` here doesn't necessarily reallocate away any iterators the view is holding, because " +
       "the view holds a reference to the container and re-fetches `begin()`/`end()` from it, not " +
       "a stashed pair of iterators.) The general lesson is that views observe the underlying range " +
-      "at the moment of iteration, not at the moment the view expression was written — a frequent " +
-      "source of surprise when a view is built once and consumed later after the source has " +
-      "changed.",
+      "at the moment of iteration, not at the moment the view expression was written. That's a " +
+      "frequent source of surprise when a view is built once and consumed later after the source " +
+      "has changed.",
     references: ["https://en.cppreference.com/w/cpp/ranges/filter_view"],
   },
   {
     id: "cpp-coroutines-01",
     category: "cpp",
     difficulty: "hard",
-    title: "A dangling reference to a coroutine parameter",
+    title: "A coroutine taking a const std::string& parameter",
     tags: ["coroutines", "lifetime", "undefined-behavior", "c++20"],
     type: "trace",
     prompt: "Compiled as C++20, what happens when this program runs?",
@@ -1266,80 +1267,33 @@ int main() {
       kind: "multiple-choice",
       choices: [
         'Reliably prints "value: hello"',
-        "Undefined behavior — value is a dangling reference by the time the coroutine body runs",
+        "Undefined behavior: value is a dangling reference",
         "Compile error: cannot bind a coroutine reference parameter to a temporary",
         "Prints an empty string, always",
       ],
       correctIndex: 1,
     },
     explanation:
-      "Coroutine parameters that are references are *not* copied into the coroutine frame — only " +
+      "Coroutine parameters that are references are *not* copied into the coroutine frame: only " +
       "the reference itself is stored there, the same as an ordinary function. `logValue`'s " +
       "`initial_suspend` returns `suspend_always`, so calling `logValue(...)` constructs the frame " +
       "(binding `value` to the temporary `std::string(\"hello\")`) and immediately suspends before " +
-      "any of the function body runs, returning control — and the `Task` — back to `main`. The " +
+      "any of the function body runs, returning control (and the `Task`) back to `main`. The " +
       "temporary was bound to the call's reference *parameter*, not directly to a reference " +
       "declared with static/automatic storage duration, so its lifetime is not extended past the " +
       "end of the full expression `Task t = logValue(std::string(\"hello\"));`; it is destroyed at " +
       "that semicolon. By the time `t.handle.resume()` actually runs the body and reads `value`, " +
-      "the reference is dangling — undefined behavior. In practice this often still prints " +
+      "the reference is dangling: undefined behavior. In practice this often still prints " +
       "\"hello\" because the stack slot the temporary occupied hasn't been reused yet, which is " +
-      "exactly why this bug is easy to ship and hard to catch in testing. The general rule: never " +
+      "why this bug is easy to ship and hard to catch in testing. The general rule: never " +
       "let a coroutine hold a reference across a suspension point unless the referent's lifetime " +
       "is independently guaranteed to outlive the coroutine.",
-  },
-  {
-    id: "cpp-constexpr-01",
-    category: "cpp",
-    difficulty: "easy",
-    title: "constexpr can run at runtime; consteval cannot",
-    tags: ["constexpr", "consteval", "c++20"],
-    type: "trace",
-    prompt: "Compiled as C++20, what happens when this is compiled?",
-    snippet: {
-      language: "cpp",
-      filename: "main.cpp",
-      code: `#include <iostream>
-
-constexpr int square(int x) { return x * x; }
-consteval int cube(int x) { return x * x * x; }
-
-int main() {
-    int n;
-    std::cin >> n;
-    std::cout << square(n) << std::endl;
-    std::cout << cube(n) << std::endl;
-}`,
-    },
-    answerFormat: {
-      kind: "multiple-choice",
-      choices: [
-        "Compiles fine; both square(n) and cube(n) simply run at runtime",
-        "Compile error: call to consteval function cube is not a constant expression, because n is a runtime value read from cin",
-        "Undefined behavior at runtime when cube(n) is called",
-        "Compile error: square(n) requires n to be a compile-time constant too",
-      ],
-      correctIndex: 1,
-    },
-    explanation:
-      "`constexpr` only means a function is *permitted* to be evaluated at compile time when its " +
-      "arguments happen to be constant expressions — it may equally well be called with ordinary " +
-      "runtime arguments and simply execute like a normal function, which is exactly what `square" +
-      "(n)` does here since `n` comes from `std::cin`. `consteval` (C++20) is stricter: it declares " +
-      "an *immediate function*, every call to which must be evaluatable as a constant expression, " +
-      "full stop — there is no runtime fallback. Since `n` is a non-constant runtime value, `cube" +
-      "(n)` cannot be evaluated at compile time, so the call itself is ill-formed and rejected at " +
-      "compile time, not merely at the point where a constant was expected. This is the key " +
-      "practical difference: reach for `consteval` specifically when a function must *never* run " +
-      "at runtime (e.g. compile-time string hashing), and `constexpr` when compile-time evaluation " +
-      "is only an optional capability.",
-    references: ["https://en.cppreference.com/w/cpp/language/consteval"],
   },
   {
     id: "cpp-signed-overflow-01",
     category: "cpp",
     difficulty: "medium",
-    title: "Signed overflow is UB; unsigned overflow is well-defined wraparound",
+    title: "Adding 1 to INT_MAX and to UINT_MAX",
     tags: ["undefined-behavior", "integer-overflow", "unsigned"],
     type: "trace",
     prompt: "What happens when this program runs?",
@@ -1359,23 +1313,24 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Undefined behavior for max + 1 (may print -2147483648 in practice on a typical two's-complement build); then a well-defined 0 for umax + 1",
-        "-2147483648 then 0 — both are well-defined two's-complement wraparound",
-        "Undefined behavior for both lines",
-        "Compile error: signed/unsigned mismatch",
+        "Undefined behavior for max + 1; a well-defined 0 for umax + 1",
+        "-2147483648 then 0: both are well-defined two's-complement wraparound",
+        "Undefined behavior for both max + 1 and umax + 1",
+        "Compile error: mixing signed and unsigned operands is ill-formed",
       ],
       correctIndex: 0,
     },
     explanation:
-      "Per [expr.pre]/[basic.fundamental], signed integer overflow is undefined behavior — the " +
-      "standard does not mandate two's-complement wraparound for signed types (even though nearly " +
-      "every real machine uses two's complement, and unoptimized code will typically appear to " +
-      "wrap to `INT_MIN`, i.e. `-2147483648`). An optimizer is entitled to assume signed overflow " +
+      "Per [expr.pre], an expression whose result is not representable in its type has undefined " +
+      "behavior, which is what `max + 1` does. C++20 does fix the *representation* of signed " +
+      "integers as two's complement, but that says nothing about what happens on overflow: the " +
+      "operation itself is still undefined, even though unoptimized code will typically appear to " +
+      "wrap to `INT_MIN`, i.e. `-2147483648`. An optimizer is entitled to assume signed overflow " +
       "never happens and transform the code accordingly (e.g. constant-folding, eliminating " +
       "\"impossible\" overflow checks), so relying on wraparound is a real, exploitable bug, not " +
       "just a style nit. Unsigned integer arithmetic, by contrast, is explicitly defined by " +
-      "[basic.fundamental] to be performed modulo 2^N — `umax + 1` is guaranteed to wrap to `0`, " +
-      "no exceptions. This asymmetry is exactly why mixing signed and unsigned arithmetic, or " +
+      "[basic.fundamental] to be performed modulo 2^N: `umax + 1` is guaranteed to wrap to `0`, " +
+      "no exceptions. That asymmetry is why mixing signed and unsigned arithmetic, or " +
       "using signed types for things like loop counters near their bounds, is a recurring source " +
       "of subtle bugs.",
   },
@@ -1402,25 +1357,25 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Both silently print an unspecified garbage value",
-        "v[10] is undefined behavior (operator[] performs no bounds checking); v.at(10) throws std::out_of_range, which is uncaught here and terminates the program",
+        "Both print an unspecified garbage value; neither performs a bounds check",
+        "v[10] is undefined behavior; v.at(10) throws std::out_of_range, terminating the program",
         "Both throw std::out_of_range",
         "Compile error: index 10 is out of range for a 3-element vector",
       ],
       correctIndex: 1,
     },
     explanation:
-      "`std::vector::operator[]` has no bounds-checking requirement — [vector.access] specifies " +
+      "`std::vector::operator[]` has no bounds-checking requirement: [vector.access] specifies " +
       "its precondition as `pos < size()`, and violating a precondition is undefined behavior, not " +
       "a guaranteed crash or a guaranteed garbage read; it might read adjacent heap memory, " +
       "segfault, or (with a hardened standard library / sanitizer build) abort deterministically. " +
       "`std::vector::at()`, by contrast, is specified to perform a bounds check and throw `std::" +
-      "out_of_range` if the index is invalid — it exists precisely to trade `operator[]`'s zero-" +
+      "out_of_range` if the index is invalid. It exists precisely to trade `operator[]`'s zero-" +
       "overhead-when-correct behavior for safety at a small runtime cost. Since neither call here " +
       "is inside a `try`/`catch`, the exception from `v.at(10)` propagates out of `main` uncaught, " +
       "which calls `std::terminate`. In a real predict-the-output sense, note that the `v[10]` " +
-      "line already being UB technically makes anything after it unpredictable too — which is " +
-      "exactly why mixing unchecked and checked access like this is worth avoiding.",
+      "line already being UB technically makes anything after it unpredictable too, so mixing " +
+      "unchecked and checked access like this is worth avoiding on its own merits.",
     references: ["https://en.cppreference.com/w/cpp/container/vector/at"],
   },
   {
@@ -1452,16 +1407,16 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Base::init",
+        "Nothing is printed: virtual calls are skipped during construction",
         "Derived::init",
-        "Undefined behavior — calling a virtual function from a constructor",
-        "Compile error: init is pure virtual in this context",
+        "Undefined behavior: calling a virtual function from a constructor",
+        "Base::init",
       ],
-      correctIndex: 0,
+      correctIndex: 3,
     },
     explanation:
       "Constructing a `Derived` first runs `Base`'s constructor, and during that constructor's " +
-      "execution the object's dynamic type — for purposes of virtual dispatch — is `Base`, not " +
+      "execution the object's dynamic type, for purposes of virtual dispatch, is `Base`, not " +
       "`Derived`. Per [class.cdtor], while a base class constructor is running, the object behaves " +
       "as if it were of the base type: the `Derived`-specific parts of the object (including its " +
       "override of `init`) haven't been constructed yet, so the vtable pointer in effect at that " +
@@ -1469,14 +1424,14 @@ int main() {
       "dispatches to `Base::init()`, printing \"Base::init\", even though `init` is `virtual` and " +
       "the complete object is ultimately a `Derived`. This is well-defined (not UB) but is a " +
       "famous gotcha, since it violates the intuition that virtual calls always resolve to \"the " +
-      "most-derived override\" — that intuition only holds once construction has finished.",
+      "most-derived override\": that intuition only holds once construction has finished.",
     references: ["https://en.cppreference.com/w/cpp/language/virtual"],
   },
   {
     id: "cpp-static-init-order-01",
     category: "cpp",
     difficulty: "hard",
-    title: "Static initialization order fiasco across translation units",
+    title: "A global that reads another file's global",
     tags: ["static-initialization", "undefined-behavior", "translation-units"],
     type: "trace",
     prompt:
@@ -1509,12 +1464,12 @@ int main() {}`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Always prints \"A sees B::value = 42\" — static initialization order across files is well-defined",
-        "Unspecified — the standard does not fix the order in which dynamic initialization of non-local statics in different translation units runs, so this may print 0 or 42 depending on link order and the specific toolchain",
-        "Compile error: B::value used in A's constructor before B.cpp is compiled",
-        "Undefined behavior — always crashes",
+        "Always prints \"A sees B::value = 42\": initialization order across files is well-defined",
+        "Undefined behavior: B::value is read before its dynamic initializer has necessarily run",
+        "Compile error: B::value is used in A's constructor before b.cpp is compiled",
+        "Unspecified: this may print 0 or 42 depending on the toolchain and link order",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
       "Per [basic.start.dynamic], the relative order of dynamic initialization of non-local static-" +
@@ -1524,11 +1479,11 @@ int main() {}`,
       "before any dynamic initialization runs anywhere in the program, but whether `B::value`'s " +
       "dynamic initializer (`= 42`) has already run *before* `globalA`'s constructor executes " +
       "depends entirely on which translation unit's dynamic initializers the linker/runtime " +
-      "happens to sequence first — commonly, but not reliably, related to link order. This is " +
+      "happens to sequence first, commonly but not reliably related to link order. This is " +
       "the classic \"static initialization order fiasco\": the program may print `42` on one " +
       "toolchain/link order and silently print `0` on another (or after an innocuous build change " +
       "reorders object files), with no compiler diagnostic either way. The standard mitigation is " +
-      "the \"construct on first use\" idiom — wrapping `B::value` in a function-local static, whose " +
+      "the \"construct on first use\" idiom: wrapping `B::value` in a function-local static, whose " +
       "initialization order relative to other function-local statics *is* well-defined (first use " +
       "triggers initialization, guaranteed at most once, thread-safely since C++11).",
     references: [
@@ -1540,7 +1495,7 @@ int main() {}`,
     id: "cpp-exception-safety-01",
     category: "cpp",
     difficulty: "hard",
-    title: "A partially-constructed object's destructor never runs",
+    title: "Throwing from a constructor after its members are constructed",
     tags: ["exceptions", "constructors", "exception-safety"],
     type: "trace",
     prompt: "What does this program print?",
@@ -1575,10 +1530,10 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Resource acquired\\nResource acquired\\nResource released\\nResource released\\ncaught: construction failed (Widget::~Widget never runs)",
+        "Resource acquired\\nResource acquired\\nResource released\\nResource released\\ncaught: construction failed",
         "Resource acquired\\nResource acquired\\nWidget destroyed\\nResource released\\nResource released\\ncaught: construction failed",
-        "Resource acquired\\nResource acquired\\ncaught: construction failed (member Resources are leaked, since only Widget's own destructor is skipped)",
-        "Undefined behavior — throwing from a constructor always corrupts the object",
+        "Resource acquired\\nResource acquired\\ncaught: construction failed",
+        "Undefined behavior: throwing from a constructor always corrupts the object",
       ],
       correctIndex: 0,
     },
@@ -1586,16 +1541,16 @@ int main() {
       "Member initializers run before the constructor body, in declaration order, so `r1` and `r2` " +
       "are both fully constructed (\"Resource acquired\" x2) before `Widget`'s constructor body " +
       "throws. Per [class.base.init] and [except.ctor], when an exception exits a constructor, the " +
-      "object under construction is never considered to have completed construction — so its own " +
+      "object under construction is never considered to have completed construction, so its own " +
       "destructor (`Widget::~Widget`) is *not* invoked; an object whose constructor never finished " +
       "does not \"exist\" to be destroyed. However, stack unwinding still automatically destroys " +
       "every subobject (base classes and non-static data members) that *had* already finished " +
-      "constructing, in the reverse of their construction order — so `r2` and then `r1` are " +
+      "constructing, in the reverse of their construction order, so `r2` and then `r1` are " +
       "destroyed (\"Resource released\" x2) even though `Widget::~Widget` never runs. This is why " +
       "RAII members are safe even when a constructor fails partway through: each already-" +
       "constructed member cleans itself up, and there is no leak here, but it is also why a " +
       "`Widget::~Widget` body (e.g. logging \"widget destroyed\", releasing a resource acquired " +
-      "manually rather than via an RAII member) would never run on this path — a common source of " +
+      "manually rather than via an RAII member) would never run on this path, a common source of " +
       "resource leaks when acquisition isn't itself RAII-wrapped.",
     references: ["https://en.cppreference.com/w/cpp/language/constructor"],
   },
@@ -1603,7 +1558,7 @@ int main() {
     id: "cpp-sfinae-01",
     category: "cpp",
     difficulty: "hard",
-    title: "SFINAE with void_t: detecting a member type at compile time",
+    title: "Detecting a nested value_type with std::void_t",
     tags: ["templates", "sfinae", "type-traits", "metaprogramming"],
     type: "trace",
     prompt: "What does this program print?",
@@ -1630,11 +1585,11 @@ int main() {
       kind: "multiple-choice",
       choices: [
         "11",
-        "10",
         "01",
+        "10",
         "Compile error: B::value_type does not exist",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
       "The primary template `has_value_type<T, typename = void>` defaults its second parameter to " +
@@ -1643,17 +1598,17 @@ int main() {
       "value_type` is a valid type expression, since `std::void_t<...>` then evaluates to `void`, " +
       "matching the primary's default. For `A`, `A::value_type` is well-formed, so the specialization " +
       "matches and `has_value_type<A>::value` is `true`. For `B`, `B::value_type` does not exist, so " +
-      "substituting it into `void_t<typename T::value_type>` fails — but per SFINAE (\"substitution " +
+      "substituting it into `void_t<typename T::value_type>` fails. Per SFINAE (\"substitution " +
       "failure is not an error\", [temp.deduct]), this failure occurs in the immediate context of " +
       "template argument deduction for the partial specialization and is silently discarded rather " +
       "than raising a hard error, falling back to the primary template's `false_type`. Output: `10`.",
-      references: ["https://en.cppreference.com/w/cpp/types/void_t"],
+    references: ["https://en.cppreference.com/w/cpp/types/void_t"],
   },
   {
     id: "cpp-template-template-01",
     category: "cpp",
     difficulty: "medium",
-    title: "Template template parameter matching against a defaulted-argument template",
+    title: "std::vector as a single-parameter template template argument",
     tags: ["templates", "template-template-parameters", "c++17"],
     type: "trace",
     prompt: "Compiled as C++20, what happens when this is compiled?",
@@ -1675,22 +1630,22 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "matched — compiles fine under C++20's relaxed template template parameter matching rules (P0522)",
+        "matched: legal since C++17's relaxed matching rules (P0522)",
         "Compile error: std::vector takes two template parameters but TT expects one",
-        "matched — this has always been legal in every C++ standard, including C++03",
-        "Compile error: std::vector cannot be passed as a template template argument at all",
+        "matched: this has been legal since C++03",
+        "Compile error: std::vector cannot be a template template argument at all",
       ],
       correctIndex: 0,
     },
     explanation:
       "Prior to C++17, [temp.arg.template] required a template template *argument*'s parameter list " +
       "to match the corresponding template template *parameter*'s list exactly, parameter-for-" +
-      "parameter — `std::vector<T, Allocator = std::allocator<T>>` has two parameters, so it could " +
+      "parameter: `std::vector<T, Allocator = std::allocator<T>>` has two parameters, so it could " +
       "not bind to `template <typename> class TT`, which expects exactly one. P0522R0, adopted for " +
       "C++17, relaxed this: a template template argument may now have additional trailing parameters " +
       "as long as they have default arguments, so `std::vector` (whose second parameter, `Allocator`, " +
       "is defaulted) successfully matches `TT`. Under C++20 (which retains this relaxed rule), `Trait" +
-      "<std::vector>` compiles and instantiates cleanly, printing \"matched\" — a change that quietly " +
+      "<std::vector>` compiles and instantiates cleanly, printing \"matched\", a change that quietly " +
       "fixed a very common pain point for anyone writing generic container-adaptor code.",
     references: ["https://en.cppreference.com/w/cpp/language/template_parameters"],
   },
@@ -1698,7 +1653,7 @@ int main() {
     id: "cpp-nttp-01",
     category: "cpp",
     difficulty: "hard",
-    title: "Class-type non-type template parameters require a structural type (C++20)",
+    title: "A class type as a non-type template parameter",
     tags: ["templates", "nttp", "c++20", "structural-types"],
     type: "trace",
     prompt: "Compiled as C++20, what happens when this is compiled?",
@@ -1730,9 +1685,9 @@ int main() {
       kind: "multiple-choice",
       choices: [
         "7",
-        "Compile error: Vec2 is not a structural type because it has a private non-static data member, so it cannot be used as a class-type non-type template parameter",
-        "0 — cachedNorm_ zero-initializes and only the public members participate in the template argument",
-        "Undefined behavior — reading V.x_ and V.y_ from a template parameter object",
+        "Compile error: Vec2 is not a structural type",
+        "0: only the public members participate in the template argument",
+        "Undefined behavior: reading V.x_ and V.y_ from a template parameter object",
       ],
       correctIndex: 1,
     },
@@ -1741,10 +1696,10 @@ int main() {
       "*structural types*: the type must be a literal type, and every base class and non-static data " +
       "member must be public and non-mutable, with each member's own type also required to be " +
       "structural. `Vec2` declares `cachedNorm_` as a private data member, which violates that " +
-      "requirement outright — it doesn't matter that `cachedNorm_` is never referenced by `Fixed`, " +
+      "requirement outright. It doesn't matter that `cachedNorm_` is never referenced by `Fixed`; " +
       "the structural-type check applies to the whole class, not just the members actually used. " +
       "`template <Vec2 V>` is therefore ill-formed as soon as it's instantiated with any `Vec2` " +
-      "value, since `Vec2` itself can never satisfy the structural-type requirement — this is a hard " +
+      "value, since `Vec2` itself can never satisfy the structural-type requirement. This is a hard " +
       "compile error, not something that depends on which members `Fixed` happens to touch.",
     references: ["https://en.cppreference.com/w/cpp/language/template_parameters#Non-type_template_parameter"],
   },
@@ -1752,7 +1707,7 @@ int main() {
     id: "cpp-variadic-pack-01",
     category: "cpp",
     difficulty: "hard",
-    title: "Evaluation order of variadic function-call arguments with side effects",
+    title: "Three increments in one call",
     tags: ["variadic-templates", "evaluation-order", "sequencing"],
     type: "trace",
     prompt: "What does this program print, or is it undefined behavior?",
@@ -1776,14 +1731,14 @@ int main() {
       choices: [
         "123",
         "321",
-        "Unspecified — the standard leaves the order in which the three ++i arguments are evaluated unspecified, so args is bound to some permutation of {1, 2, 3} (commonly 123 or 321 depending on the compiler/ABI, but neither is portable to rely on)",
-        "Undefined behavior — multiple unsequenced modifications to i in the same expression",
+        "Unspecified: args ends up holding some permutation of 1, 2, 3",
+        "Undefined behavior: i is modified three times with no sequencing between them",
       ],
       correctIndex: 2,
     },
     explanation:
-      "Per [expr.call]p8, the initialization of each function parameter — including evaluation of its " +
-      "argument expression — is *indeterminately sequenced* with respect to every other parameter's " +
+      "Per [expr.call]p8, the initialization of each function parameter, including evaluation of its " +
+      "argument expression, is *indeterminately sequenced* with respect to every other parameter's " +
       "initialization, not unsequenced. Indeterminately sequenced means each side effect runs to " +
       "completion strictly before or after the others (never interleaved), which is precisely what " +
       "rules out undefined behavior here; it only leaves unspecified *which* order they occur in. So " +
@@ -1791,7 +1746,7 @@ int main() {
       "`3`, but the value each particular `++i` produced (and therefore which of `1`, `2`, `3` gets " +
       "bound to `args`'s first, second, and third elements) depends entirely on that unspecified " +
       "evaluation order. The fold expression `(cout << ... << args)` then prints whatever `args` " +
-      "ended up holding in a fixed left-to-right order — but which permutation that is isn't fixed " +
+      "ended up holding in a fixed left-to-right order, but which permutation that is isn't fixed " +
       "by the standard, only by the implementation's calling convention/ABI.",
     references: ["https://en.cppreference.com/w/cpp/language/eval_order"],
   },
@@ -1799,7 +1754,7 @@ int main() {
     id: "cpp-fold-expr-01",
     category: "cpp",
     difficulty: "hard",
-    title: "Left fold vs. right fold with a non-associative operator",
+    title: "Left fold vs. right fold over the same pack",
     tags: ["templates", "fold-expressions", "c++17"],
     type: "trace",
     prompt: "What does this program print?",
@@ -1827,19 +1782,19 @@ int main() {
       choices: [
         "-8 -2",
         "-2 -8",
-        "-8 -8 — the two folds are equivalent since both use operator-",
+        "-8 -8",
         "Compile error: fold expressions require an explicit initial value for operator-",
       ],
       correctIndex: 0,
     },
     explanation:
       "A unary left fold `(... op pack)` expands, per [expr.prim.fold], to `(((E1 op E2) op E3) ... op " +
-      "EN)` — left-associated. `leftFold(1,2,3,4)` therefore computes `((1 - 2) - 3) - 4 = ((-1) - 3) " +
+      "EN)`, left-associated. `leftFold(1,2,3,4)` therefore computes `((1 - 2) - 3) - 4 = ((-1) - 3) " +
       "- 4 = (-4) - 4 = -8`. A unary right fold `(pack op ...)` instead expands to `(E1 op (E2 op (... " +
-      "op EN)))` — right-associated. `rightFold(1,2,3,4)` computes `1 - (2 - (3 - 4)) = 1 - (2 - (-1)) " +
+      "op EN)))`, right-associated. `rightFold(1,2,3,4)` computes `1 - (2 - (3 - 4)) = 1 - (2 - (-1)) " +
       "= 1 - 3 = -2`. Because `-` is neither associative nor commutative, folding the exact same " +
       "operands with the exact same operator in the two directions produces genuinely different " +
-      "results — both spellings compile silently, and nothing about the syntax `... - args` vs. " +
+      "results. Both spellings compile silently, and nothing about the syntax `... - args` vs. " +
       "`args - ...` visually screams \"these differ,\" making fold-direction a real footgun anytime " +
       "the folded operator isn't associative (unlike, say, `+` on integers, where direction is moot).",
     references: ["https://en.cppreference.com/w/cpp/language/fold"],
@@ -1848,7 +1803,7 @@ int main() {
     id: "cpp-crtp-01",
     category: "cpp",
     difficulty: "hard",
-    title: "CRTP: the derived class is incomplete at the point its own base is instantiated",
+    title: "sizeof(Derived) inside a CRTP base class",
     tags: ["templates", "crtp", "static-polymorphism", "incomplete-type"],
     type: "trace",
     prompt: "What happens when this program is compiled?",
@@ -1872,7 +1827,7 @@ int main() {}`,
       kind: "multiple-choice",
       choices: [
         "Compiles fine; buffer is sized to sizeof(Derived) once Derived is fully defined",
-        "Compile error: invalid use of incomplete type — Derived is still being defined when Base<Derived> is instantiated as its base class",
+        "Compile error: invalid application of sizeof to the incomplete type Derived",
         "Compiles, but buffer has size 0",
         "Undefined behavior at runtime when Derived is constructed",
       ],
@@ -1880,15 +1835,15 @@ int main() {}`,
     },
     explanation:
       "When `struct Derived : Base<Derived>` is defined, the compiler must instantiate `Base<Derived>` " +
-      "to determine `Derived`'s base-class layout — and at that exact point, `Derived` itself is still " +
+      "to determine `Derived`'s base-class layout, and at that exact point, `Derived` itself is still " +
       "an incomplete type: its own class-specifier hasn't finished parsing yet. `sizeof` requires a " +
       "complete type ([expr.sizeof]), so `sizeof(Derived)` used inside `Base<Derived>`'s instantiation " +
       "is a hard compile error, not a deferred or lazily-resolved computation. This is the \"curiously " +
       "incomplete type\" trap inherent to CRTP: a CRTP base may freely declare pointers/references to " +
       "`Derived` and may call member functions on a `Derived*` from inside function *bodies* (those " +
-      "are only instantiated on first use, by which point `Derived` is complete) — but anything that " +
+      "are only instantiated on first use, by which point `Derived` is complete), but anything that " +
       "needs `Derived` to be complete right there in the base's own member declarations (`sizeof`, " +
-      "a by-value `Derived` member, etc.) fails, which is exactly why real CRTP bases stick to " +
+      "a by-value `Derived` member, etc.) fails. That's why real CRTP bases stick to " +
       "`Derived*`/`Derived&` and defer all actual member access to deferred-instantiation function bodies.",
     references: ["https://en.cppreference.com/w/cpp/language/crtp"],
   },
@@ -1896,7 +1851,7 @@ int main() {}`,
     id: "cpp-concepts-subsumption-01",
     category: "cpp",
     difficulty: "hard",
-    title: "Constraint subsumption selects the more specialized constrained overload",
+    title: "Overloads constrained by Integral and SignedIntegral",
     tags: ["concepts", "subsumption", "c++20", "overload-resolution"],
     type: "trace",
     prompt: "Compiled as C++20, what does this program print?",
@@ -1925,24 +1880,24 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "SignedIntegral — its constraints subsume Integral's, making it the more specialized (and thus preferred) overload",
-        "Integral — declared first, so it wins by declaration order",
+        "Integral: the less-constrained overload wins",
+        "Integral: it is declared first",
         "Compile error: ambiguous call to overloaded function f(42)",
-        "Integral — the compiler always prefers the less-constrained, more general overload when both are viable",
+        "SignedIntegral",
       ],
-      correctIndex: 0,
+      correctIndex: 3,
     },
     explanation:
       "Both `f` overloads are viable, equally-good candidates for `f(42)` in every respect except their " +
       "constraints, so [temp.constr.order] breaks the tie via *subsumption*: a candidate whose " +
       "constraints are subsumed by another's is considered less specialized. `SignedIntegral<T>`'s " +
-      "definition literally conjoins `Integral<T> && std::signed_integral<T>`, so — matching atomic " +
-      "constraints syntactically, as subsumption requires — `SignedIntegral<T>` subsumes `Integral<T>`, " +
+      "definition literally conjoins `Integral<T> && std::signed_integral<T>`, so, matching atomic " +
+      "constraints syntactically as subsumption requires, `SignedIntegral<T>` subsumes `Integral<T>`, " +
       "making the `SignedIntegral` overload strictly more specialized. Partial ordering by constraints " +
       "therefore selects it over the `Integral` overload, printing \"SignedIntegral\" rather than " +
       "triggering ambiguity. Note subsumption is purely syntactic, not semantic: `SignedIntegral` only " +
-      "subsumes `Integral` because it spells out `Integral<T>` as one of its own atomic constraints — " +
-      "a differently-written concept that happened to accept exactly the same set of types would " +
+      "subsumes `Integral` because it spells out `Integral<T>` as one of its own atomic constraints. " +
+      "A differently-written concept that happened to accept exactly the same set of types would " +
       "*not* subsume anything and the call would instead be ambiguous.",
     references: ["https://en.cppreference.com/w/cpp/language/constraints#Partial_ordering_of_constraints"],
   },
@@ -1950,7 +1905,7 @@ int main() {
     id: "cpp-template-specialization-01",
     category: "cpp",
     difficulty: "hard",
-    title: "A full function template specialization does not participate in overload resolution",
+    title: "An explicit specialization alongside a pointer overload",
     tags: ["templates", "specialization", "overload-resolution"],
     type: "trace",
     prompt: "What does this program print?",
@@ -1985,13 +1940,13 @@ int main() {
     },
     explanation:
       "Overload resolution operates over the set of function templates and non-template functions " +
-      "visible at the call site — here `f(T)` and `f(T*)` — never over explicit specializations " +
+      "visible at the call site, here `f(T)` and `f(T*)`, never over explicit specializations " +
       "directly; `template<> void f<int>(int)` doesn't introduce a new overload, it only supplies an " +
       "alternate definition for one particular instantiation of the *primary* template `f(T)`. For " +
       "`f(p)` with `p` an `int*`, both `f(T)` (deducing `T = int*`) and `f(T*)` (deducing `T = int`) " +
       "are viable, and partial ordering of function templates ([temp.func.order]) picks `f(T*)` as " +
       "strictly more specialized. Since `f(T)` was never selected for this call, the `int` " +
-      "specialization of `f(T)` is entirely irrelevant here — the program prints \"pointer overload\", " +
+      "specialization of `f(T)` is entirely irrelevant here: the program prints \"pointer overload\", " +
       "not \"specialization<int>\". This is the classic reason explicit function-template " +
       "specialization is considered a footgun when mixed with overloading of the same name: " +
       "specializing a template doesn't compose with overload resolution the way many engineers assume.",
@@ -2001,7 +1956,7 @@ int main() {
     id: "cpp-two-phase-lookup-01",
     category: "cpp",
     difficulty: "hard",
-    title: "typename/template disambiguators for dependent names",
+    title: "Dependent qualified names inside a function template",
     tags: ["templates", "two-phase-lookup", "dependent-names"],
     type: "trace",
     prompt: "What happens when this program is compiled?",
@@ -2031,11 +1986,11 @@ int main() {
       kind: "multiple-choice",
       choices: [
         "Compiles fine and prints tag",
-        "Compile error: missing 'typename' before Container<T>::value_type, and missing 'template' before tag<int> — Container<T>::value_type and Container<T>::tag are dependent names that must be explicitly disambiguated as a type and a template, respectively",
         "Compile error only on the tag<int>() line; value_type is inferred as a type automatically",
-        "Undefined behavior — dependent name lookup is implementation-defined",
+        "Compile error: missing 'typename' before Container<T>::value_type, and missing 'template' before tag<int>",
+        "Compile error only on the value_type line; tag<int>() parses correctly",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
       "`T` is a template parameter, so `Container<T>` is a dependent type whose members cannot be " +
@@ -2043,10 +1998,10 @@ int main() {
       "idea whether `Container<T>::value_type` names a type or something else, so per [temp.res] it " +
       "defaults to assuming a dependent qualified name is *not* a type unless prefixed with " +
       "`typename`. Similarly, `Container<T>::tag` is a dependent name, so `Container<T>::tag<int>` is " +
-      "by default parsed as `(Container<T>::tag) < int > (...)` — a less-than comparison — rather " +
+      "by default parsed as `(Container<T>::tag) < int > (...)`, a less-than comparison, rather " +
       "than a template-id, unless disambiguated with the `template` keyword ([temp.names]) as " +
       "`Container<T>::template tag<int>`. Both omissions here are hard, unconditional compile errors " +
-      "(not warnings), which is exactly why generic library code is littered with `typename`/" +
+      "(not warnings), which is why generic library code is littered with `typename`/" +
       "`template` disambiguators the instant a dependent qualified name is used as a type or template.",
     references: ["https://en.cppreference.com/w/cpp/language/dependent_name"],
   },
@@ -2054,7 +2009,7 @@ int main() {
     id: "cpp-adl-01",
     category: "cpp",
     difficulty: "medium",
-    title: "Argument-dependent lookup adds an unexpected, ambiguous overload",
+    title: "One name, two namespaces",
     tags: ["adl", "namespaces", "overload-resolution"],
     type: "trace",
     prompt: "What happens when this program is compiled?",
@@ -2081,7 +2036,7 @@ int main() {
         "::process",
         "ns::process",
         "Compile error: call to process(w) is ambiguous between ::process and ns::process",
-        "ns::process, because ADL always takes priority over ordinary unqualified lookup",
+        "Compile error: ns::process is not visible from main",
       ],
       correctIndex: 2,
     },
@@ -2089,12 +2044,12 @@ int main() {
       "`process(w)` is an unqualified call, so its candidate set is the union of ordinary unqualified " +
       "lookup (which finds `::process`, visible in scope at the call site) and argument-dependent " +
       "lookup ([basic.lookup.argdep]), which additionally searches the namespaces associated with " +
-      "each argument's type — here `w`'s type is `ns::Widget`, so ADL silently adds `ns::process` to " +
+      "each argument's type. Here `w`'s type is `ns::Widget`, so ADL silently adds `ns::process` to " +
       "the candidate set too, even though it was never named or `using`-declared in `main`. Both " +
       "`::process(ns::Widget)` and `ns::process(ns::Widget)` are exact, equally-good matches for the " +
       "call, and neither is more specialized than the other (unrelated, non-template functions with " +
-      "identical parameter lists), so [over.match.best] cannot break the tie — the call is ambiguous, " +
-      "a compile error, not a silent pick of one over the other. This is exactly the ADL surprise that " +
+      "identical parameter lists), so [over.match.best] cannot break the tie: the call is ambiguous, " +
+      "a compile error, not a silent pick of one over the other. This is the ADL surprise that " +
       "bites when a codebase defines both a project-global utility function and a namespace-scoped " +
       "one with the same name and signature.",
     references: ["https://en.cppreference.com/w/cpp/language/adl"],
@@ -2103,7 +2058,7 @@ int main() {
     id: "cpp-ctad-guide-01",
     category: "cpp",
     difficulty: "medium",
-    title: "CTAD fails without a user-provided deduction guide",
+    title: "CTAD for a class template with an iterator-pair constructor",
     tags: ["ctad", "deduction-guides", "templates"],
     type: "trace",
     prompt: "What happens when this program is compiled?",
@@ -2129,9 +2084,9 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "3 — w.data holds copies of v's three elements",
-        "Compile error: class template argument deduction cannot deduce T — a user-provided deduction guide is required since T never appears in the constructor's parameter list",
-        "0 — data is default-constructed since Iter cannot be matched to T",
+        "3",
+        "Compile error: CTAD cannot deduce T for Wrapper",
+        "0",
         "Compile error: Wrapper is not an aggregate and cannot use CTAD at all",
       ],
       correctIndex: 1,
@@ -2141,9 +2096,9 @@ int main() {
       "template's own parameters with any additional constructor-template parameters; for `template" +
       "<typename Iter> Wrapper(Iter, Iter)`, the guide becomes `template<typename T, typename Iter> " +
       "Wrapper(Iter, Iter) -> Wrapper<T>`. `T` never appears anywhere in the constructor's parameter " +
-      "types — only `Iter` does — so `T` sits in a non-deducible context for this guide: nothing in " +
+      "types, only `Iter` does, so `T` sits in a non-deducible context for this guide: nothing in " +
       "the call `Wrapper(v.begin(), v.end())` lets the compiler infer what `T` should be. With no " +
-      "other viable guide, class template argument deduction fails outright — a compile error — even " +
+      "other viable guide, class template argument deduction fails outright, a compile error, even " +
       "though the constructor body would work perfectly well if `T` could somehow be supplied. The " +
       "fix is a user-provided deduction guide, e.g. `template<typename Iter> Wrapper(Iter, Iter) -> " +
       "Wrapper<typename std::iterator_traits<Iter>::value_type>;`, which tells the compiler explicitly " +
@@ -2154,7 +2109,7 @@ int main() {
     id: "cpp-forwarding-ref-01",
     category: "cpp",
     difficulty: "hard",
-    title: "Reference collapsing and a T&& that isn't a forwarding reference",
+    title: "T&& in a class template member vs. a function template",
     tags: ["templates", "forwarding-references", "reference-collapsing"],
     type: "trace",
     prompt: "What happens when this program is compiled?",
@@ -2172,7 +2127,7 @@ struct Holder {
 };
 
 template <typename T>
-void wrapper(T&& value) {   // forwarding reference — deduced context
+void wrapper(T&& value) {   // forwarding reference (a deduced context)
     std::cout << "wrapper(T&&)\\n";
 }
 
@@ -2186,10 +2141,10 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Prints Holder::set(T&&) then wrapper(T&&) — both are forwarding references",
-        "Compile error at h.set(x): cannot bind lvalue x to rvalue reference parameter int&& — T is fixed by Holder<int>, so T&& in set is an ordinary rvalue reference, not a forwarding reference",
-        "Prints wrapper(T&&) only; h.set(x) silently copies x into a temporary and compiles fine",
-        "Compile error at wrapper(x): T&& cannot bind to an lvalue there either",
+        "Prints Holder::set(T&&) then wrapper(T&&)",
+        "Compile error at h.set(x): rvalue reference to int cannot bind to lvalue x",
+        "Prints wrapper(T&&) only; h.set(x) copies x into a temporary",
+        "Compile error at wrapper(x): T&& cannot bind to an lvalue",
       ],
       correctIndex: 1,
     },
@@ -2198,12 +2153,12 @@ int main() {
       "call*, i.e. `T` is a template parameter of the immediately-enclosing function template " +
       "([temp.deduct.call]p3). In `wrapper`, `T` is deduced fresh on every call, so `T&&` is a genuine " +
       "forwarding reference: for the lvalue argument `x` (type `int`), `T` deduces to `int&`, and " +
-      "reference collapsing ([dcl.ref], `& + && -> &`) turns `T&&` = `int& &&` into `int&` — an " +
+      "reference collapsing ([dcl.ref], `& + && -> &`) turns `T&&` = `int& &&` into `int&`, an " +
       "ordinary lvalue reference, which happily binds to `x`. In `Holder<T>::set`, by contrast, `T` " +
-      "was already fixed when `Holder<int>` was instantiated — it is not a parameter of `set` itself, " +
+      "was already fixed when `Holder<int>` was instantiated. It is not a parameter of `set` itself, " +
       "so `T&&` inside `set` is just `int&&`, an ordinary rvalue reference with no deduction and no " +
       "collapsing involved. An rvalue reference cannot bind to the lvalue `x`, so `h.set(x)` is a hard " +
-      "compile error — precisely why \"forwarding reference\" is a narrower, more precise term than " +
+      "compile error, precisely why \"forwarding reference\" is a narrower, more precise term than " +
       "the older colloquial \"universal reference\": `T&&` only behaves specially when `T` is deduced " +
       "at that call.",
     references: ["https://en.cppreference.com/w/cpp/language/reference#Forwarding_references"],
@@ -2211,8 +2166,8 @@ int main() {
   {
     id: "cpp-virtual-inheritance-01",
     category: "cpp",
-    difficulty: "hard",
-    title: "Virtual inheritance: one shared base subobject in the diamond",
+    difficulty: "medium",
+    title: "Counting bases in a diamond",
     tags: ["virtual-inheritance", "multiple-inheritance", "object-layout"],
     type: "trace",
     prompt: "What does this program print?",
@@ -2238,7 +2193,7 @@ int main() {
       choices: [
         "42 42",
         "Compile error: b.value is ambiguous between Left::Base::value and Right::Base::value",
-        "1 1 — the assignment to b.value only affected a temporary",
+        "Compile error: Bottom must explicitly initialize the virtual base Base",
         "42 1",
       ],
       correctIndex: 0,
@@ -2261,7 +2216,7 @@ int main() {
     id: "cpp-dynamic-cast-01",
     category: "cpp",
     difficulty: "medium",
-    title: "dynamic_cast performing a cross-cast through virtual inheritance",
+    title: "dynamic_cast from Left* to Right* in a diamond",
     tags: ["rtti", "dynamic_cast", "virtual-inheritance"],
     type: "trace",
     prompt: "What does this program print?",
@@ -2285,12 +2240,12 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "1",
-        "0 — Left and Right are unrelated by inheritance, so the cast fails at runtime",
+        "Undefined behavior: cross-casting through virtual inheritance is UB",
+        "0: the cast fails at runtime",
         "Compile error: dynamic_cast cannot cross-cast between sibling base classes",
-        "Undefined behavior — cross-casting through virtual inheritance is UB",
+        "1",
       ],
-      correctIndex: 0,
+      correctIndex: 3,
     },
     explanation:
       "`dynamic_cast` requires a polymorphic source type (at least one virtual function), which `Left` " +
@@ -2298,11 +2253,11 @@ int main() {
       "hierarchy. Given a polymorphic pointer, `dynamic_cast<Right*>(l)` doesn't check whether `Left` " +
       "statically derives from `Right` (it doesn't); it consults the runtime type information for " +
       "`l`'s actual, most-derived object (`Bottom`) and asks whether `Right` is one of *its* base " +
-      "subobjects — a legal \"cross-cast,\" moving sideways within the same complete object rather " +
+      "subobjects, a legal \"cross-cast,\" moving sideways within the same complete object rather " +
       "than strictly up or down one inheritance chain. Since `Bottom` does contain a `Right` " +
       "subobject, the cast succeeds at runtime and returns a valid, correctly-adjusted `Right*`, so " +
       "`r != nullptr` and the program prints `1`. `static_cast<Right*>(l)` would be ill-formed here " +
-      "instead, since `Left` and `Right` aren't statically related — cross-casting is exactly the " +
+      "instead, since `Left` and `Right` aren't statically related. Cross-casting is exactly the " +
       "capability that requires RTTI and `dynamic_cast`.",
     references: ["https://en.cppreference.com/w/cpp/language/dynamic_cast"],
   },
@@ -2310,7 +2265,7 @@ int main() {
     id: "cpp-noexcept-move-01",
     category: "cpp",
     difficulty: "hard",
-    title: "A throwing move constructor forces vector to fall back to copying on reallocation",
+    title: "Two emplace_backs and one reallocation",
     tags: ["noexcept", "move-semantics", "vector", "exception-safety"],
     type: "trace",
     prompt: "What does this program print?",
@@ -2337,10 +2292,10 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "copy  (only, from relocating the single existing element into the new buffer)",
-        "move  (only, since Widget declares a move constructor)",
-        "copy copy  (both elements are copied; vector never moves when a copy constructor exists)",
-        "move move ",
+        "copy",
+        "move",
+        "copy copy",
+        "move move",
       ],
       correctIndex: 0,
     },
@@ -2352,8 +2307,8 @@ int main() {
       "move constructor is `noexcept` (or if there is no usable copy constructor at all). Here `Widget" +
       "(Widget&&) noexcept(false)` is explicitly not noexcept, and a copy constructor is available, so " +
       "relocation of the one existing element falls back to copying it, printing \"copy\". The second " +
-      "element is constructed directly in place in the new buffer by `emplace_back` — a fresh default " +
-      "construction, not a relocation — so it produces no \"copy\"/\"move\" output at all. This is the " +
+      "element is constructed directly in place in the new buffer by `emplace_back`, a fresh default " +
+      "construction rather than a relocation, so it produces no \"copy\"/\"move\" output at all. This is the " +
       "practical reason to always mark move constructors `noexcept` when they truly can't throw: an " +
       "easily-overlooked missing `noexcept` silently downgrades every vector reallocation of that type " +
       "from O(1)-per-element moves to O(1)-per-element copies.",
@@ -2363,7 +2318,7 @@ int main() {
     id: "cpp-placement-new-01",
     category: "cpp",
     difficulty: "hard",
-    title: "std::launder after placement-new'ing a new object over an old one",
+    title: "Placement new twice into the same buffer",
     tags: ["placement-new", "std::launder", "object-lifetime", "c++17"],
     type: "trace",
     prompt: "What does this program print, or is it undefined behavior?",
@@ -2388,20 +2343,20 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "2 — the compiler transparently understands w1 now refers to the new object",
-        "Undefined behavior — accessing *w1 is not guaranteed to yield the new object because Widget has a const member, so the old pointer cannot be implicitly reinterpreted as referring to the new object without std::launder",
-        "1 — w1 still refers to the original object's memory, which retains its old value",
+        "2: w1 transparently refers to the new object",
         "Compile error: placement new cannot reuse storage still occupied by a live object",
+        "1: the storage still holds the original object's value",
+        "Undefined behavior: w1->id is read after the storage was reused",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
       "[basic.life]p8 does permit a pointer to an object whose storage was reused by a new object of " +
-      "the *same type* to be used, without `std::launder`, to name that new object — but that " +
+      "the *same type* to be used, without `std::launder`, to name that new object, but that " +
       "exception explicitly excludes types containing `const`-qualified or reference-typed " +
       "subobjects. `Widget::id` is `const int`, so `Widget` fails this condition entirely; accessing " +
       "`w1->id` after `w2` was placement-new'd into the same buffer is undefined behavior, because the " +
-      "compiler is permitted to assume `w1->id` still holds its *original* value `1` — a `const` " +
+      "compiler is permitted to assume `w1->id` still holds its *original* value `1`. A `const` " +
       "member's value is assumed immutable for its object's whole lifetime, and real compilers do " +
       "cache/const-fold reads through `w1` on exactly this assumption, even though the underlying " +
       "bytes now hold `2`. `std::launder` (C++17) exists precisely for this case: `*std::launder(w1)` " +
@@ -2414,7 +2369,7 @@ int main() {
     id: "cpp-alignment-01",
     category: "cpp",
     difficulty: "medium",
-    title: "Over-aligned types and default operator new (C++17)",
+    title: "Allocating an alignas(64) type with plain new",
     tags: ["alignment", "alignas", "operator-new", "c++17"],
     type: "trace",
     prompt: "Compiled as C++17 or later, what does this program print?",
@@ -2436,17 +2391,17 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "1 — since C++17, operator new is guaranteed to honor extended (over-)alignment requirements like alignas(64)",
-        "0 — new never guarantees more than the default alignment; alignas only affects size, not allocation",
+        "1: new honors the alignas(64) requirement",
+        "0: new only guarantees alignof(std::max_align_t)",
         "Compile error: alignas cannot exceed the platform's max_align_t",
-        "Undefined behavior — over-aligned dynamic allocation is never guaranteed by the standard",
+        "Undefined behavior: over-aligned dynamic allocation is never guaranteed",
       ],
       correctIndex: 0,
     },
     explanation:
       "Before C++17, `operator new`'s guaranteed alignment was only `alignof(std::max_align_t)` " +
       "(commonly 16 on 64-bit platforms), so allocating a type with a larger `alignas` requirement via " +
-      "plain `new` was technically unspecified — a real, frequently-hit portability trap for SIMD or " +
+      "plain `new` was technically unspecified, a real, frequently-hit portability trap for SIMD or " +
       "cache-line-aligned types. C++17 (P0035R4) fixed this at the language level: a `new`-expression " +
       "for a type whose alignment exceeds `__STDCPP_DEFAULT_NEW_ALIGNMENT__` now selects an overload " +
       "of `operator new` taking `std::align_val_t`, and the allocation function is required to honor " +
@@ -2461,7 +2416,7 @@ int main() {
     id: "cpp-type-punning-01",
     category: "cpp",
     difficulty: "hard",
-    title: "Type punning through a union is UB in C++; std::bit_cast is well-defined",
+    title: "Union type punning vs. std::bit_cast",
     tags: ["type-punning", "undefined-behavior", "bit_cast", "c++20"],
     type: "trace",
     prompt: "What does this program print, and is either function's approach undefined behavior?",
@@ -2491,15 +2446,15 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "1 1 — both approaches are equally well-defined ways to reinterpret bit patterns in C++20",
-        "1 1 in practice, but bitsToFloatUB is undefined behavior per the C++ standard (reading a non-active union member is not sanctioned in C++, unlike C); bitsToFloatWellDefined via std::bit_cast is guaranteed well-defined and portable",
-        "Compile error: union U cannot mix uint32_t and float member types",
-        "0 0 — reading an inactive union member always yields a zero-initialized value",
+        "1 1: both approaches are well-defined in C++20",
+        "Compile error: a union cannot mix uint32_t and float members",
+        "1 1, but only bitsToFloatWellDefined is well-defined by the standard",
+        "0 0: an inactive union member always reads as zero",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
-      "C++'s union-based type punning (write `u.i`, read `u.f`) is, strictly, undefined behavior — " +
+      "C++'s union-based type punning (write `u.i`, read `u.f`) is, strictly, undefined behavior. " +
       "[class.union.general] does not carve out the exception C11 does (6.5.2.3, which explicitly " +
       "permits reading through a different union member for compatible-layout purposes); in C++ it is " +
       "a widely-supported *implementation extension*, not a standard-sanctioned technique, so " +
@@ -2507,7 +2462,7 @@ int main() {
       "reinterpretation matching programmer intent. `std::bit_cast<To>(from)` (C++20, `<bit>`) is the " +
       "standard's actual answer: given `sizeof(To) == sizeof(From)` and both trivially copyable, it " +
       "performs a well-defined, `constexpr`-capable bytewise reinterpretation with no UB and no " +
-      "aliasing violation — conceptually a `memcpy`, unlike a `reinterpret_cast<float*>` dereference, " +
+      "aliasing violation, conceptually a `memcpy`, unlike a `reinterpret_cast<float*>` dereference, " +
       "which violates the strict aliasing rule. On any conforming IEEE-754 platform both functions " +
       "produce the bit pattern for `1.0f` and print \"1 1\", but only one of the two paths is " +
       "standard-guaranteed to do so.",
@@ -2517,7 +2472,7 @@ int main() {
     id: "cpp-odr-01",
     category: "cpp",
     difficulty: "hard",
-    title: "An ODR violation from differing inline function definitions across translation units",
+    title: "One header, two different builds, one program",
     tags: ["odr", "translation-units", "undefined-behavior", "ifndr"],
     type: "trace",
     prompt:
@@ -2554,12 +2509,12 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "20 21 — each translation unit uses its own definition of compute, exactly as if FAST_BUILD only affected a.cpp",
-        "Ill-formed, no diagnostic required (IFNDR) — compute violates the One Definition Rule (its inline definition differs between translation units); a real toolchain will typically compile and link successfully anyway, silently picking one definition for both call sites (e.g. printing 20 20 or 21 21, not 20 21), with no error or warning",
-        "Compile error: compute is defined with conflicting bodies",
+        "20 21: each translation unit uses its own definition of compute",
         "Link error: duplicate symbol compute",
+        "Compile error: compute is defined with two conflicting bodies",
+        "Ill-formed, no diagnostic required: one definition is silently used for both calls",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
       "`compute` is `inline`, which per [basic.def.odr] obligates every translation unit defining it to " +
@@ -2568,9 +2523,9 @@ int main() {
       "can't be detected during compilation (each TU is self-consistent in isolation) or, typically, at " +
       "link time (inline function definitions are usually emitted into a COMDAT-like section, and the " +
       "linker just discards all-but-one duplicate without comparing contents), the standard classifies " +
-      "this as \"ill-formed, no diagnostic required\" — no error or warning is owed, despite the " +
+      "this as \"ill-formed, no diagnostic required\": no error or warning is owed, despite the " +
       "program's behavior being technically undefined. In practice the linker keeps exactly one of the " +
-      "two definitions (often whichever object file it processes first — toolchain- and build-order-" +
+      "two definitions (often whichever object file it processes first, which is toolchain- and build-order-" +
       "dependent) and both `fromA()` and `fromB()` end up calling that single merged definition, so " +
       "the program is far more likely to print `20 20` or `21 21` than the intuitively-expected `20 " +
       "21`. This is a classic real-world bug wherever a macro or feature flag silently changes an " +
@@ -2581,7 +2536,7 @@ int main() {
     id: "cpp-name-hiding-01",
     category: "cpp",
     difficulty: "medium",
-    title: "A derived class member hides all overloads of a base class member with the same name",
+    title: "A derived-class function with the same name as base overloads",
     tags: ["name-hiding", "overload-resolution", "inheritance"],
     type: "trace",
     prompt: "What happens when this program is compiled?",
@@ -2609,19 +2564,19 @@ int main() {
       kind: "multiple-choice",
       choices: [
         "Base::greet(int)",
-        "Compile error: no matching function for call to greet(int) — Derived::greet(const std::string&) hides all of Base's greet overloads, and there's no implicit conversion from int to std::string that satisfies it",
         "Base::greet()",
-        "Derived::greet(string) — 5 implicitly converts to a one-character string",
+        "Compile error: 5 cannot be converted to const std::string&",
+        "Derived::greet(string)",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
       "When `Derived` declares any member function named `greet`, that declaration *hides* every " +
-      "member named `greet` in `Base`, regardless of parameter list — name lookup ([basic.scope." +
+      "member named `greet` in `Base`, regardless of parameter list. Name lookup ([basic.scope." +
       "hiding], [class.member.lookup]) resolves the name `greet` to whichever scope first contains a " +
       "declaration of that name and stops there; it does not merge overload sets across a derived/base " +
       "boundary the way ordinary same-scope overloading does. So `d.greet(5)` only ever considers " +
-      "`Derived::greet(const std::string&)` — `Base::greet(int)`, otherwise a perfect match, is never " +
+      "`Derived::greet(const std::string&)`. `Base::greet(int)`, otherwise a perfect match, is never " +
       "even a candidate. `int` has no implicit conversion to `std::string` (there is no `std::string" +
       "(int)` constructor), so overload resolution fails outright: a compile error, not a silent call " +
       "to the \"wrong\" function. The standard fix is a `using Base::greet;` declaration inside " +
@@ -2632,8 +2587,8 @@ int main() {
   {
     id: "cpp-atomic-shared-ptr-01",
     category: "cpp",
-    difficulty: "easy",
-    title: "shared_ptr's reference count is atomic; the shared_ptr object itself is not",
+    difficulty: "medium",
+    title: "One global shared_ptr, two threads",
     tags: ["shared_ptr", "atomics", "concurrency", "c++20"],
     type: "trace",
     prompt:
@@ -2644,10 +2599,10 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Yes — the shared_ptr control block's reference count is always updated atomically, so this is inherently thread-safe",
-        "No — concurrent reads/writes to the same shared_ptr instance (the pointer + control-block-pointer pair itself, not the referenced object) are a data race; only the reference-count operations are atomic. Safe options: std::atomic<std::shared_ptr<T>> (C++20) or the pre-C++20 std::atomic_load/store(_explicit) free functions",
-        "No — shared_ptr can never be shared across threads under any circumstances, even with external synchronization",
-        "Yes, but only if Widget's constructor is itself thread-safe",
+        "Yes: the reference count is always updated atomically",
+        "No: concurrent read and write of the same shared_ptr object is a data race",
+        "No: a shared_ptr can never be shared across threads at all",
+        "Yes, provided Widget's own constructor is thread-safe",
       ],
       correctIndex: 1,
     },
@@ -2656,7 +2611,7 @@ int main() {
       "only the *reference-count* increments/decrements are atomic, so two *different* `shared_ptr` " +
       "instances that happen to share a control block can safely be copied/destroyed concurrently from " +
       "different threads. But `g_ptr = ...` and `*g_ptr` here are reading and writing *the same " +
-      "`shared_ptr` object* concurrently — that object's internal (pointer, control-block-pointer) " +
+      "`shared_ptr` object* concurrently. That object's internal (pointer, control-block-pointer) " +
       "pair is not itself protected by any atomicity guarantee, so this is an ordinary, unsynchronized " +
       "concurrent read/write of shared memory: a data race, undefined behavior, no different in kind " +
       "from racing on a plain `int`. Before C++20, the sanctioned fix was the free functions `std::" +
@@ -2669,7 +2624,7 @@ int main() {
     id: "cpp-coroutine-eager-01",
     category: "cpp",
     difficulty: "medium",
-    title: "initial_suspend() returning suspend_never runs the coroutine body eagerly",
+    title: "A coroutine with a suspend_never initial_suspend",
     tags: ["coroutines", "c++20", "suspension"],
     type: "trace",
     prompt: "Compiled as C++20, what does this program print (and in what order)?",
@@ -2705,24 +2660,24 @@ int main() {
       kind: "multiple-choice",
       choices: [
         "calling greet()\\nback in main\\nbefore suspend\\nafter suspend",
-        "calling greet()\\nbefore suspend\\nback in main (\"after suspend\" never prints, since nothing ever resumes the abandoned coroutine handle)",
+        "calling greet()\\nbefore suspend\\nback in main",
         "calling greet()\\nbefore suspend\\nafter suspend\\nback in main",
-        "calling greet()\\nback in main (the coroutine body never runs at all, because initial_suspend() suspends it immediately)",
+        "calling greet()\\nback in main",
       ],
       correctIndex: 1,
     },
     explanation:
       "`initial_suspend()` returning `std::suspend_never` means its `await_ready()` returns `true`, so " +
-      "the coroutine's very first suspension point is skipped — the body starts running *eagerly, " +
+      "the coroutine's very first suspension point is skipped: the body starts running *eagerly, " +
       "synchronously*, inside the call `greet()` itself, before `greet()` ever returns control to its " +
       "caller. Execution proceeds through \"before suspend\" and reaches the *explicit* `co_await std" +
       "::suspend_always{}`, whose `await_ready()` is `false`, so this genuinely suspends the coroutine " +
-      "and returns control to `main` right there — the call expression `greet()` finishes evaluating " +
+      "and returns control to `main` right there. The call expression `greet()` finishes evaluating " +
       "(producing the `Task`) immediately after that suspension, not after the coroutine finishes. " +
       "\"back in main\" then prints. Because `Task::get_return_object` discards the `coroutine_handle` " +
       "entirely (returns a bare `Task{}`), nothing ever calls `.resume()` on the suspended coroutine, " +
-      "so \"after suspend\" never prints and the frame is abandoned for the rest of the program — " +
-      "illustrating both the eager-vs-lazy-start distinction controlled by `initial_suspend` and the " +
+      "so \"after suspend\" never prints and the frame is abandoned for the rest of the program. This " +
+      "illustrates both the eager-vs-lazy-start distinction controlled by `initial_suspend` and the " +
       "real danger of discarding a coroutine's handle.",
     references: ["https://en.cppreference.com/w/cpp/language/coroutines"],
   },
@@ -2730,7 +2685,7 @@ int main() {
     id: "cpp-ranges-dangling-01",
     category: "cpp",
     difficulty: "hard",
-    title: "A range view over a temporary bound to a const& parameter dangles",
+    title: "Returning a filter view from a function taking const vector&",
     tags: ["ranges", "views", "dangling", "c++20"],
     type: "trace",
     prompt: "Compiled as C++20, what happens when this program runs?",
@@ -2753,24 +2708,24 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "2 4 6 8 — filter correctly skips the odd numbers",
-        "Undefined behavior — the temporary vector {2,4,6,7,8} is bound to evens's const& parameter, and the returned filter_view retains only a reference to it (via ref_view); that reference dangles once evens returns, well before the range-for loop iterates the view",
-        "Compile error: cannot bind a std::initializer_list to a const std::vector<int>&",
-        "(empty output) — the temporary is destroyed before the filter predicate ever runs, so filter finds nothing",
+        "2 4 6 8",
+        "Undefined behavior: the returned view references a destroyed temporary",
+        "Compile error: a braced-init-list cannot bind to a const std::vector<int>&",
+        "(empty output)",
       ],
       correctIndex: 1,
     },
     explanation:
       "`v | std::views::filter(pred)` for an lvalue range `v` composes a `filter_view` that internally " +
-      "stores a `ref_view<const std::vector<int>>` — i.e. the view holds a *reference* to `v`, not a " +
+      "stores a `ref_view<const std::vector<int>>`, i.e. the view holds a *reference* to `v`, not a " +
       "copy of its elements, in keeping with the \"views are cheap to copy, non-owning\" philosophy of " +
       "C++20 ranges ([range.filter]). The temporary `std::vector<int>{2,4,6,7,8}` in `evens({2,4,6,7," +
-      "8})` is bound to the function *parameter* `v`, and — as with any temporary bound to a reference " +
-      "parameter rather than directly at a reference's point of declaration — no lifetime extension " +
+      "8})` is bound to the function *parameter* `v`, and, as with any temporary bound to a reference " +
+      "parameter rather than directly at a reference's point of declaration, no lifetime extension " +
       "applies; it's destroyed at the end of the full expression, i.e. once `evens(...)` returns. The " +
       "`filter_view` returned by `evens` therefore already references a destroyed `std::vector` by the " +
       "time it's stored in `main`'s `view`, and iterating it in the range-`for` loop dereferences a " +
-      "dangling reference — undefined behavior, the same bug as returning a dangling reference except " +
+      "dangling reference: undefined behavior, the same bug as returning a dangling reference except " +
       "now hidden behind range-adaptor composition, where nothing about `v | views::filter(pred)` " +
       "visually suggests a reference is being captured.",
     references: ["https://en.cppreference.com/w/cpp/ranges/filter_view"],
@@ -2778,8 +2733,8 @@ int main() {
   {
     id: "cpp-bitfield-01",
     category: "cpp",
-    difficulty: "easy",
-    title: "Bit-field packing is implementation-defined",
+    difficulty: "medium",
+    title: "sizeof a struct of three 3-bit bit-fields",
     tags: ["bit-fields", "implementation-defined", "layout"],
     type: "trace",
     prompt: "What does this program print?",
@@ -2801,9 +2756,9 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Always exactly 2 — the standard requires bit-fields to be packed as tightly as possible within their declared type",
-        "Implementation-defined — the standard neither guarantees how bit-fields are packed into allocation units nor forbids padding between them; commonly 2 on mainstream ABIs for this example, but portable code must not assume any specific size",
-        "Always exactly 3 — one byte is allocated per bit-field regardless of width",
+        "Always exactly 2: bit-fields are packed as tightly as possible",
+        "Implementation-defined: the standard does not fix how bit-fields are packed",
+        "Always exactly 3: one full byte is allocated per bit-field",
         "Compile error: bit-field width must evenly divide the underlying type's size",
       ],
       correctIndex: 1,
@@ -2814,9 +2769,9 @@ int main() {
       "field may straddle an alignment boundary, and how much padding (if any) separates or follows " +
       "them are all left to the implementation/ABI, not fixed by the language. Three 3-bit fields need " +
       "only 9 bits, and on most mainstream ABIs (Itanium C++ ABI, used by GCC/Clang) they do pack into " +
-      "2 bytes (`sizeof(Flags) == 2`), but nothing in the standard *requires* that outcome — a " +
+      "2 bytes (`sizeof(Flags) == 2`), but nothing in the standard *requires* that outcome. A " +
       "conforming implementation could allocate a full byte per bit-field, refuse to let a bit-field " +
-      "span byte boundaries, or add trailing padding, all without violating any rule. This is exactly " +
+      "span byte boundaries, or add trailing padding, all without violating any rule. This is " +
       "why bit-fields are useful for expressing intent (\"I only need 3 bits here\") but are not a " +
       "portable tool for controlling exact memory layout across compilers/platforms.",
     references: ["https://en.cppreference.com/w/cpp/language/bit_field"],
@@ -2824,8 +2779,8 @@ int main() {
   {
     id: "cpp-mi-pointer-adjust-01",
     category: "cpp",
-    difficulty: "medium",
-    title: "this-pointer adjustment when converting across multiple inheritance",
+    difficulty: "hard",
+    title: "Upcasting to the second base under multiple inheritance",
     tags: ["multiple-inheritance", "pointer-adjustment", "static_cast"],
     type: "trace",
     prompt: "What does this program print?",
@@ -2850,21 +2805,21 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "1 — pb and pc both ultimately point at the same object obj, so their addresses are equal",
-        "0 — converting pc to B* adjusts the pointer to point at the B subobject, which sits at a different address within obj than the A subobject (and C itself, which is layout-compatible with its first base, A); the two void* values differ",
+        "1: pb and pc both denote the same complete object obj",
         "Compile error: cannot implicitly convert C* to B* in a multiply-inherited class",
-        "Undefined behavior — pb is left uninitialized because B is not C's first base",
+        "0: the conversion adjusts the pointer to the B subobject's own address",
+        "Undefined behavior: pb is left uninitialized because B is not C's first base",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
       "In a class with multiple, non-virtual base classes, the compiler lays the base subobjects out " +
-      "sequentially — here `A` first (so `C*` and `A*` to the same object are typically numerically " +
+      "sequentially, with `A` first (so `C*` and `A*` to the same object are typically numerically " +
       "equal, since `A` is `C`'s first base), followed by `B`, followed by `C`'s own members. " +
       "Converting `C*` to `B*` (even implicitly, as in `B* pb = pc;`) is required by [expr.static." +
       "cast]/[conv.ptr] to yield a pointer to the *actual* `B` subobject, which lives at an offset " +
       "(commonly `sizeof(A)`, though the exact figure is implementation-defined) from the start of the " +
-      "complete object — the compiler silently *adjusts* the pointer's numeric value during this " +
+      "complete object. The compiler silently *adjusts* the pointer's numeric value during this " +
       "conversion, not merely relabeling the same address the way an upcast to the first base would. " +
       "`pc` and `pb` therefore hold genuinely different addresses despite denoting subobjects of the " +
       "same `obj`, so casting both to `void*` (which preserves whatever address each pointer currently " +
@@ -2877,7 +2832,7 @@ int main() {
     id: "cpp-constinit-01",
     category: "cpp",
     difficulty: "easy",
-    title: "constinit guarantees static initialization but not immutability",
+    title: "Incrementing a constinit global",
     tags: ["constinit", "constexpr", "const", "c++20", "static-initialization"],
     type: "trace",
     prompt: "Compiled as C++20, what does this program print?",
@@ -2900,9 +2855,9 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "11 — constinit only guarantees the initial value is computed at compile time; the variable itself remains mutable",
-        "Compile error at (1): counter is constinit, so it cannot be modified after initialization",
-        "10 — the write in increment() has no effect because constinit variables are stored in read-only memory",
+        "11",
+        "Compile error at (1): counter cannot be modified after initialization",
+        "10: constinit variables live in read-only memory",
         "Compile error: constinit requires the variable to also be declared const or constexpr",
       ],
       correctIndex: 0,
@@ -2912,7 +2867,7 @@ int main() {
       "requires a variable with static or thread storage duration to be initialized with a constant " +
       "expression, forcing static (compile/link-time) initialization and eliminating any possibility " +
       "of that variable being subject to the dynamic-initialization-order fiasco ([basic.start." +
-      "static]) — but the resulting variable is otherwise an entirely ordinary, mutable `int`. This is " +
+      "static]), but the resulting variable is otherwise an entirely ordinary, mutable `int`. This is " +
       "distinct from both `const` (fixes the value for the object's lifetime but says nothing about " +
       "*when* initialization happens) and `constexpr` (implies `const` and additionally requires the " +
       "variable to be usable in constant expressions itself). Since `counter` is not `const`, " +
@@ -2921,6 +2876,1666 @@ int main() {
       "that must never be subject to dynamic-initialization-order surprises, e.g. a counter or flag " +
       "read very early during program startup, before `main` runs.",
     references: ["https://en.cppreference.com/w/cpp/language/constinit"],
+  },
+  {
+    id: "cpp-false-sharing-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "Two counters in one struct",
+    tags: ["false-sharing", "atomic", "cache-line", "concurrency", "performance"],
+    type: "trace",
+    prompt:
+      "Two threads run concurrently, each hammering a different atomic counter " +
+      "in the same struct on separate CPU cores. What is true about this program?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <atomic>
+#include <thread>
+
+struct Counters {
+    std::atomic<long> a{0};
+    std::atomic<long> b{0};   // (1) adjacent to 'a', no padding between them
+};
+
+Counters counters;
+
+void bumpA() {
+    for (long i = 0; i < 100'000'000; ++i)
+        counters.a.fetch_add(1, std::memory_order_relaxed);
+}
+
+void bumpB() {
+    for (long i = 0; i < 100'000'000; ++i)
+        counters.b.fetch_add(1, std::memory_order_relaxed);
+}
+
+int main() {
+    std::thread t1(bumpA);
+    std::thread t2(bumpB);
+    t1.join();
+    t2.join();
+    // counters.a == counters.b == 100'000'000, always
+}`,
+      highlightLines: [5, 6],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Data race: reading counters.a and counters.b from different threads without a mutex is undefined behavior",
+        "Compile error: two std::atomic members cannot be declared adjacently in the same struct",
+        "The final values are always correct, but the program runs far slower than with 'a' and 'b' on separate cache lines",
+        "The final values are correct, and separating 'a' and 'b' would not change the runtime",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "Each `std::atomic<long>` operation here is individually correct and race-free by " +
+      "definition: `std::atomic` provides synchronization, so there is no data race and no " +
+      "UB. `sizeof(Counters)` is only 16 bytes (two 8-byte `atomic<long>`s with no padding " +
+      "between them), so `a` and `b` almost always land in the *same* 64-byte cache line. " +
+      "Under the MESI(-like) cache-coherence protocol, a core must gain exclusive ownership " +
+      "of a cache line before writing to it. Even though thread 1 only ever touches `a` and " +
+      "thread 2 only ever touches `b`, every `fetch_add` on either field invalidates the " +
+      "*whole line* in the other core's cache, forcing a coherence transaction (RFO: read " +
+      "for ownership) before the next access can proceed. The two cores end up ping-ponging " +
+      "ownership of that one cache line back and forth on every single increment, even " +
+      "though there is no logical sharing of data at all. This is false sharing: correctness " +
+      "is untouched, but throughput can drop by an order of magnitude or more versus the " +
+      "same code with `a` and `b` on separate cache lines (e.g. via `alignas(64)` padding). " +
+      "This is a classic, extremely common performance bug in concurrent counter/statistics " +
+      "structures.",
+    references: [
+      "https://en.cppreference.com/w/cpp/atomic/atomic",
+      "https://en.wikipedia.org/wiki/False_sharing",
+    ],
+  },
+  {
+    id: "cpp-struct-padding-01",
+    category: "cpp",
+    difficulty: "medium",
+    title: "Two structs, same three members",
+    tags: ["alignment", "padding", "sizeof", "struct-layout"],
+    type: "trace",
+    prompt:
+      "On a typical x86-64 target (8-byte-aligned double, 4-byte-aligned int, " +
+      "no #pragma pack), what does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+
+struct A {
+    char c;    // (1)
+    double d;
+    int i;
+};
+
+struct B {
+    double d;  // (2)
+    int i;
+    char c;
+};
+
+int main() {
+    std::cout << sizeof(A) << " " << sizeof(B) << std::endl;
+}`,
+      highlightLines: [4, 10],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "13 13",
+        "16 16",
+        "24 24",
+        "24 16",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "C++ lays out members in declaration order and inserts padding so each member " +
+      "satisfies its own alignment (it may *not* reorder members; that would break " +
+      "compatibility with C and with `offsetof`/reinterpret patterns). In `A`: `char c` " +
+      "takes offset 0 (1 byte), but `double d` needs 8-byte alignment, so 7 padding bytes " +
+      "are inserted before it (offset 8..15); `int i` follows at offset 16..19 (naturally " +
+      "aligned since 16 is a multiple of 4); the whole struct's size must then be rounded " +
+      "up to a multiple of its strictest member alignment (8, from `double`), so 4 trailing " +
+      "padding bytes are added after `i`, giving `sizeof(A) == 1 + 7 + 8 + 4 + 4 == 24`. In " +
+      "`B`, putting the largest-alignment member first avoids the internal gap: `double d` " +
+      "at offset 0..7, `int i` at offset 8..11 (already aligned), `char c` at offset 12 (1 " +
+      "byte), and only 3 trailing padding bytes are needed to round the total up to a " +
+      "multiple of 8, giving `sizeof(B) == 8 + 4 + 1 + 3 == 16`. Same three members, same " +
+      "total 'useful' bytes (13), but reordering from worst-to-best alignment to " +
+      "best-to-worst alignment saves 8 bytes per instance here, a well-known technique for " +
+      "shrinking hot data structures and improving cache-line utilization at scale.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/object#Alignment",
+      "https://en.cppreference.com/w/c/language/struct#Padding_and_offsets",
+    ],
+  },
+  {
+    id: "cpp-ebo-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "Empty struct, base or member",
+    tags: ["ebo", "empty-base-optimization", "sizeof", "inheritance"],
+    type: "trace",
+    prompt:
+      "On a typical x86-64 target, what does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+
+struct Empty {};   // no members
+
+struct WithEmptyBase : Empty {   // (1) Empty inherited as a base class
+    int x;
+};
+
+struct WithEmptyMember {         // (2) Empty stored as an ordinary data member
+    Empty e;
+    int x;
+};
+
+int main() {
+    std::cout << sizeof(WithEmptyBase) << " " << sizeof(WithEmptyMember) << std::endl;
+}`,
+      highlightLines: [5, 9],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "4 4",
+        "8 8",
+        "5 8",
+        "4 8",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "`sizeof` of any complete object type must be at least 1, so a *standalone* `Empty` " +
+      "has `sizeof(Empty) == 1`. But the C++ standard explicitly permits (and every major " +
+      "compiler implements) the Empty Base Optimization (EBO): a base class subobject with " +
+      "no data members and no virtual functions can be laid out to take zero additional " +
+      "space, *as long as* it doesn't alias another subobject of the same type at the same " +
+      "address (the standard only requires distinct objects to have distinct addresses). " +
+      "`WithEmptyBase` therefore has the same layout as a plain `struct { int x; }`: just " +
+      "the 4 bytes for `x`, so `sizeof(WithEmptyBase) == 4`. EBO applies only to *base " +
+      "classes*, not to ordinary data members: a member subobject is a distinct object " +
+      "that still needs its own address and must occupy at least 1 byte, so `Empty e` in " +
+      "`WithEmptyMember` costs 1 byte, and then 3 bytes of padding are inserted before `x` " +
+      "to satisfy `int`'s 4-byte alignment, giving `sizeof(WithEmptyMember) == 1 + 3 + 4 == " +
+      "8`. This asymmetry is exactly why library authors (e.g. for a custom allocator or a " +
+      "comparator stored inside a container) deliberately inherit from an empty policy " +
+      "class instead of storing it as a member, when they want to avoid paying for it in " +
+      "`sizeof`.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/ebo",
+    ],
+  },
+  {
+    id: "cpp-unsigned-loop-underflow-01",
+    category: "cpp",
+    difficulty: "medium",
+    title: "Counting down with an unsigned index",
+    tags: ["size_t", "unsigned-integer", "underflow", "undefined-behavior", "loops"],
+    type: "trace",
+    prompt: "What happens when this program runs?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <vector>
+#include <iostream>
+
+int main() {
+    std::vector<int> v = {10, 20, 30};
+
+    for (std::size_t i = v.size() - 1; i >= 0; --i) {  // (1)
+        std::cout << v[i] << " ";
+    }
+}`,
+      highlightLines: [7],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Prints \"30 20 10 \" and stops cleanly once i reaches 0",
+        "Infinite loop, but i stays within [0, v.size()), so nothing out of bounds is read",
+        "Prints \"30 20 10 \", then indexes far out of bounds once i wraps to SIZE_MAX: undefined behavior",
+        "Compile error: comparing size_t to the signed literal 0 is ill-formed",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "`std::size_t` is an unsigned integer type, so for *every* value it can hold, `i >= 0` " +
+      "is trivially true, so the comparison can never terminate the loop (compilers with " +
+      "`-Wall`/`-Wextra` even warn: 'comparison of unsigned expression >= 0 is always " +
+      "true'). The loop correctly prints `30 20 10` while `i` is 2, 1, 0, but the *next* " +
+      "`--i` on `i == 0` doesn't produce -1: `size_t` has no negative values, so the " +
+      "result wraps around modulo 2^64 to `SIZE_MAX` (18446744073709551615 on a typical " +
+      "64-bit target). The loop condition is still true, so execution continues indexing " +
+      "`v[SIZE_MAX]`, `v[SIZE_MAX - 1]`, and so on, wildly out-of-bounds reads through " +
+      "`operator[]` (which does not bounds-check), which is undefined behavior. In practice " +
+      "this typically manifests as printing a long stream of garbage values as it walks " +
+      "backward through unrelated process memory, and eventually crashing with a " +
+      "segmentation fault once it reaches unmapped memory (verified: this program printed " +
+      "'30 20 10' followed by thousands of garbage integers before being killed). Note that " +
+      "this bug is even worse if `v` is empty: `v.size() - 1` underflows to `SIZE_MAX` " +
+      "*before the loop even starts*. The standard fix is to iterate with a signed type, " +
+      "use reverse iterators (`v.rbegin()`/`v.rend()`), or restructure as `for (size_t i = " +
+      "v.size(); i-- > 0; )`.",
+    references: [
+      "https://en.cppreference.com/w/cpp/types/size_t",
+      "https://en.cppreference.com/w/cpp/language/implicit_conversion#Integral_conversions",
+    ],
+  },
+  {
+    id: "cpp-pointer-past-end-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "One-past-the-end vs. two-past-the-end pointer arithmetic",
+    tags: ["pointer-arithmetic", "undefined-behavior", "arrays"],
+    type: "trace",
+    prompt:
+      "Which statement correctly describes the well-defined-ness of forming and using " +
+      "these pointers?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `int arr[4] = {10, 20, 30, 40};
+
+int* p_end   = arr + 4;   // (1) one-past-the-end
+int* p_past  = arr + 5;   // (2) two-past-the-end
+
+bool cmp  = (p_end == arr + 4);  // (3)
+int  bad1 = *p_end;              // (4)
+int  bad2 = *p_past;             // (5)`,
+      highlightLines: [3, 4, 6, 7, 8],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "All five lines are well-defined as long as nothing is written through the pointers",
+        "Only line 5 (*bad2) is undefined behavior; forming and dereferencing p_end is fine",
+        "Line 2 is already undefined behavior before any dereference, and lines 4 and 5 are too; only lines 1 and 3 are fine",
+        "Compile error: pointer arithmetic past the last element is rejected at compile time",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "The standard grants array pointer arithmetic a narrow special case: for an array of " +
+      "N elements, computing a pointer to one-past-the-end (`arr + N`, here `arr + 4`) is " +
+      "well-defined to *form*, and it may be *compared* against other pointers into the " +
+      "array (that's what makes `for (p = begin; p != end; ++p)` legal), but it may never " +
+      "be *dereferenced*. So line 1 and line 3 are fine, but line 4 (`*p_end`) is undefined " +
+      "behavior. Line 2 goes a step further: computing `arr + 5` (two past the end) is " +
+      "undefined behavior the moment the pointer arithmetic is performed, regardless of " +
+      "whether the result is ever used or dereferenced; the standard simply does not define " +
+      "the behavior of pointer arithmetic that produces an address further than one past " +
+      "the last element (or before the first element). Line 5 compounds this with an " +
+      "additional dereference of an already-UB pointer. This distinction (one-past-the-end " +
+      "is a first-class, well-defined 'sentinel' pointer value, but nothing beyond it is " +
+      "even safe to *compute*) is exactly why standard-library algorithms are built around " +
+      "`[begin, end)` half-open ranges and never form or expect an `end + 1` iterator.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/expressions#Pointer_arithmetic",
+      "https://eel.is/c++draft/expr.add",
+    ],
+  },
+  {
+    id: "cpp-strict-aliasing-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "Reading a float through an int*",
+    tags: ["strict-aliasing", "reinterpret_cast", "undefined-behavior", "optimization"],
+    type: "trace",
+    prompt:
+      "Compiled with optimizations enabled (e.g. -O2), what does this program most likely print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+
+int bumpAndRead(float* f, int* i) {
+    *i = 0;       // (1) write through int*
+    *f = 3.14f;   // (2) write through float* to the SAME address
+    return *i;    // (3) re-read through int*
+}
+
+int main() {
+    float value = 1.0f;
+    int* asInt = reinterpret_cast<int*>(&value);  // (4) unrelated-type alias
+    std::cout << bumpAndRead(&value, asInt) << std::endl;
+}`,
+      highlightLines: [4, 5, 6, 11],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "1078523331: *i observes the bit pattern of 3.14f, as guaranteed by the standard",
+        "Compile error: reinterpret_cast cannot convert between float* and int*",
+        "3: *i is truncated to the integer value of 3.14f",
+        "0: the store through f is assumed not to affect *i, so the return is constant-folded",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "The strict aliasing rule (`[basic.lval]`) says an object may only be accessed through " +
+      "a glvalue of its own type (or a handful of exceptions like `char`/`unsigned char`/" +
+      "`std::byte`). Here `value` has type `float`, but `asInt` is a `int*` obtained via " +
+      "`reinterpret_cast`. Accessing `value` through `*asInt` (i.e. through parameter `i`) " +
+      "is a strict-aliasing violation, and the *cast itself* is well-defined but *using* the " +
+      "resulting pointer to access the `float` object as an `int` is undefined behavior. The " +
+      "practical danger is exactly what strict aliasing exists to enable: the optimizer is " +
+      "allowed to assume `f` and `i` cannot point into the same storage, so it may reorder or " +
+      "eliminate loads/stores as if they were independent. In `bumpAndRead`, that license lets " +
+      "the compiler conclude the store `*f = 3.14f` cannot possibly change what `*i` reads, so " +
+      "it can constant-propagate the `0` written on line 1 straight through to the `return`, " +
+      "never re-reading memory at all. Verified directly: compiled at `-O0` (no such " +
+      "optimization applied) this program prints `1078523331`: the actual bit pattern of " +
+      "`3.14f` reinterpreted as `int`, matching a naive 'the pointers really do alias' mental " +
+      "model; compiled at `-O2`, it prints `0`; and rebuilding at `-O2 -fno-strict-aliasing` " +
+      "restores `1078523331`. Both outputs are 'correct' in the sense that undefined behavior " +
+      "permits any result; the point is that the program's meaning silently changes across " +
+      "optimization levels, which is precisely why `reinterpret_cast`-based type punning is " +
+      "a landmine in real numerical/bit-twiddling code (the classic historical example being " +
+      "Quake's fast inverse square root).",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/reinterpret_cast",
+      "https://en.cppreference.com/w/cpp/language/object#Strict_aliasing",
+    ],
+  },
+  {
+    id: "cpp-cache-line-padding-01",
+    category: "cpp",
+    difficulty: "medium",
+    title: "Four alignas(64) counters in a row",
+    tags: ["alignas", "cache-line", "false-sharing", "sizeof", "performance"],
+    type: "trace",
+    prompt: "On a typical x86-64 target with 64-byte cache lines, what does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <atomic>
+#include <iostream>
+
+struct alignas(64) PaddedCounter {   // (1) force cache-line alignment + size
+    std::atomic<long> value{0};
+};
+
+PaddedCounter counters[4];           // (2) each counter gets its own line
+
+int main() {
+    std::cout << sizeof(PaddedCounter) << " "
+              << sizeof(counters)     << " "
+              << (reinterpret_cast<char*>(&counters[1])
+                  - reinterpret_cast<char*>(&counters[0]))
+              << std::endl;
+}`,
+      highlightLines: [4, 8],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "8 32 8",
+        "64 64 0",
+        "Compile error: alignas cannot be combined with a class containing a std::atomic member",
+        "64 256 64",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "`alignas(64)` on `PaddedCounter` sets its *alignment requirement* to 64, and the " +
+      "language rule that every array element must satisfy that same alignment forces the " +
+      "compiler to round the type's *size* up to a multiple of 64 as well (otherwise " +
+      "`counters[1]` couldn't also start at a 64-byte boundary). `std::atomic<long>` " +
+      "contributes only 8 live bytes, so the remaining 56 bytes of each `PaddedCounter` are " +
+      "pure trailing padding: `sizeof(PaddedCounter) == 64` (verified by compilation). With " +
+      "`PaddedCounter counters[4]`, each element therefore occupies a full cache line and " +
+      "the whole array is `sizeof(counters) == 64 * 4 == 256` bytes, with consecutive " +
+      "elements exactly 64 bytes apart, confirmed by the pointer-difference computation, " +
+      "which prints `64`. The upshot: if four threads each hammer `counters[k].value` for a " +
+      "different `k`, no two threads' counters can ever land in the same cache line, " +
+      "eliminating the false-sharing / MESI-invalidation ping-pong that would occur if the " +
+      "four atomics were packed tightly (e.g. in a plain `std::atomic<long> counters[4]`, " +
+      "which would pack 8 counters per 64-byte line). The cost is real: 8x the memory " +
+      "footprint for this array, which is the classic space/throughput tradeoff of padding " +
+      "for cache-line isolation.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/alignas",
+      "https://en.cppreference.com/w/cpp/language/object#Alignment",
+    ],
+  },
+  {
+    id: "cpp-span-dangling-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "A std::span over a vector, followed by push_backs",
+    tags: ["span", "vector", "iterator-invalidation", "lifetime", "undefined-behavior"],
+    type: "trace",
+    prompt: "What happens when this program runs?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <vector>
+#include <span>
+#include <iostream>
+
+int main() {
+    std::vector<int> v = {1, 2, 3};
+    std::span<int> s(v);              // (1) view over v's current buffer
+
+    for (int i = 0; i < 20; ++i)
+        v.push_back(i + 10);          // (2) may trigger reallocation
+
+    std::cout << s[0] << std::endl;   // (3) read through s
+}`,
+      highlightLines: [7, 10, 12],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Prints 1: the span tracks v and stays valid across push_back",
+        "Compile error: std::span cannot be constructed directly from a std::vector",
+        "Undefined behavior: s still points at v's original, now-freed buffer",
+        "Prints 10: the span re-points itself at v's new buffer after reallocation",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "`std::span<int> s(v)` does exactly what `std::span` is documented to do: it stores a " +
+      "raw `(pointer, size)` pair pointing at `v`'s *current* contiguous buffer at " +
+      "construction time. It is a non-owning view with no relationship to `v` afterward; it " +
+      "does not observe or react to any subsequent mutation of `v`. `v` starts with capacity " +
+      "3 (holding `{1, 2, 3}`); the loop calls `push_back` 20 times, and once the element " +
+      "count exceeds the current capacity, `std::vector` must allocate a new, larger buffer, " +
+      "move/copy the existing elements into it, and free the old buffer, invalidating every " +
+      "pointer, reference, and iterator into the old storage. `s` still holds the address of " +
+      "the freed original buffer, so `s[0]` dereferences freed memory: undefined behavior. " +
+      "Verified directly: `v.capacity()` was 3 before the loop and 24 after (confirming " +
+      "reallocation occurred), and the program printed `4` for `s[0]`, neither `1` nor any " +
+      "value that would make sense from the current contents of `v`, just whatever garbage " +
+      "happened to occupy that freed memory. The exact same hazard applies to " +
+      "`std::string_view` over a `std::string` that gets reallocated (e.g. by `append` or " +
+      "`operator+=` exceeding SSO/capacity), and to any span/view taken over a container " +
+      "that is mutated in a way that can invalidate its storage.",
+    references: [
+      "https://en.cppreference.com/w/cpp/container/span",
+      "https://en.cppreference.com/w/cpp/container/vector#Iterator_invalidation",
+    ],
+  },
+  {
+    id: "cpp-memory-order-relaxed-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "Two threads, one relaxed counter",
+    tags: ["atomics", "memory-order", "concurrency", "c++11"],
+    type: "trace",
+    prompt:
+      "Two threads each run this worker function 100,000 iterations, incrementing a " +
+      "shared std::atomic<int> with memory_order_relaxed. What does main print after " +
+      "both threads join?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <atomic>
+#include <thread>
+#include <iostream>
+
+std::atomic<int> counter{0};
+
+void worker() {
+    for (int i = 0; i < 100000; ++i) {
+        counter.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+int main() {
+    std::thread t1(worker);
+    std::thread t2(worker);
+    t1.join();
+    t2.join();
+    std::cout << counter.load(std::memory_order_relaxed) << std::endl;
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Always exactly 200000",
+        "Some value less than 200000: increments can be lost",
+        "Undefined behavior: relaxed is not enough of a guarantee for a shared counter",
+        "Compile error: fetch_add requires at least memory_order_acquire",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "A very common misconception is that `memory_order_relaxed` weakens the atomic " +
+      "operation itself, as if fetch_add could 'lose' an increment the way an " +
+      "unsynchronized `counter++` on a plain `int` can. It doesn't: every " +
+      "`std::atomic<T>` read-modify-write is required to be atomic no matter which " +
+      "memory order tag you pass; the tag never changes *what* the operation does " +
+      "to the atomic object, only what ordering/visibility guarantees accompany it " +
+      "for *other* memory operations around it. 200,000 total increments across two " +
+      "threads is always exactly 200,000; there is no lost-update window. What " +
+      "relaxed genuinely does NOT give you is a synchronizes-with relationship: " +
+      "there is no happens-before edge established between one thread's fetch_add " +
+      "and another thread's later observation of it, so relaxed atomics must not be " +
+      "used as a proxy for 'and therefore my other, non-atomic writes sequenced " +
+      "before this one are now visible to the other thread'; that inference " +
+      "requires acquire/release (or seq_cst), not relaxed. Relaxed is appropriate " +
+      "precisely when you only need the atomicity of the counter value itself (e.g. " +
+      "statistics counters) and nothing else in the program depends on its value to " +
+      "infer visibility of unrelated memory.",
+    references: [
+      "https://en.cppreference.com/w/cpp/atomic/memory_order",
+      "https://en.cppreference.com/w/cpp/atomic/atomic/fetch_add",
+    ],
+  },
+  {
+    id: "cpp-double-checked-locking-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "Double-checked locking singleton",
+    tags: ["concurrency", "singleton", "data-race", "undefined-behavior"],
+    type: "trace",
+    prompt:
+      "This is the classic 'double-checked locking' singleton, written with a plain " +
+      "(non-atomic) pointer. Thread A calls instance() first and is in the middle of " +
+      "constructing the Singleton (inside the locked region) when Thread B calls " +
+      "instance() concurrently and evaluates the first, unlocked `if (!instance_)`. " +
+      "Is this program correct?",
+    snippet: {
+      language: "cpp",
+      filename: "singleton.cpp",
+      code: `#include <mutex>
+
+class Singleton {
+public:
+    static Singleton* instance() {
+        if (!instance_) {                     // (1) unlocked check
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (!instance_) {                 // (2) locked check
+                instance_ = new Singleton();  // (3) construct + publish
+            }
+        }
+        return instance_;
+    }
+
+private:
+    Singleton() = default;
+    static Singleton* instance_;
+    static std::mutex mutex_;
+};
+
+Singleton* Singleton::instance_ = nullptr;
+std::mutex Singleton::mutex_;`,
+      highlightLines: [6, 9],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "It's correct: instance_ is assigned only once, inside the lock",
+        "It's a data race and undefined behavior: Thread B can see a non-null " +
+          "pointer to a partially-constructed Singleton",
+        "It's a compile error: instance_ cannot be read outside the lock_guard's scope",
+        "It's correct on every real platform: new returns only once construction " +
+          "has fully completed",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "Within Thread A, `new Singleton()` is sequenced so the constructor runs " +
+      "before the resulting pointer is assigned to instance_; that ordering is " +
+      "guaranteed *within Thread A*. The problem is that sequenced-before is a " +
+      "single-thread guarantee; nothing here creates a synchronizes-with edge to " +
+      "Thread B. The unlocked read at (1) and the write at (3) access the same " +
+      "non-atomic object from different threads with no synchronization between " +
+      "them, which is a data race, and a data race is undefined behavior by the " +
+      "language standard, full stop, independent of what any particular compiler " +
+      "or CPU does. Concretely, that UB manifests as: the compiler is free to " +
+      "reorder or otherwise optimize as if no other thread touches instance_ " +
+      "(it may not, but nothing forbids it either), and even with no compiler " +
+      "reordering at all, weakly-ordered hardware can make the write to " +
+      "instance_ globally visible to Thread B before the constructor's writes to " +
+      "the object it points to are visible on Thread B's core, since nothing " +
+      "establishes a memory barrier between them. Thread B then sees a non-null, " +
+      "not-fully-constructed Singleton*. The standard fix is to make instance_ a " +
+      "std::atomic<Singleton*>, storing it with memory_order_release inside the " +
+      "lock and loading it with memory_order_acquire at both checks (or, simpler, " +
+      "use a function-local static, which C++11 guarantees is initialized exactly " +
+      "once in a thread-safe way).",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/storage_duration#Static_local_variables",
+      "https://en.cppreference.com/w/cpp/atomic/memory_order",
+    ],
+  },
+  {
+    id: "cpp-cas-weak-spurious-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "Choosing between the weak and strong CAS",
+    tags: ["atomics", "compare-exchange", "lock-free", "concurrency"],
+    type: "trace",
+    prompt:
+      "push() below uses compare_exchange_weak inside a while loop to publish a new " +
+      "head node onto a lock-free stack. Why is compare_exchange_weak preferred here " +
+      "over compare_exchange_strong, and what would go wrong if the exact same call " +
+      "were instead used once, outside any loop, inside a plain `if`?",
+    snippet: {
+      language: "cpp",
+      filename: "stack.cpp",
+      code: `#include <atomic>
+
+struct Node { int value; Node* next; };
+std::atomic<Node*> head{nullptr};
+
+void push(Node* n) {
+    n->next = head.load(std::memory_order_relaxed);
+    while (!head.compare_exchange_weak(
+               n->next, n,
+               std::memory_order_release,
+               std::memory_order_relaxed)) {
+        // on failure, n->next has been updated to the current head; retry
+    }
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "There is no behavioral difference; weak vs. strong is a naming convention " +
+          "and both compile to identical code everywhere",
+        "compare_exchange_weak is only legal inside a loop condition; using it in a " +
+          "bare if fails to compile",
+        "compare_exchange_strong is the one meant for loops, since it retries " +
+          "internally; weak is meant to be called exactly once",
+        "compare_exchange_weak may fail spuriously even when the comparison holds, " +
+          "which a retry loop absorbs but a bare if misreports as a real failure",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "On architectures without a native single-instruction CAS (notably ARM/" +
+      "AArch64's load-linked/store-conditional model), compare_exchange_strong is " +
+      "typically implemented as a small internal retry loop around the weak " +
+      "primitive so it can offer the guarantee that it only returns false when the " +
+      "comparison genuinely failed. compare_exchange_weak skips that internal " +
+      "loop and is allowed to report failure even when *object == expected really " +
+      "did hold, because the LL/SC pair can be invalidated by things unrelated to " +
+      "the value itself (a context switch, another memory access to the same " +
+      "cache line, etc.). When the call site is already inside a retry loop (as " +
+      "in any correct CAS-based lock-free algorithm), a spurious failure just means " +
+      "one more harmless trip around the loop with (for a failed compare_exchange) " +
+      "n->next freshly reloaded with the current head, and you skip the redundant " +
+      "internal retry loop that _strong would otherwise perform, so weak is " +
+      "strictly cheaper in this position. Outside a loop, though, compare_exchange " +
+      "is being asked to answer a single yes/no question ('did the exchange happen " +
+      "right now'), and _weak is explicitly permitted to answer 'no' incorrectly; " +
+      "using it there silently converts a possibly-successful operation into a " +
+      "reported failure with no way to tell the difference from a real ABA/" +
+      "concurrent-modification failure.",
+    references: [
+      "https://en.cppreference.com/w/cpp/atomic/atomic/compare_exchange",
+    ],
+  },
+  {
+    id: "cpp-aba-problem-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "Preempted in the middle of a pop",
+    tags: ["atomics", "compare-exchange", "lock-free", "aba", "concurrency"],
+    type: "trace",
+    prompt:
+      "pop() and push() implement a lock-free stack using CAS on a raw Node* head. " +
+      "Consider this interleaving: Thread 1 calls pop(), reads old_head = A (with " +
+      "A->next == B), then is preempted right before its compare_exchange_weak " +
+      "runs. Meanwhile Thread 2 fully executes: pop() twice (removing A, then B, " +
+      "so head becomes nullptr), frees node A, allocates a brand-new node that the " +
+      "allocator happens to place at A's old address (call it A again), and pushes " +
+      "it, followed by pushing some other node C, then pushing the original A " +
+      "address again so that head == A once more (but now A->next == C, not B). " +
+      "Thread 1 now resumes and executes its compare_exchange_weak(old_head, " +
+      "old_head->next, ...) where old_head is still the address A and old_head-" +
+      ">next is still the stale value B. What happens, and what is this failure " +
+      "mode called?",
+    snippet: {
+      language: "cpp",
+      filename: "stack.cpp",
+      code: `#include <atomic>
+
+struct Node { int value; Node* next; };
+std::atomic<Node*> head{nullptr};
+
+Node* pop() {
+    Node* old_head = head.load(std::memory_order_acquire);
+    while (old_head &&
+           !head.compare_exchange_weak(
+               old_head, old_head->next,
+               std::memory_order_acq_rel,
+               std::memory_order_acquire)) {
+        // old_head reloaded with the current head on failure; retry
+    }
+    return old_head;
+}
+
+void push(Node* n) {
+    n->next = head.load(std::memory_order_relaxed);
+    while (!head.compare_exchange_weak(
+               n->next, n,
+               std::memory_order_release,
+               std::memory_order_relaxed)) {}
+}`,
+      highlightLines: [9, 10, 11, 12],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The ABA problem: the CAS succeeds on the unchanged address and sets head " +
+          "to a stale next pointer, corrupting the stack",
+        "Priority inversion: Thread 1, holding a resource Thread 2 needs, is " +
+          "starved because it runs at lower scheduling priority",
+        "False sharing: head and the Node fields live on the same cache line, so " +
+          "the two threads make the program slow but not incorrect",
+        "Livelock: both threads keep retrying their compare_exchange_weak calls " +
+          "forever without either one making progress",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "This is the textbook ABA problem: head's value went A -> B -> nullptr -> " +
+      "A' (a new object, coincidentally reusing address A) -> ... -> A (the same " +
+      "address reused again after being pushed back). Thread 1's CAS only checks " +
+      "'does head currently equal the address I remember (A)?'; it has no way to " +
+      "detect that the object at address A is not the same logical node it read " +
+      "before, and that the intervening B has since been popped and possibly " +
+      "freed. The compare succeeds, and Thread 1 sets head to old_head->next, " +
+      "which it computed from the *original* A node it read (pointing at B), but " +
+      "the current A node's real next is C, and B may already be freed memory. " +
+      "The stack's head pointer is now corrupted, pointing at a node (B) that has " +
+      "been evicted from the structure (or worse, deallocated), which is a much " +
+      "more dangerous outcome than either priority inversion or false sharing " +
+      "(neither of which involves CAS producing a wrong-but-'successful' result) " +
+      "or livelock (no thread is stuck retrying here; the CAS deceptively " +
+      "succeeds on the first try). Standard mitigations include tagging the " +
+      "pointer with a monotonically increasing counter packed alongside it " +
+      "(double-width CAS / std::atomic<TaggedPtr>), hazard pointers, or epoch-" +
+      "based reclamation, all of which make 'the same address came back' " +
+      "distinguishable from 'the same logical value is still there'.",
+    references: [
+      "https://en.cppreference.com/w/cpp/atomic/atomic/compare_exchange",
+    ],
+  },
+  {
+    id: "cpp-volatile-not-atomic-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "A volatile flag between two threads",
+    tags: ["volatile", "concurrency", "data-race", "undefined-behavior"],
+    type: "trace",
+    prompt:
+      "producer() writes data then sets flag; consumer() spins on flag before " +
+      "(implicitly) reading data. flag is declared volatile bool. Is this program " +
+      "correct C++, and is volatile doing what the programmer probably intended?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <thread>
+
+volatile bool flag = false;
+int data = 0;
+
+void producer() {
+    data = 42;
+    flag = true;
+}
+
+void consumer() {
+    while (!flag) {
+        // spin until flag is set
+    }
+    // ... use data here, expecting to see 42
+}
+
+int main() {
+    std::thread p(producer);
+    std::thread c(consumer);
+    p.join();
+    c.join();
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Correct: volatile forces every access to go to memory and stops the " +
+          "compiler caching flag in a register, which is the signaling needed here",
+        "A data race and undefined behavior: volatile provides no atomicity and " +
+          "establishes no happens-before relationship across threads",
+        "Incorrect only because flag should also be declared static; with static " +
+          "added, volatile alone is sufficient here",
+        "Correct on x86 but undefined behavior on weakly-ordered architectures " +
+          "like ARM: the standard's guarantee for volatile is platform-dependent",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "C++'s volatile and Java's volatile are unrelated despite the shared " +
+      "keyword. C++ volatile guarantees only that accesses to the volatile object " +
+      "are treated as observable side effects that the compiler must not remove, " +
+      "merge, or reorder past other volatile accesses, which is the contract signal " +
+      "handlers and memory-mapped I/O registers need (the hardware/OS may change " +
+      "the value 'behind the compiler's back', so every read must actually hit " +
+      "memory). It says nothing about atomicity (a multi-byte volatile object can " +
+      "still tear) and nothing about visibility or ordering across *threads*; no " +
+      "synchronizes-with edge is created, so there's no happens-before " +
+      "relationship between producer's writes and consumer's reads. That makes " +
+      "both `flag` (a data race on the flag itself) and, more insidiously, `data` " +
+      "(read with no synchronization at all, not even volatile) undefined " +
+      "behavior. In practice this can 'happen to work' on x86 with an unoptimized " +
+      "build purely by luck of the codegen, which is precisely what makes the bug " +
+      "dangerous, but choice D's framing is still wrong: the standard's " +
+      "guarantee (or lack thereof) does not vary by platform; only how visibly the " +
+      "resulting UB manifests does. The correct fix is std::atomic<bool> with " +
+      "release/acquire ordering on flag (see the companion acquire/release " +
+      "question in this set for why that pairing does work).",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/cv",
+      "https://en.cppreference.com/w/cpp/atomic/memory_order",
+    ],
+  },
+  {
+    id: "cpp-thread-local-01",
+    category: "cpp",
+    difficulty: "medium",
+    title: "One counter, three different callers",
+    tags: ["thread_local", "concurrency", "storage-duration"],
+    type: "trace",
+    prompt:
+      "counter is thread_local. t1 calls increment_and_print(3), t2 calls " +
+      "increment_and_print(5) concurrently, then after both are joined, main " +
+      "itself calls increment_and_print(1). What values get printed for counter " +
+      "in the three calls (t1's line, t2's line, and main's line)? (The two " +
+      "threads' lines may print in either relative order, but focus on the " +
+      "*values*.)",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+#include <thread>
+#include <mutex>
+
+thread_local int counter = 0;
+std::mutex io_mutex;
+
+void increment_and_print(int times) {
+    for (int i = 0; i < times; ++i) {
+        ++counter;
+    }
+    std::lock_guard<std::mutex> lock(io_mutex);
+    std::cout << "thread " << std::this_thread::get_id()
+               << ": " << counter << std::endl;
+}
+
+int main() {
+    std::thread t1(increment_and_print, 3);
+    std::thread t2(increment_and_print, 5);
+    t1.join();
+    t2.join();
+    increment_and_print(1);
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "3, 8, and 9: counter is really one shared global underneath",
+        "Compile error: a thread_local cannot be read from a function called on " +
+          "more than one thread",
+        "0, 0, and 0: the initializer is re-run on every access to counter",
+        "3, 5, and 1: each thread gets its own zero-initialized instance of counter",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "thread_local gives each thread of execution its own separate instance of " +
+      "the variable, with its own storage duration tied to that thread's lifetime. " +
+      "The initializer (`= 0` here) runs independently for each thread the first " +
+      "time that thread touches the variable (for a function-local thread_local " +
+      "it would be on first control flow through the declaration; for this " +
+      "namespace-scope thread_local it's initialized before first use in each " +
+      "thread). t1's three increments only ever touch t1's copy (starting from " +
+      "its own zero), producing 3; t2's five increments only touch t2's separate " +
+      "copy, producing 5; main's own copy of counter was never touched before its " +
+      "own call, so incrementing it once produces 1. Nothing here is shared, so " +
+      "there's no synchronization hazard on counter itself either (the mutex in " +
+      "this example is only protecting std::cout, which genuinely is shared). The " +
+      "only nondeterminism in this program is the relative order the two lines " +
+      "print in, since t1 and t2 run concurrently; the numeric values printed " +
+      "are fully deterministic.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/storage_duration#Thread_storage_duration",
+    ],
+  },
+  {
+    id: "cpp-atomic-lock-free-01",
+    category: "cpp",
+    difficulty: "medium",
+    title: "std::atomic over a 12-byte struct",
+    tags: ["atomics", "is_lock_free", "concurrency"],
+    type: "trace",
+    prompt:
+      "MyStruct is a plain 12-byte trivially-copyable struct (three ints, no " +
+      "padding tricks). Is std::atomic<MyStruct> guaranteed to be lock-free, and " +
+      "is value.load() still a correct, race-free way to read it if " +
+      "is_lock_free() returns false?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <atomic>
+#include <cstdio>
+
+struct MyStruct {
+    int a;
+    int b;
+    int c;
+};  // sizeof(MyStruct) == 12, not a power of two
+
+int main() {
+    std::atomic<MyStruct> value{MyStruct{1, 2, 3}};
+    std::printf("lock_free: %d\\n", value.is_lock_free());
+    MyStruct read = value.load();
+    std::printf("%d %d %d\\n", read.a, read.b, read.c);
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Yes, always: every std::atomic specialization is lock-free by definition",
+        "Not guaranteed: a 12-byte type may fall back to an internal lock, and " +
+          "load() is still correct and atomic either way",
+        "Compile error: std::atomic<T> is only valid for T of size 1, 2, 4, 8, " +
+          "or 16 bytes",
+        "Undefined behavior: instantiating std::atomic on a type that has no " +
+          "native atomic width is UB",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "std::atomic<T> is well-formed for any trivially copyable T (MyStruct " +
+      "qualifies), and it always gives you correct atomic semantics for load, " +
+      "store, and (where applicable) compare_exchange; that correctness " +
+      "guarantee is unconditional. What is *not* guaranteed is that the " +
+      "implementation can provide it lock-free: many platforms only have native " +
+      "atomic RMW/CAS instructions at specific widths, and a 12-byte object " +
+      "doesn't match any of them, so the standard library commonly implements " +
+      "std::atomic<MyStruct> using an internal lock (a hidden mutex or " +
+      "equivalent) rather than a hardware atomic instruction. is_lock_free() is " +
+      "a runtime query (because it can legitimately vary by target, e.g. whether " +
+      "double-width CAS is available) that tells you which strategy your build " +
+      "actually got; is_always_lock_free is the compile-time equivalent when the " +
+      "answer is known unconditionally. The key exam-relevant takeaway: 'atomic' " +
+      "in C++ is a correctness/API guarantee, not a performance guarantee: never " +
+      "assume std::atomic<T> is wait-free or even lock-free for an arbitrary T " +
+      "without checking, especially for struct types.",
+    references: [
+      "https://en.cppreference.com/w/cpp/atomic/atomic/is_lock_free",
+      "https://en.cppreference.com/w/cpp/atomic/atomic",
+    ],
+  },
+  {
+    id: "cpp-acquire-release-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "Handing off data with a release and an acquire",
+    tags: ["atomics", "memory-order", "acquire-release", "concurrency"],
+    type: "trace",
+    prompt:
+      "producer() writes a plain (non-atomic) int data, then does a release-store " +
+      "to std::atomic<bool> ready. consumer() spin-waits with an acquire-load on " +
+      "ready. Once consumer observes ready == true, is it guaranteed to see " +
+      "data == 42, with no UB? And what would break if both the store and the " +
+      "load instead used memory_order_relaxed?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <atomic>
+#include <thread>
+
+std::atomic<bool> ready{false};
+int data = 0;
+
+void producer() {
+    data = 42;                                     // plain, non-atomic write
+    ready.store(true, std::memory_order_release);
+}
+
+void consumer() {
+    while (!ready.load(std::memory_order_acquire)) {
+        // spin
+    }
+    // is data guaranteed to be 42 here?
+}`,
+      highlightLines: [8, 13],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Yes: the release/acquire pair creates a happens-before edge, so data == " +
+          "42 is guaranteed; with relaxed on both sides that edge is gone and " +
+          "reading data becomes a data race",
+        "Yes with acquire/release, and it would stay correct with relaxed/relaxed, " +
+          "since memory_order only orders the atomic variable itself",
+        "No, not guaranteed even as written: data is not atomic, so accessing it " +
+          "from either thread is undefined behavior regardless",
+        "No: acquire/release can only order operations on ready itself, so data " +
+          "still needs a mutex around it",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "This is the canonical, correct use of acquire/release: it is precisely " +
+      "the mechanism the standard provides for safely publishing plain data " +
+      "across threads without a mutex. The rule ([atomics.order]) is that a " +
+      "release operation on an atomic object M, if it is read by an acquire " +
+      "operation on M that observes the value written (or a value later in the " +
+      "release sequence), synchronizes-with that acquire operation. Combined " +
+      "with ordinary sequenced-before within each thread (data = 42 is sequenced " +
+      "before the release-store; the acquire-load is sequenced before the use of " +
+      "data), this chains into a happens-before relationship from the write of " +
+      "data to the read of data, which is exactly what's required to make an " +
+      "access to a non-atomic object race-free across threads. So option A is " +
+      "correct, and data == 42 is guaranteed the moment consumer observes " +
+      "ready == true. Swap both operations to memory_order_relaxed and that " +
+      "chain breaks at the first link: relaxed operations on ready are still " +
+      "atomic (no torn reads of the bool) but no longer synchronize-with anything, " +
+      "so there is no happens-before edge forcing data's write to become visible " +
+      "before ready's write does, on either the compiler or hardware side. The " +
+      "consumer could legally observe ready == true while data is still 0 (or, " +
+      "on a real weakly-ordered CPU, actually would on occasion), and because " +
+      "that read of data races with producer's write with no synchronization at " +
+      "all, it is undefined behavior, not merely 'reads a stale but valid value'. " +
+      "Option D is a common but incorrect belief: acquire/release's entire point " +
+      "is to order *surrounding* non-atomic memory operations, not just the " +
+      "atomic variable itself.",
+    references: [
+      "https://en.cppreference.com/w/cpp/atomic/memory_order",
+      "https://en.cppreference.com/w/cpp/atomic/atomic/store",
+    ],
+  },
+  {
+    id: "cpp-data-race-ub-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "A spin loop with no locks and no atomics",
+    tags: ["data-race", "undefined-behavior", "concurrency", "optimization"],
+    type: "trace",
+    prompt:
+      "worker() spins on a plain (non-atomic, non-volatile) bool, incrementing a " +
+      "plain long long counter, until main sets stop = true from a different " +
+      "thread with no synchronization at all. Compiled with optimizations (-O2), " +
+      "does the worker thread reliably observe the update and terminate its loop?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <thread>
+
+bool stop = false;
+long long counter = 0;
+
+void worker() {
+    while (!stop) {
+        ++counter;
+    }
+}
+
+int main() {
+    std::thread t(worker);
+    // ... some time later, from main, with no synchronization whatsoever:
+    stop = true;
+    t.join();
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Not necessarily: this is a data race and undefined behavior, and the " +
+          "optimizer may hoist the read of stop out of the loop entirely",
+        "Yes: plain bool and int accesses are single machine instructions on " +
+          "mainstream hardware, so the update shows up almost immediately",
+        "Yes, but only because bool is exactly 1 byte, and 1-byte objects are " +
+          "always read and written atomically",
+        "No: the program fails to compile, since worker reads a variable it " +
+          "never captures",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "The recurring theme across this whole topic cluster: a data race in C++ " +
+      "is undefined behavior by definition ([intro.races]), and UB is not " +
+      "limited to 'torn values' or other narrowly-hardware-flavored corruption: " +
+      "the standard permits the implementation to do anything, including " +
+      "optimizations that are perfectly sound *under the no-data-races " +
+      "assumption* but produce results a naive reading of the source would never " +
+      "predict. Here, since stop is never written to inside worker() (from the " +
+      "compiler's perspective, analyzing that one thread of execution in " +
+      "isolation, as the abstract machine permits it to), and the language " +
+      "guarantees no other thread can race on it without that being UB (which the " +
+      "compiler is entitled to assume doesn't happen), the compiler is licensed " +
+      "to treat `stop` as invariant across the loop body and cache its value in a " +
+      "register once, never reloading it from memory again, an entirely legal " +
+      "transformation of `while (!stop) ++counter;` into `if (!stop) { while " +
+      "(true) ++counter; }`. Main's write to stop from another thread never gets " +
+      "observed, and worker spins forever. This is not a theoretical curiosity: " +
+      "it is a well-documented real-world footgun (this exact 'while(!flag) spin " +
+      "loop with a plain bool' pattern has caused genuine infinite-loop bugs at " +
+      "-O2/-O3 with real compilers) that motivates why std::atomic<bool> (or at " +
+      "minimum, historically, volatile as an ad hoc workaround, which has its own " +
+      "problems; see the companion volatile question) exists. The count itself " +
+      "not being torn (options B/C reasoning) misses the point entirely: the " +
+      "danger here isn't a corrupted value, it's the compiler eliminating the " +
+      "re-read altogether.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/memory_model#Threads_and_data_races",
+      "https://en.cppreference.com/w/cpp/atomic/atomic",
+    ],
+  },
+  {
+    id: "cpp-float-associativity-01",
+    category: "cpp",
+    difficulty: "medium",
+    title: "Adding 0.1, 0.2, and 0.3 in two different orders",
+    tags: ["floating-point", "ieee-754", "numerics"],
+    type: "trace",
+    prompt: "What does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <cstdio>
+
+int main() {
+    double a = 0.1, b = 0.2, c = 0.3;
+    double left = (a + b) + c;
+    double right = a + (b + c);
+    printf("%.17g\\n", left);
+    printf("%.17g\\n", right);
+    printf("%s\\n", (left == right) ? "equal" : "not equal");
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "0.59999999999999998\\n0.59999999999999998\\nequal",
+        "0.60000000000000009\\n0.60000000000000009\\nequal",
+        "Compile error: floating-point comparison with == requires an explicit epsilon",
+        "0.60000000000000009\\n0.59999999999999998\\nnot equal",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "Real (base-2, finite-precision) floating-point addition is not associative: each `+` " +
+      "rounds its result to the nearest representable `double`, and *which* intermediate " +
+      "value gets rounded depends on evaluation order. `0.1` and `0.2` are themselves not " +
+      "exactly representable in binary, and `(0.1 + 0.2)` rounds to a value slightly above " +
+      "the true sum; adding `0.3` to that already-rounded value produces " +
+      "`0.60000000000000009` (printed with `%.17g` to show the full precision). Evaluating " +
+      "`0.2 + 0.3` first rounds to a value that, when `0.1` is added, lands exactly on " +
+      "`0.59999999999999998`, the closest `double` to `0.6`, but a *different* closest " +
+      "double than the other grouping produced. The two results differ in their last bit, so " +
+      "`left == right` is `false`. This is precisely why associativity cannot be assumed for " +
+      "`double`/`float` arithmetic, and why compilers must not reorder floating-point " +
+      "additions under strict IEEE 754 semantics (`-ffast-math` explicitly opts out of this " +
+      "guarantee).",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/operator_arithmetic",
+      "https://en.wikipedia.org/wiki/IEEE_754",
+    ],
+  },
+  {
+    id: "cpp-nan-comparison-01",
+    category: "cpp",
+    difficulty: "medium",
+    title: "Four comparisons involving NaN",
+    tags: ["floating-point", "ieee-754", "nan", "numerics"],
+    type: "trace",
+    prompt: "What does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <cstdio>
+#include <limits>
+
+int main() {
+    double nan = std::numeric_limits<double>::quiet_NaN();
+    printf("%s\\n", (nan == nan) ? "true" : "false");
+    printf("%s\\n", (nan != nan) ? "true" : "false");
+    printf("%s\\n", (nan < 1.0) ? "true" : "false");
+    printf("%s\\n", (nan > 1.0) ? "true" : "false");
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "true\\nfalse\\nfalse\\nfalse",
+        "false\\ntrue\\nfalse\\nfalse",
+        "false\\nfalse\\nfalse\\nfalse",
+        "Compile error: NaN cannot be compared with relational operators",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "IEEE 754 defines every ordered comparison (`==`, `<`, `<=`, `>`, `>=`) involving a NaN " +
+      "operand to be `false`, including `nan == nan`: NaN compares unequal to *everything*, " +
+      "itself included. `!=` is the negation of `==`, so it is the one comparison here that " +
+      "yields `true`: `nan != nan` holds precisely because `nan == nan` does not. `nan < 1.0` " +
+      "and `nan > 1.0` are both `false` because NaN is unordered with respect to every real " +
+      "number: neither less-than nor greater-than holds. That is why `x != x` is a " +
+      "common (if obscure) idiom for detecting NaN before `std::isnan` became the preferred, " +
+      "self-documenting way to do it.",
+    references: [
+      "https://en.cppreference.com/w/cpp/numeric/math/nan",
+      "https://en.cppreference.com/w/cpp/numeric/math/isnan",
+    ],
+  },
+  {
+    id: "cpp-integer-division-01",
+    category: "cpp",
+    difficulty: "easy",
+    title: "Integer division and modulo with a negative operand",
+    tags: ["integers", "division", "modulo", "undefined-behavior"],
+    type: "trace",
+    prompt: "What does this program print, under C++11 and later?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <cstdio>
+
+int main() {
+    int q = -7 / 2;
+    int r = -7 % 2;
+    printf("%d\\n", q);
+    printf("%d\\n", r);
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "-3\\n-1",
+        "-4\\n1",
+        "-3\\n1",
+        "-4\\n-1",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "Since C++11 ([expr.mul]p4), integer division is defined to truncate *toward zero* " +
+      "(not floor toward negative infinity), and `%` is defined so that `(a/b)*b + a%b == a` " +
+      "holds exactly, meaning the result of `%` always takes the sign of the dividend `a` " +
+      "(or is zero). `-7 / 2` mathematically is `-3.5`; truncating toward zero rounds that " +
+      "*up* to `-3` (not down to `-4`, which is what floor division would give). Then " +
+      "`-7 % 2` is forced to satisfy `(-3)*2 + r == -7`, i.e. `r == -1`. Before C++11 this " +
+      "rounding direction was implementation-defined (most platforms already truncated " +
+      "toward zero, matching hardware `idiv`, but it wasn't guaranteed by the standard); " +
+      "C++11 locked in truncation-toward-zero as the only conforming behavior. This differs " +
+      "from Python's `//` and `%`, which floor instead, a frequent source of off-by-one " +
+      "bugs when porting numeric code between the two languages.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/operator_arithmetic",
+    ],
+  },
+  {
+    id: "cpp-consteval-01",
+    category: "cpp",
+    difficulty: "medium",
+    title: "constexpr and consteval called with a non-const local",
+    tags: ["consteval", "constexpr", "c++20", "compile-time"],
+    type: "trace",
+    prompt: "What happens when this program is compiled?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `consteval int squareConsteval(int x) {
+    return x * x;
+}
+
+constexpr int squareConstexpr(int x) {
+    return x * x;
+}
+
+int main() {
+    int runtimeVal = 5;
+
+    int a = squareConstexpr(runtimeVal);   // (1)
+    int b = squareConsteval(runtimeVal);   // (2)
+
+    return a + b;
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Compiles fine: both (1) and (2) fall back to ordinary runtime evaluation",
+        "Compile error at (1): squareConstexpr must be evaluated at compile time",
+        "Compile error at (2): squareConsteval(runtimeVal) is not a constant expression",
+        "Compile error at both (1) and (2): neither runtimeVal nor its uses can appear in a constexpr/consteval context",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "`constexpr` on a function only means the function is *permitted* to run at compile " +
+      "time when its arguments happen to be constant expressions; when they aren't (as with " +
+      "`runtimeVal`, an ordinary non-const local variable), the compiler silently falls back " +
+      "to a normal runtime call; line (1) compiles and runs exactly like a plain function. " +
+      "`consteval` (C++20, [dcl.constexpr]) is stricter: it declares an *immediate function*, " +
+      "which the standard requires to produce a constant expression for every single " +
+      "invocation, with no runtime fallback permitted. Since `runtimeVal` is not usable in a " +
+      "constant expression, line (2)'s call `squareConsteval(runtimeVal)` cannot be evaluated " +
+      "at compile time, and the standard mandates this be a hard compile error rather than " +
+      "silently degrading to a runtime call. Calling `squareConsteval` with a genuine " +
+      "constant, e.g. `squareConsteval(10)`, would compile without issue. `consteval` exists " +
+      "precisely for cases (like reflection helpers or compile-time-only APIs) where a " +
+      "runtime fallback would be a correctness bug rather than a convenience.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/consteval",
+      "https://en.cppreference.com/w/cpp/language/constexpr",
+    ],
+  },
+  {
+    id: "cpp-decltype-auto-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "auto vs decltype(auto) in return-type deduction",
+    tags: ["decltype", "auto", "return-type-deduction", "references"],
+    type: "trace",
+    prompt: "What does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+#include <vector>
+
+class Matrix {
+    std::vector<int> data{1, 2, 3};
+public:
+    auto get(size_t i) { return data[i]; }             // (1) auto
+    decltype(auto) getRef(size_t i) { return data[i]; } // (2) decltype(auto)
+};
+
+int main() {
+    Matrix m;
+
+    m.getRef(0) = 100;                 // modify through (2)
+    std::cout << m.getRef(0) << "\\n";
+
+    auto copy = m.get(0);              // read through (1)
+    copy = 999;                        // modify the local copy only
+    std::cout << m.get(0) << "\\n";
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "100\\n999",
+        "100\\n100",
+        "1\\n1",
+        "Compile error: get(0) and getRef(0) have conflicting return types for the same expression data[i]",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "`data[i]` calls `std::vector<int>::operator[]`, whose declared return type is `int&`. " +
+      "With plain `auto` as the return type, deduction works like template argument " +
+      "deduction: it strips references and top-level cv-qualifiers from the expression's " +
+      "type, so `get` is deduced to return `int` *by value*: `m.get(0)` yields a fresh " +
+      "copy of the element every call, and mutating that copy (`copy = 999`) has no effect " +
+      "on `m`. `decltype(auto)`, by contrast, computes the return type as exactly " +
+      "`decltype(data[i])`, which is `int&`: the reference is preserved verbatim, so " +
+      "`getRef` really does hand back a reference into `m`'s internal storage, and " +
+      "`m.getRef(0) = 100` mutates `m` itself. The second `std::cout` line reads `100` " +
+      "(the mutation through `getRef` persisted) rather than `999` (the local copy's " +
+      "mutation never touched `m`). This is the classic trap of reaching for `auto` on a " +
+      "getter that is meant to expose a mutable reference: it compiles, it looks correct, " +
+      "and it silently returns copies instead.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/auto",
+      "https://en.cppreference.com/w/cpp/language/decltype",
+    ],
+  },
+  {
+    id: "cpp-move-const-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "One const Widget, two constructors",
+    tags: ["move-semantics", "std::move", "const", "overload-resolution"],
+    type: "trace",
+    prompt: "What does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+#include <utility>
+
+struct Widget {
+    Widget() = default;
+    Widget(const Widget&) { std::cout << "copy ctor\\n"; }
+    Widget(Widget&&) noexcept { std::cout << "move ctor\\n"; }
+};
+
+int main() {
+    const Widget a;
+    Widget b(std::move(a));
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "move ctor",
+        "copy ctor",
+        "Compile error: cannot call std::move on a const object",
+        "Compile error: no viable constructor for Widget b(std::move(a))",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "`std::move(a)` is just `static_cast<const Widget&&>(a)`: it preserves whatever " +
+      "cv-qualification `a` already has, so casting a `const Widget` produces a `const " +
+      "Widget&&`, not a plain `Widget&&`. Overload resolution then looks for the best-match " +
+      "constructor for an argument of type `const Widget&&`: the move constructor's " +
+      "parameter is `Widget&&` (non-const), which a `const` rvalue cannot bind to, so it is " +
+      "not viable. The copy constructor's parameter is `const Widget&`, and a `const " +
+      "Widget&&` binds to `const Widget&` perfectly well (an rvalue reference is still an " +
+      "rvalue, and `const T&` binds to any value category). So the copy constructor is " +
+      "selected, quietly, with no warning and no error, and `\"copy ctor\"` is printed. " +
+      "This is a genuinely dangerous gotcha: the code *looks* like it opts into a move, " +
+      "compiles cleanly, and silently degrades to a full copy instead, which can be a real " +
+      "performance cliff in code that assumes `std::move` guarantees move semantics.",
+    references: [
+      "https://en.cppreference.com/w/cpp/utility/move",
+      "https://en.cppreference.com/w/cpp/language/overload_resolution",
+    ],
+  },
+  {
+    id: "cpp-forwarding-ref-lvalue-01",
+    category: "cpp",
+    difficulty: "medium",
+    title: "Two functions, both taking &&",
+    tags: ["templates", "forwarding-references", "rvalue-references", "overload-resolution"],
+    type: "trace",
+    prompt: "What happens when this program is compiled?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+
+template <typename T>
+void forwardRef(T&& x) {     // deduced context: forwarding reference
+    std::cout << "forwardRef\\n";
+}
+
+void fixedRRef(int&& x) {    // non-template: ordinary fixed rvalue reference
+    std::cout << "fixedRRef\\n";
+}
+
+int main() {
+    int val = 42;
+    forwardRef(val);   // (1)
+    fixedRRef(val);     // (2)
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Prints forwardRef then fixedRRef: both accept the lvalue",
+        "Compile error at (1): T&& cannot bind to an lvalue any more than int&& can",
+        "Compile error at (2) only: int&& cannot bind to the lvalue val",
+        "Both lines compile, but (2) is undefined behavior at runtime rather than a compile error",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "`T&&` is a forwarding reference only when `T` is a template parameter deduced *for " +
+      "that specific call* ([temp.deduct.call]p3), exactly the situation in `forwardRef`. " +
+      "Calling it with the lvalue `val` (type `int`) deduces `T` as `int&`; reference " +
+      "collapsing ([dcl.ref]: `& + && -> &`) then turns the parameter type `T&&` = " +
+      "`int& &&` into plain `int&`, an ordinary lvalue reference that binds to `val` without " +
+      "issue; line (1) compiles and runs. `fixedRRef`, by contrast, is an ordinary " +
+      "non-template function: its parameter type `int&&` is fixed at declaration, with no " +
+      "deduction and therefore no collapsing possible. An rvalue reference can only bind to " +
+      "rvalues (temporaries, or values explicitly cast via `std::move`), and `val` is a " +
+      "named lvalue, so `fixedRRef(val)` fails overload resolution outright: a hard compile " +
+      "error (\"cannot bind rvalue reference of type 'int&&' to lvalue of type 'int'\"). The " +
+      "contrast is the whole point of the forwarding-reference machinery: syntactically " +
+      "identical `T&&`/`int&&` spelling, but only the deduced-template-parameter form gets " +
+      "the special dual-binding behavior.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/reference#Forwarding_references",
+      "https://en.cppreference.com/w/cpp/language/reference",
+    ],
+  },
+  {
+    id: "cpp-variant-visit-01",
+    category: "cpp",
+    difficulty: "medium",
+    title: "std::visit and std::get on the same variant",
+    tags: ["std::variant", "std::visit", "exceptions", "c++17"],
+    type: "trace",
+    prompt: "What does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+#include <string>
+#include <variant>
+
+template <class... Ts>
+struct overloaded : Ts... { using Ts::operator()...; };
+template <class... Ts>
+overloaded(Ts...) -> overloaded<Ts...>;
+
+int main() {
+    std::variant<int, std::string> v = std::string("hello");
+
+    std::visit(overloaded{
+        [](int i) { std::cout << "int: " << i << "\\n"; },
+        [](const std::string& s) { std::cout << "string: " << s << "\\n"; }
+    }, v);
+
+    try {
+        int x = std::get<int>(v);
+        std::cout << "got int: " << x << "\\n";
+    } catch (const std::bad_variant_access& e) {
+        std::cout << "bad_variant_access\\n";
+    }
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "string: hello\\nbad_variant_access",
+        "string: hello\\ngot int: 0",
+        "Compile error: overloaded{...} cannot deduce a single callable matching v's alternatives",
+        "int: 0\\nbad_variant_access",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "`v` currently holds the `std::string` alternative. `std::visit` dispatches to " +
+      "whichever `operator()` overload matches the alternative *actually* active: the " +
+      "`overloaded` helper merges a set of lambdas into one callable via multiple inheritance " +
+      "and `using`-declarations that pull every base's `operator()` into a single overload " +
+      "set, so the compiler picks the `const std::string&` overload and prints " +
+      "`\"string: hello\"`. `std::get<int>(v)`, by contrast, is a checked direct access that " +
+      "asserts a *specific* alternative is active regardless of what actually is; since `v` " +
+      "holds a `std::string`, not an `int`, this throws `std::bad_variant_access` " +
+      "([variant.get]) rather than returning a garbage or default value; there is no " +
+      "silent UB path here, unlike a raw union. The broader lesson is `std::visit` is the " +
+      "*safe*, exhaustive way to interact with a variant (the compiler enforces that every " +
+      "alternative has a matching callable at the call site), while `std::get<T>` is a " +
+      "runtime bet that must be guarded with `std::holds_alternative<T>` or a try/catch if " +
+      "you aren't certain which alternative is live.",
+    references: [
+      "https://en.cppreference.com/w/cpp/utility/variant/get",
+      "https://en.cppreference.com/w/cpp/utility/variant/visit",
+    ],
+  },
+  {
+    id: "cpp-sort-comparator-ub-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "Sorting 100,000 ints with <=",
+    tags: ["std::sort", "undefined-behavior", "comparators", "algorithms"],
+    type: "trace",
+    prompt:
+      "This program sorts a vector using <= instead of < as the comparator. What is true about its behavior?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <algorithm>
+#include <vector>
+#include <random>
+#include <iostream>
+
+int main() {
+    std::vector<int> v(100000);
+    std::mt19937 rng(42);
+    for (auto& x : v) x = rng() % 1000;
+
+    std::sort(v.begin(), v.end(),
+               [](int a, int b) { return a <= b; });
+
+    std::cout << "sorted, size=" << v.size() << "\\n";
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "It's fine: treating equal elements as 'less' only costs a few extra swaps",
+        "Undefined behavior: the comparator is not a strict weak ordering, so the sort can crash or hang rather than merely mis-sort",
+        "It compiles and always produces a correctly sorted, merely less efficient result",
+        "Compile error: std::sort requires the comparator to use operator< exactly, not <=",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "`std::sort`'s comparator is required by the standard to establish a *strict weak " +
+      "ordering* ([alg.sorting]/[algorithms.requirements]): irreflexive (`comp(a, a)` must " +
+      "be `false`), asymmetric, and transitive. `a <= b` violates irreflexivity outright: " +
+      "`comp(a, a)` (`a <= a`) is `true` for every `a`, so the precondition is broken and " +
+      "the call is undefined behavior, full stop, regardless of whether the output *looks* " +
+      "sorted for small inputs. This isn't a hypothetical: introspective sort/quicksort-based " +
+      "implementations use the comparator's ordering guarantees to bound recursion depth and " +
+      "partition indices; when those guarantees don't hold, the algorithm can walk indices " +
+      "outside the valid range of the container, producing an out-of-bounds read/write, not " +
+      "just a wrong order. The exact failure mode is library-implementation-dependent: " +
+      "verified directly, this program built against libstdc++ (real GCC) crashes with " +
+      "SIGBUS once the input is large enough to hit the buggy code path, while the same " +
+      "source built against libc++ (Clang's default on macOS) instead spins in a " +
+      "near-infinite loop rather than crashing outright. Either way the result is squarely " +
+      "outside 'just a wrong order': it's exactly the kind of 'passed code review, corrupted " +
+      "memory or hung in production' bug this precondition exists to prevent. The fix is " +
+      "trivial: use `a < b` (or, for descending order, `a > b`), strict, never comparing an " +
+      "element as less than itself.",
+    references: [
+      "https://en.cppreference.com/w/cpp/algorithm/sort",
+      "https://en.cppreference.com/w/cpp/named_req/Compare",
+    ],
   },
   {
     id: "cpp-fill-raii-destructor-01",
@@ -2958,7 +4573,7 @@ private:
     explanation:
       "`data_` was allocated with the array form `new int[n]`, so it must be released with " +
       "the matching `delete[] data_;`. Pairing an array allocation with a scalar `delete " +
-      "data_;` is undefined behavior — the allocator's per-allocation bookkeeping (e.g. the " +
+      "data_;` is undefined behavior: the allocator's per-allocation bookkeeping (e.g. the " +
       "stored element count needed to call each element's destructor) is written and " +
       "consumed differently for the scalar vs. array forms, and mismatching them corrupts " +
       "that bookkeeping rather than just leaking. Omitting the delete entirely leaks the " +
@@ -2990,7 +4605,16 @@ private:
     size_t size_;
 };`,
     },
-    blanks: [{ id: "1", acceptedAnswers: ["other.data_ = nullptr;"] }],
+    blanks: [
+      {
+        id: "1",
+        acceptedAnswers: [
+          "other.data_ = nullptr;",
+          "other.data_ = nullptr; other.size_ = 0;",
+          "other.size_ = 0; other.data_ = nullptr;",
+        ],
+      },
+    ],
     canonicalCode: `class Buffer {
 public:
     Buffer(Buffer&& other) noexcept
@@ -3005,9 +4629,9 @@ private:
     explanation:
       "The member-initializer list already copies the pointer value out of `other`, so " +
       "without this line both `this->data_` and `other.data_` point at the same array. When " +
-      "`other`'s destructor runs (and it will — a moved-from object is still a live object " +
+      "`other`'s destructor runs (and it will, since a moved-from object is still a live object " +
       "that gets destroyed normally), it calls `delete[] data_` on a pointer this object also " +
-      "owns, freeing memory this object still thinks is valid — a double-free the moment " +
+      "owns, freeing memory this object still thinks is valid: a double-free the moment " +
       "either object is destroyed or dereferenced again. Setting `other.data_ = nullptr;` " +
       "leaves `other` in the standard library's expected moved-from state: valid (its " +
       "destructor is safe, since `delete[] nullptr` is a no-op) but unspecified beyond that.",
@@ -3030,15 +4654,20 @@ private:
     std::cout << *p << std::endl;
 }`,
     },
-    blanks: [{ id: "1", acceptedAnswers: ["const int*", "const int *"] }],
+    blanks: [
+      {
+        id: "1",
+        acceptedAnswers: ["const int*", "const int *", "int const*", "int const *"],
+      },
+    ],
     canonicalCode: `void print(const int* p) {
     std::cout << *p << std::endl;
 }`,
     explanation:
-      "`const int*` is a pointer to `const int` — the pointee is treated as const through " +
+      "`const int*` is a pointer to `const int`: the pointee is treated as const through " +
       "this pointer, so `*p = 5;` inside the function would be a compile error, while reading " +
       "`*p` remains fine. This is distinct from `int* const p` (a const pointer to non-const " +
-      "int, which would let you modify `*p` but not reseat `p` itself) — read pointer " +
+      "int, which would let you modify `*p` but not reseat `p` itself); read pointer " +
       "declarations right-to-left from the parameter name to tell them apart.",
     references: ["https://en.cppreference.com/w/cpp/language/cv"],
   },
@@ -3079,12 +4708,12 @@ private:
     explanation:
       "Without this check, `buf = buf;` binds `other` to the same object as `*this`. The " +
       "function then does `delete[] data_`, freeing the very array `other.data_` points at, " +
-      "and immediately reads from that freed memory on the next line — undefined behavior, " +
+      "and immediately reads from that freed memory on the next line, undefined behavior " +
       "usually manifesting as garbage data or a crash. `this == &other` compares addresses " +
       "(not contents), so it correctly detects self-assignment even for objects that would " +
       "otherwise compare equal by value, and it's the standard idiom for exception- and " +
       "self-assignment-safe copy-assignment operators that manage a resource manually.",
-    references: ["https://en.cppreference.com/w/cpp/language/as_operator"],
+    references: ["https://en.cppreference.com/w/cpp/language/copy_assignment"],
   },
   {
     id: "cpp-fill-virtual-destructor-01",
@@ -3119,7 +4748,7 @@ public:
 };`,
     explanation:
       "Without `virtual` on `~Base()`, calling `delete` through a `Base*` that actually points " +
-      "at a `Derived` object only invokes `~Base()` — `~Derived()` is never called (skipping " +
+      "at a `Derived` object only invokes `~Base()`: `~Derived()` is never called (skipping " +
       "any cleanup it does), and the behavior is technically undefined per the standard for " +
       "deleting a polymorphic object through a pointer to a base class with a non-virtual " +
       "destructor. Marking `~Base()` virtual makes the destructor call go through the vtable " +
@@ -3159,7 +4788,7 @@ int main() {
     consume(std::move(owner));
 }`,
     explanation:
-      "`std::unique_ptr`'s copy constructor is deleted — it can only be moved, never copied — " +
+      "`std::unique_ptr`'s copy constructor is deleted (it can only be moved, never copied), " +
       "so passing the lvalue `owner` directly would fail to compile. `std::move(owner)` " +
       "produces an rvalue reference, selecting `unique_ptr`'s move constructor to construct " +
       "the by-value parameter `p`, which transfers ownership of the pointee into `consume`. " +
@@ -3204,8 +4833,8 @@ T doubleIt(T x) {
       "`std::is_arithmetic_v<T>` (the variable-template shorthand for " +
       "`std::is_arithmetic<T>::value`) is `true` for integer and floating-point types and " +
       "`false` otherwise. Placed in a `static_assert`, it turns an instantiation with an " +
-      "unsupported `T` — say `doubleIt(std::string(\"hi\"))`, where `x * 2` wouldn't compile " +
-      "anyway but with a much more confusing error buried in template internals — into a " +
+      "unsupported `T` (say `doubleIt(std::string(\"hi\"))`, where `x * 2` wouldn't compile " +
+      "anyway but with a much more confusing error buried in template internals) into a " +
       "clear, immediate compile error with your own message. This is the pre-C++20 idiom for " +
       "constraining a template; a `requires std::is_arithmetic_v<T>` clause is the C++20 " +
       "concepts equivalent.",
@@ -3215,7 +4844,7 @@ T doubleIt(T x) {
     id: "cpp-fill-erase-in-loop-01",
     category: "cpp",
     difficulty: "medium",
-    title: "Erase elements while iterating without invalidating the iterator",
+    title: "Erase elements while iterating a vector",
     tags: ["iterators", "iterator-invalidation", "stl", "fill-in-blank"],
     type: "fill-in-blank",
     prompt:
@@ -3245,7 +4874,7 @@ T doubleIt(T x) {
       "(since later elements shift down to fill the gap), so continuing to use `it` after " +
       "erasing without reassigning it is undefined behavior. `erase` returns a valid iterator " +
       "to the element that now occupies the erased position, which is exactly what the loop " +
-      "needs to keep going correctly — assigning that return value back to `it` is what makes " +
+      "needs to keep going correctly. Assigning that return value back to `it` is what makes " +
       "this the standard erase-while-iterating idiom, and it's why the loop's increment can't " +
       "just be `++it` in its for-clause: the even-number branch must NOT also increment.",
     references: ["https://en.cppreference.com/w/cpp/container/vector/erase"],
@@ -3254,7 +4883,7 @@ T doubleIt(T x) {
     id: "cpp-fill-weak-ptr-parent-01",
     category: "cpp",
     difficulty: "hard",
-    title: "Break a shared_ptr reference cycle with weak_ptr",
+    title: "Break the parent/child reference cycle",
     tags: ["smart-pointers", "shared_ptr", "weak_ptr", "reference-cycle", "fill-in-blank"],
     type: "fill-in-blank",
     prompt:
@@ -3290,7 +4919,7 @@ void attach(std::shared_ptr<Node> parent, std::shared_ptr<Node> child) {
 }`,
     explanation:
       "If `parent` were also a `shared_ptr<Node>`, every parent/child pair would hold a " +
-      "`shared_ptr` to each other — a reference cycle where each object's use_count never " +
+      "`shared_ptr` to each other: a reference cycle where each object's use_count never " +
       "reaches zero, so neither is ever destroyed even after every external `shared_ptr` to " +
       "the tree goes out of scope: a genuine memory leak, not a bug that crashes anything. " +
       "`std::weak_ptr<Node>` observes the object without contributing to its reference count, " +
@@ -3308,8 +4937,9 @@ void attach(std::shared_ptr<Node> parent, std::shared_ptr<Node> child) {
     tags: ["rule-of-five", "move-semantics", "raii", "fill-in-blank"],
     type: "fill-in-blank",
     prompt:
-      "Fill in the missing move-assignment operator's signature so this " +
-      "class satisfies the Rule of Five for a type that manages a raw resource.",
+      "Fill in the missing move-assignment operator's signature so this class " +
+      "satisfies the Rule of Five and a std::vector<Buffer> will move, not copy, " +
+      "its elements when it reallocates.",
     snippet: {
       language: "cpp",
       filename: "main.cpp",
@@ -3340,6 +4970,8 @@ private:
         acceptedAnswers: [
           "Buffer& operator=(Buffer&& other) noexcept",
           "Buffer &operator=(Buffer&& other) noexcept",
+          "Buffer& operator=(Buffer &&other) noexcept",
+          "Buffer &operator=(Buffer &&other) noexcept",
         ],
       },
     ],
@@ -3366,7 +4998,7 @@ private:
     explanation:
       "A class that manually manages a resource (here, `data_`) and defines any one of the " +
       "destructor, copy constructor, copy-assignment, move constructor, or move-assignment " +
-      "operator almost always needs all five (the Rule of Five) — the compiler won't safely " +
+      "operator almost always needs all five (the Rule of Five), since the compiler won't safely " +
       "synthesize the others once you've shown intent to manage the resource yourself. The " +
       "move-assignment operator's signature, `Buffer& operator=(Buffer&& other) noexcept`, " +
       "takes an rvalue reference so it's selected for assignments from expiring temporaries or " +
@@ -3385,7 +5017,7 @@ private:
     type: "fill-in-blank",
     prompt:
       "Fill in the blank so that if constructing `temp` throws, `*this` is " +
-      "left completely unchanged — the strong exception guarantee.",
+      "left completely unchanged: the strong exception guarantee.",
     snippet: {
       language: "cpp",
       filename: "main.cpp",
@@ -3419,11 +5051,11 @@ private:
 };`,
     explanation:
       "`Widget temp(other);` does all of the work that could possibly fail (allocating and " +
-      "copying) into a fully independent temporary, before touching `*this` at all — if that " +
+      "copying) into a fully independent temporary, before touching `*this` at all. If that " +
       "constructor throws, `*this` hasn't been modified in any way and the exception propagates " +
       "cleanly. `swap(temp);` then exchanges `*this`'s and `temp`'s internals; because `swap` is " +
       "`noexcept` (a plain pointer exchange can't fail), this second step is guaranteed not to " +
-      "throw, so the operator either fully succeeds or has no visible effect at all — exactly " +
+      "throw, so the operator either fully succeeds or has no visible effect at all, exactly " +
       "the strong exception guarantee. `temp` then goes out of scope holding the old resource, " +
       "which its destructor releases. This is the classic copy-and-swap idiom, and it's why the " +
       "unified `operator=` also happens to be self-assignment-safe for free.",
@@ -3433,7 +5065,7 @@ private:
     id: "cpp-fill-atomic-memory-order-01",
     category: "cpp",
     difficulty: "hard",
-    title: "Synchronize a producer and consumer with release/acquire",
+    title: "Order the producer's write before the consumer's read",
     tags: ["atomics", "memory-model", "concurrency", "fill-in-blank"],
     type: "fill-in-blank",
     prompt:
@@ -3456,8 +5088,14 @@ void consumer() {
 }`,
     },
     blanks: [
-      { id: "1", acceptedAnswers: ["std::memory_order_release"] },
-      { id: "2", acceptedAnswers: ["std::memory_order_acquire"] },
+      {
+        id: "1",
+        acceptedAnswers: ["std::memory_order_release", "std::memory_order::release"],
+      },
+      {
+        id: "2",
+        acceptedAnswers: ["std::memory_order_acquire", "std::memory_order::acquire"],
+      },
     ],
     canonicalCode: `std::atomic<bool> ready{false};
 int payload = 0;
@@ -3474,15 +5112,15 @@ void consumer() {
     explanation:
       "`payload` is an ordinary, non-atomic `int`, so its write in `producer` and read in " +
       "`consumer` only have a defined happens-before relationship if the atomic operations " +
-      "around them establish one — a release store paired with an acquire load does exactly " +
+      "around them establish one, and a release store paired with an acquire load does exactly " +
       "that. `memory_order_release` on the store prevents any earlier memory operation " +
       "(including `payload = 42;`) from being reordered after it, and `memory_order_acquire` on " +
       "the load prevents any later operation (the `std::cout` read of `payload`) from being " +
       "reordered before it. Once the consumer's load observes `true`, the release-acquire pair " +
-      "guarantees it also sees every write that happened-before the release in the producer — " +
-      "if either side used `memory_order_relaxed` instead, `ready` would still synchronize " +
-      "correctly as a boolean flag, but the read of `payload` would be a data race with no " +
-      "guarantee of seeing `42`.",
+      "guarantees it also sees every write that happened-before the release in the producer. " +
+      "If either side used `memory_order_relaxed` instead, `ready` itself would still be read " +
+      "and written atomically, but no happens-before edge would exist, so the read of " +
+      "`payload` would be a data race with no guarantee of seeing `42`.",
     references: ["https://en.cppreference.com/w/cpp/atomic/memory_order"],
   },
   {
@@ -3512,21 +5150,21 @@ void wrapper(T&& arg) {
     process(std::forward<T>(arg));
 }`,
     explanation:
-      "`T&&` in a deduced template context is a forwarding reference, not an rvalue reference — " +
+      "`T&&` in a deduced template context is a forwarding reference, not an rvalue reference: " +
       "reference collapsing means it binds to an lvalue argument by deducing `T` as `U&` " +
       "(collapsing to `arg`'s type `U&`), and to an rvalue by deducing `T` as plain `U`. Naming " +
       "`arg` inside the body always yields an lvalue (it has a name), so passing it straight " +
       "through would always call `process`'s lvalue overload even when the original argument " +
       "was an rvalue. `std::forward<T>(arg)` conditionally casts `arg` back to an rvalue only " +
       "when `T` was deduced as a non-reference type, exactly reconstructing the original value " +
-      "category — this is why `std::forward` (not `std::move`, which unconditionally casts to " +
+      "category, which is why `std::forward` (not `std::move`, which unconditionally casts to " +
       "rvalue) is the correct tool for a forwarding wrapper.",
     references: ["https://en.cppreference.com/w/cpp/utility/forward"],
   },
   {
     id: "cpp-fill-crtp-01",
     category: "cpp",
-    difficulty: "medium",
+    difficulty: "hard",
     title: "Call into the derived class through CRTP",
     tags: ["crtp", "templates", "static-polymorphism", "fill-in-blank"],
     type: "fill-in-blank",
@@ -3567,13 +5205,13 @@ public:
 };`,
     explanation:
       "In the Curiously Recurring Template Pattern, `Concrete` inherits from `Base<Concrete>`, " +
-      "passing itself as `Base`'s template argument — so inside `Base`, `Derived` is a concrete, " +
+      "passing itself as `Base`'s template argument, so inside `Base`, `Derived` is a concrete, " +
       "fully-known type at compile time, not a runtime abstraction. `static_cast<Derived&>" +
       "(*this)` is safe (not `dynamic_cast`, which would imply runtime polymorphism this pattern " +
       "deliberately avoids) precisely because every actual instantiation of `Base<Derived>` is " +
       "known to be a base subobject of exactly that `Derived`. Calling `.implementation()` on " +
       "the cast reference resolves at compile time to `Concrete::implementation()` with no " +
-      "vtable indirection at all — CRTP achieves the shape of polymorphism (a common interface " +
+      "vtable indirection at all. CRTP achieves the shape of polymorphism (a common interface " +
       "dispatching to per-type behavior) with zero runtime dispatch cost.",
     references: ["https://en.cppreference.com/w/cpp/language/crtp"],
   },
@@ -3598,7 +5236,7 @@ public:
     return *it;
 }`,
     },
-    blanks: [{ id: "1", acceptedAnswers: ["std::nullopt"] }],
+    blanks: [{ id: "1", acceptedAnswers: ["std::nullopt", "{}"] }],
     canonicalCode: `std::optional<int> findValue(const std::vector<int>& v, int target) {
     auto it = std::find(v.begin(), v.end(), target);
     if (it == v.end()) {
@@ -3641,7 +5279,7 @@ public:
     return Widget{};
 }`,
     },
-    blanks: [{ id: "1", acceptedAnswers: ["Widget"] }],
+    blanks: [{ id: "1", acceptedAnswers: ["Widget", "auto"] }],
     canonicalCode: `struct Widget {
     Widget() { std::cout << "construct\\n"; }
     Widget(const Widget&) { std::cout << "copy\\n"; }
@@ -3653,13 +5291,13 @@ Widget makeWidget() {
 }`,
     explanation:
       "With the return type declared `Widget` (by value) and the return statement a prvalue of " +
-      "that exact type (`Widget{}`), C++17 mandates that no temporary is materialized at all — " +
+      "that exact type (`Widget{}`), C++17 mandates that no temporary is materialized at all: " +
       "the `Widget{}` is constructed directly in the storage the caller provides for the result. " +
       "This is stronger than pre-C++17 RVO/NRVO, which were only permitted optimizations (a " +
       "compiler could still legally copy or move); as of C++17, [class.copy.elision] requires " +
       "elision for this prvalue case, so the copy and move constructors need not even be " +
       "accessible. Had the return type instead been `Widget&` or the function returned a named " +
-      "local variable, the guarantee wouldn't apply the same way — a named local still only " +
+      "local variable, the guarantee wouldn't apply the same way: a named local still only " +
       "qualifies for the weaker, optional NRVO.",
     references: ["https://en.cppreference.com/w/cpp/language/copy_elision"],
   },
@@ -3667,7 +5305,7 @@ Widget makeWidget() {
     id: "cpp-fill-noexcept-move-01",
     category: "cpp",
     difficulty: "medium",
-    title: "Mark the move constructor noexcept for vector reallocation",
+    title: "Let std::vector move elements during reallocation",
     tags: ["noexcept", "move-semantics", "std-vector", "fill-in-blank"],
     type: "fill-in-blank",
     prompt:
@@ -3688,7 +5326,7 @@ private:
     size_t size_;
 };`,
     },
-    blanks: [{ id: "1", acceptedAnswers: ["noexcept"] }],
+    blanks: [{ id: "1", acceptedAnswers: ["noexcept", "noexcept(true)"] }],
     canonicalCode: `class Buffer {
 public:
     Buffer(Buffer&& other) noexcept
@@ -3704,8 +5342,8 @@ private:
       "When `std::vector` grows past its capacity, it must relocate every existing element into " +
       "new storage, and it internally chooses between moving and copying via " +
       "`std::move_if_noexcept`. If a move could throw partway through relocation, the vector " +
-      "could be left in a corrupted, partially-moved-from state with no way to roll back — " +
-      "violating the strong exception guarantee `push_back` otherwise offers — so the standard " +
+      "could be left in a corrupted, partially-moved-from state with no way to roll back, " +
+      "violating the strong exception guarantee `push_back` otherwise offers, so the standard " +
       "requires falling back to the (slower, but safely rollback-able) copy constructor whenever " +
       "the move constructor isn't marked `noexcept`. Marking `Buffer`'s move constructor " +
       "`noexcept` tells `std::vector` it's safe to use it during reallocation, restoring the " +
@@ -3717,7 +5355,7 @@ private:
     id: "cpp-fill-lambda-capture-dangling-01",
     category: "cpp",
     difficulty: "medium",
-    title: "Avoid capturing a local by reference in an escaping lambda",
+    title: "Capture a local counter in a returned lambda",
     tags: ["lambdas", "captures", "dangling-reference", "fill-in-blank"],
     type: "fill-in-blank",
     prompt:
@@ -3733,7 +5371,7 @@ private:
     };
 }`,
     },
-    blanks: [{ id: "1", acceptedAnswers: ["count"] }],
+    blanks: [{ id: "1", acceptedAnswers: ["count", "=", "count = count"] }],
     canonicalCode: `std::function<int()> makeCounter() {
     int count = 0;
     return [count]() mutable {
@@ -3742,11 +5380,11 @@ private:
 }`,
     explanation:
       "`count` is a local variable of `makeCounter` with automatic storage duration that is " +
-      "destroyed when `makeCounter` returns — but the lambda itself outlives that call, since " +
+      "destroyed when `makeCounter` returns, but the lambda itself outlives that call, since " +
       "it's returned to (and invoked later by) the caller. Capturing it by reference (`[&count]` " +
       "or `[&]`) would store a reference to that already-destroyed stack slot, so every " +
-      "subsequent call through the returned `std::function` would read/write freed stack memory " +
-      "— a classic dangling-reference bug. Capturing by value (`[count]`) instead copies the " +
+      "subsequent call through the returned `std::function` would read and write freed stack " +
+      "memory: a classic dangling-reference bug. Capturing by value (`[count]`) instead copies the " +
       "`int` into the closure object, which then owns an independent copy with the closure's own " +
       "lifetime; `mutable` is required because by-value captures are `const` inside `operator()` " +
       "by default, and this lambda needs to increment its copy across calls.",
@@ -3786,7 +5424,7 @@ public:
       "`shared_ptr<Session>` that shares the exact same control block (and reference count) as " +
       "every other `shared_ptr` already managing the object. The unsafe alternative, `return " +
       "std::shared_ptr<Session>(this);`, would construct a brand-new, wholly unrelated control " +
-      "block with its own independent reference count — leading to the object being destroyed " +
+      "block with its own independent reference count, leading to the object being destroyed " +
       "twice (once by each control block reaching zero), a double-free the moment both go out of " +
       "scope.",
     references: ["https://en.cppreference.com/w/cpp/memory/enable_shared_from_this"],
@@ -3794,8 +5432,8 @@ public:
   {
     id: "cpp-fill-tie-unpack-01",
     category: "cpp",
-    difficulty: "easy",
-    title: "Unpack a pair into pre-existing variables with std::tie",
+    difficulty: "medium",
+    title: "Unpack a pair into already-declared variables",
     tags: ["std-tie", "structured-bindings", "std-pair", "fill-in-blank"],
     type: "fill-in-blank",
     prompt:
@@ -3817,22 +5455,22 @@ bool inserted;
 
 std::tie(it, inserted) = m.insert({"key", 42});`,
     explanation:
-      "`std::map::insert` returns `std::pair<iterator, bool>` — the iterator to the (possibly " +
+      "`std::map::insert` returns `std::pair<iterator, bool>`: the iterator to the (possibly " +
       "pre-existing) element and whether an insertion actually happened. `std::tie(it, " +
       "inserted)` builds a `std::tuple` of lvalue references bound to the already-declared `it` " +
       "and `inserted` variables, so assigning the pair to it copies each member into the " +
       "corresponding pre-existing variable via `std::tuple`'s converting assignment from " +
       "`std::pair`. A structured binding (`auto [it, inserted] = m.insert(...)`) looks similar " +
       "but always introduces brand-new variables scoped to the declaration and cannot target " +
-      "ones that already exist in an outer scope — that's exactly the situation `std::tie` is " +
+      "ones that already exist in an outer scope, which is exactly the situation `std::tie` is " +
       "for.",
     references: ["https://en.cppreference.com/w/cpp/utility/tuple/tie"],
   },
   {
     id: "cpp-fill-unique-ptr-custom-deleter-01",
     category: "cpp",
-    difficulty: "medium",
-    title: "Manage a C-API resource with a custom unique_ptr deleter",
+    difficulty: "hard",
+    title: "Close a FILE* instead of deleting it",
     tags: ["smart-pointers", "unique_ptr", "raii", "fill-in-blank"],
     type: "fill-in-blank",
     prompt:
@@ -3847,22 +5485,167 @@ std::tie(it, inserted) = m.insert({"key", 42});`,
 
 /*BLANK_1*/ file(std::fopen("data.txt", "r"), closeFile);`,
     },
-    blanks: [{ id: "1", acceptedAnswers: ["std::unique_ptr<FILE, decltype(&closeFile)>"] }],
+    blanks: [
+      {
+        id: "1",
+        acceptedAnswers: [
+          "std::unique_ptr<FILE, decltype(&closeFile)>",
+          "std::unique_ptr<FILE, void(*)(FILE*)>",
+        ],
+      },
+    ],
     canonicalCode: `void closeFile(FILE* fp) {
     if (fp) std::fclose(fp);
 }
 
 std::unique_ptr<FILE, decltype(&closeFile)> file(std::fopen("data.txt", "r"), closeFile);`,
     explanation:
-      "`FILE*` is a C-API handle that must be released with `std::fclose`, not `delete` — " +
+      "`FILE*` is a C-API handle that must be released with `std::fclose`, not `delete`: " +
       "`std::unique_ptr`'s default deleter (which calls `delete`) would be undefined behavior " +
       "here, since the pointee was never allocated with `new`. `std::unique_ptr`'s second " +
       "template parameter lets you supply a custom deleter type; `decltype(&closeFile)` yields " +
       "the function pointer type `void(*)(FILE*)`, matching what `unique_ptr` needs to store and " +
       "invoke on destruction. The constructor then takes both the raw pointer from `fopen` and " +
       "`closeFile` itself (a value of that function pointer type) as the deleter instance to " +
-      "store, so `file`'s destructor calls `closeFile(file.get())` automatically — this is the " +
+      "store, so `file`'s destructor calls `closeFile(file.get())` automatically. This is the " +
       "standard RAII wrapper for `FILE*`, sockets, and other non-`new`-allocated resources.",
     references: ["https://en.cppreference.com/w/cpp/memory/unique_ptr"],
+  },
+  {
+    id: "cpp-seq-points-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "Two increments of the same variable in one statement",
+    tags: ["sequence-points", "undefined-behavior", "evaluation-order"],
+    type: "trace",
+    prompt:
+      "Compiled as C++17 or later, which tightened several evaluation-order rules, what does the statement `i = i++ + ++i;` do?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+
+int main() {
+    int i = 5;
+    i = i++ + ++i;
+    std::cout << i << std::endl;
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Unspecified behavior: the standard permits a small set of outcomes such as 13 or 14, and the compiler must pick one consistently.",
+        "C++17 fixed the evaluation order of operands, so this now produces one specific portable value on every conforming compiler.",
+        "Compile error: a scalar object may not be modified twice within one expression, and the front end is required to reject it.",
+        "Undefined behavior, still. The two modifications of i are unsequenced with respect to each other, which C++17 did not change.",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "Before C++17 this expression had two separate defects. The order of evaluation of the two operands of `+` was unspecified, and, independently and more seriously, `i` was modified twice with nothing sequencing those modifications relative to each other, which [intro.execution] makes undefined outright. C++17, via P0145, tightened sequencing for specific constructs: the right operand of a built-in assignment is now sequenced before the left, and several other operators gained left-to-right guarantees. Binary `+` was not among them, so `i++` and `++i` remain unsequenced with respect to each other, and the modification-twice rule is untouched regardless. The statement is therefore undefined in C++17, C++20 and C++23 exactly as it was in C++11. Compilers know it too: Clang emits `warning: multiple unsequenced modifications to 'i' [-Wunsequenced]` and then prints 12, which is neither of the two values people usually predict. The common misreading is that P0145 fixed expressions of this shape; it fixed the order in which subexpressions run, not the legality of writing the same object twice without sequencing.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/eval_order",
+      "https://wg21.link/p0145",
+    ],
+  },
+  {
+    id: "cpp-raii-rule-of-three-01",
+    category: "cpp",
+    difficulty: "medium",
+    title: "RAII file handle passed by value",
+    tags: ["raii", "rule-of-three", "double-free", "copy-constructor"],
+    type: "trace",
+    prompt: "What happens when this program runs?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `class FileHandle {
+public:
+    explicit FileHandle(const char* path) : fp_(std::fopen(path, "r")) {}
+    ~FileHandle() { if (fp_) std::fclose(fp_); }
+    // no copy constructor / copy assignment declared -- compiler generates
+    // a shallow member-wise copy of fp_ (a raw FILE*)
+private:
+    FILE* fp_;
+};
+
+void process(FileHandle fh) {   // taken by value -- triggers a copy
+    // use fh...
+}
+
+int main() {
+    FileHandle original("data.txt");
+    process(original);          // copies original; both now share the same FILE*
+}   // process's fh destructs (fclose), then original destructs (fclose again)`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Well-defined: RAII guarantees the resource is released once, however many copies exist",
+        "Compile error: FileHandle cannot be passed by value while it manages a resource",
+        "Well-defined: fclose() on an already-closed FILE* is a documented no-op",
+        "Undefined behavior: fh and original each fclose() the very same FILE*",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "RAII by itself only says 'acquire in the constructor, release in the destructor'. It says " +
+      "nothing about what a copy means, and that gap is the whole bug here. `FileHandle` declares a " +
+      "destructor but no copy constructor or copy assignment, and a user-declared destructor suppresses " +
+      "only the implicit *move* operations; the copy operations are still generated (deprecated, but " +
+      "generated) and do a shallow member-wise copy. That copies the `FILE*` value, not the underlying " +
+      "OS file description. `process(original)` therefore gives `fh` a bit-for-bit duplicate of " +
+      "`original.fp_`. When `process` returns, `~FileHandle()` calls `fclose(fp_)`; when `main` ends, " +
+      "`original`'s destructor calls `fclose()` on the same pointer again, which is a double close and " +
+      "undefined behavior. The Rule of Three exists for precisely this shape of class: anything owning " +
+      "a raw resource has to define or `= delete` its copy constructor and copy assignment (and " +
+      "usually provide move operations) rather than inherit the member-wise defaults.",
+    references: ["https://en.cppreference.com/w/cpp/language/rule_of_three"],
+  },
+  {
+    id: "cpp-lambda-ref-param-dangling-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "Returning a std::function that captures its parameter by reference",
+    tags: ["lambda", "std-function", "dangling-reference", "lifetime"],
+    type: "trace",
+    prompt: "What happens when this program runs?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <functional>
+#include <iostream>
+#include <string>
+
+std::function<const std::string&()> makeGetter(const std::string& s) {
+    return [&s]() -> const std::string& { return s; };   // captures s by reference
+}
+
+int main() {
+    std::function<const std::string&()> getter = makeGetter(std::string("hello"));
+    std::cout << getter() << "\\n";
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Undefined behavior: the stored callable reads through a reference to an already-destroyed temporary",
+        "Prints \"hello\": std::function extends the lifetime of whatever the wrapped callable refers to",
+        "Compile error: a reference parameter cannot itself be captured by reference",
+        "Prints an empty string, std::string's buffer having been zeroed out by its destructor",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "`makeGetter`'s parameter `s` is a `const std::string&` bound to the temporary " +
+      "`std::string(\"hello\")` created at the call site. Lifetime extension applies only when a " +
+      "reference is bound directly to a temporary in its own initialization; binding to a function " +
+      "parameter buys nothing, so that temporary dies at the end of the full expression containing the " +
+      "call to `makeGetter`. The lambda `[&s]` captures `s` by reference, so the callable stored " +
+      "inside the returned `std::function` ends up referring to storage that is already gone. " +
+      "`std::function` owns a copy of the closure object and nothing else; it has no way to know " +
+      "what the closure's references point at, let alone keep those alive. Calling `getter()` reads " +
+      "through the dead reference, which is undefined behavior. Capturing by value with `[s]` gives the " +
+      "closure its own copy and fixes it.",
   },
 ];

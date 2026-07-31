@@ -4,8 +4,8 @@ export const computerArchitectureQuestions: TraceQuestion[] = [
   {
     id: "computer-architecture-pipeline-structural-hazard-01",
     category: "computer-architecture",
-    difficulty: "medium",
-    title: "Structural hazard from a shared memory port",
+    difficulty: "easy",
+    title: "Instruction fetch and a load in the same cycle on a unified memory",
     tags: ["pipelining", "structural-hazard"],
     type: "trace",
     prompt:
@@ -17,25 +17,23 @@ export const computerArchitectureQuestions: TraceQuestion[] = [
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "A data hazard: I+3 must wait for a RAW dependency to resolve",
-        "A structural hazard: IF stalls for one cycle because the single shared memory port is " +
-          "occupied by I's MEM-stage access — this is purely a hardware resource conflict, " +
-          "unrelated to any data or control dependency between the instructions",
-        "A control hazard, since fetch is blocked",
-        "Undefined behavior: the two memory accesses race",
+        "A data hazard: I+3 stalls until a RAW dependency on I resolves",
+        "A control hazard: fetch is blocked until the older instruction clears MEM",
+        "A structural hazard: IF stalls one cycle while I's MEM access holds the only port",
+        "No stall: the memory arbiter services both requests within the same cycle",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
       "A structural hazard occurs when two instructions in different pipeline stages need the " +
       "same physical hardware resource in the same cycle, independent of any data or control " +
-      "dependency between them — here, a single-ported unified memory. I's MEM access and " +
-      "I+3's IF access are logically unrelated (no register or branch dependency links them), " +
-      "yet the pipeline must still insert a bubble because the hardware cannot service both " +
-      "requests in one cycle. This is exactly why real designs split instruction and data " +
-      "caches (Harvard-style at the L1) even in machines with a unified, von Neumann memory " +
-      "model further out — it eliminates this class of structural hazard for the common case " +
-      "of overlapping fetch and memory-stage accesses. Other structural hazards arise from a " +
+      "dependency between them. Here that resource is a single-ported unified memory. I's MEM " +
+      "access and I+3's IF access are logically unrelated (no register or branch dependency " +
+      "links them), yet the pipeline must still insert a bubble because the hardware cannot " +
+      "service both requests in one cycle. Real designs split instruction and data caches " +
+      "(Harvard-style at the L1) even in machines with a unified, von Neumann memory model " +
+      "further out, precisely to eliminate this class of hazard for the common case of " +
+      "overlapping fetch and memory-stage accesses. Other structural hazards arise from a " +
       "single non-pipelined multiplier/divider unit, or a register file with too few write " +
       "ports for the number of instructions retiring per cycle.",
   },
@@ -43,7 +41,7 @@ export const computerArchitectureQuestions: TraceQuestion[] = [
     id: "computer-architecture-pipeline-raw-forwarding-02",
     category: "computer-architecture",
     difficulty: "easy",
-    title: "RAW hazard resolved by full forwarding",
+    title: "Counting bubbles between an ADD and its consumer",
     tags: ["pipelining", "data-hazard", "forwarding"],
     type: "trace",
     prompt:
@@ -58,31 +56,31 @@ SUB R4, R1, R5   ; R4 = R1 - R5  (needs R1 the very next instruction)`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "0 stall cycles — the EX/MEM forwarding path feeds ADD's freshly computed result directly " +
-          "into SUB's ALU input the cycle SUB reaches EX, exactly when it's needed",
-        "1 stall cycle, because the register file hasn't been written yet",
-        "2 stall cycles, one for each pipeline stage separating the instructions",
-        "3 stall cycles — forwarding only works for loads, not ALU-to-ALU dependencies",
+        "0 stall cycles",
+        "1 stall cycle",
+        "2 stall cycles",
+        "3 stall cycles",
       ],
       correctIndex: 0,
     },
     explanation:
-      "Without forwarding, SUB would need to stall until ADD's WB stage writes R1 back to the " +
+      "Without forwarding, SUB would have to stall until ADD's WB stage writes R1 back to the " +
       "register file, since SUB's ID stage (where operands are normally read) happens before " +
-      "that write completes — a RAW hazard. Full forwarding adds a bypass path that routes " +
-      "ADD's ALU output (latched in the EX/MEM pipeline register) directly into the ALU input " +
-      "mux for the very next instruction's EX stage, so SUB gets the correct value of R1 exactly " +
-      "when it needs it with zero bubbles. This ALU-to-ALU (EX/MEM to EX) forwarding path covers " +
-      "the immediately-following-instruction case; a one-cycle stall is only unavoidable for a " +
-      "load immediately followed by a dependent instruction (the classic load-use hazard), " +
-      "because the loaded value isn't available until the end of MEM, one stage later than an " +
-      "ALU result.",
+      "that write completes. That is the classic RAW hazard, and it is where the 1-cycle and " +
+      "2-cycle answers come from. Full forwarding adds a bypass that routes ADD's ALU output, " +
+      "already latched in the EX/MEM pipeline register, straight into the ALU input mux for the " +
+      "very next instruction's EX stage, so SUB gets the correct R1 exactly when it needs it " +
+      "with zero bubbles. Forwarding is not restricted to loads; the EX/MEM-to-EX path exists " +
+      "specifically for ALU-to-ALU dependencies. The one case forwarding cannot fully cover is " +
+      "a load immediately followed by a dependent instruction (the load-use hazard), because a " +
+      "loaded value is not available until the end of MEM, one stage later than an ALU result, " +
+      "which costs an unavoidable single bubble.",
   },
   {
     id: "computer-architecture-pipeline-control-hazard-03",
     category: "computer-architecture",
     difficulty: "medium",
-    title: "Control hazard flush depth",
+    title: "A taken branch under a predict-not-taken policy",
     tags: ["pipelining", "control-hazard", "branch"],
     type: "trace",
     prompt:
@@ -95,88 +93,83 @@ SUB R4, R1, R5   ; R4 = R1 - R5  (needs R1 the very next instruction)`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Zero — predict-not-taken never needs to squash anything",
-        "One instruction",
-        "Two instructions — by the time the branch resolves at the end of EX, the pipeline has " +
-          "already fetched the instructions in ID and IF (the two cycles behind it), both along " +
-          "the wrong (fall-through) path, and both must be flushed",
-        "Four instructions — the entire pipeline is always flushed on any taken branch",
+        "Zero: predict-not-taken defers fetch instead of squashing",
+        "One: only the instruction currently in ID",
+        "Two: the instructions currently in ID and IF",
+        "Four: every stage behind the branch is flushed",
       ],
       correctIndex: 2,
     },
     explanation:
       "The flush depth for a mispredicted branch equals the number of pipeline stages between " +
       "fetch and branch resolution, minus one. Here the branch resolves at the end of EX (stage " +
-      "3), so by that same cycle two more instructions have already been fetched behind it — one " +
-      "sitting in ID, one in IF — both fetched under the wrong assumption (not-taken). Once the " +
-      "branch resolves as taken, both must be squashed and the correct-path instruction fetched " +
-      "instead, costing a 2-cycle bubble. This is precisely why real designs resolve branches as " +
-      "early as possible (e.g. in ID with dedicated compare/forwarding hardware, cutting the " +
-      "penalty to one bubble) or, far more effectively in modern cores, predict the branch " +
-      "outcome and target ahead of time via a branch predictor and BTB so the common case incurs " +
-      "no bubble at all.",
+      "3), so by that cycle two more instructions have already been fetched behind it, one " +
+      "sitting in ID and one in IF, both fetched under the wrong assumption. Once the branch " +
+      "resolves as taken, both are squashed and fetch restarts at the target, costing a 2-cycle " +
+      "bubble. Nothing older than the branch is affected, so a full 4-stage flush is wrong. Real " +
+      "designs attack this either by resolving branches earlier (in ID, with dedicated compare " +
+      "and forwarding hardware, cutting the penalty to one bubble) or, far more effectively on " +
+      "modern cores, by predicting outcome and target ahead of time with a branch predictor and " +
+      "BTB so the common case costs nothing.",
   },
   {
     id: "computer-architecture-branch-btb-indirect-04",
     category: "computer-architecture",
     difficulty: "hard",
-    title: "BTB prediction for monomorphic vs. megamorphic indirect calls",
+    title: "BTB behavior for monomorphic vs. megamorphic virtual calls",
     tags: ["branch-prediction", "btb", "indirect-branch"],
     type: "trace",
     prompt:
       "A hot call site invokes a virtual function through a vtable pointer (an indirect branch " +
       "whose target address, not just its taken/not-taken outcome, must be predicted). Case A: " +
-      "the call site is monomorphic — it always resolves to the same concrete override at " +
-      "runtime. Case B: the call site is megamorphic — it alternates unpredictably among several " +
-      "different concrete overrides across calls. What does the branch target buffer (BTB) do in " +
-      "each case?",
+      "the call site is monomorphic, always resolving to the same concrete override at runtime. " +
+      "Case B: the call site is megamorphic, alternating unpredictably among several different " +
+      "concrete overrides across calls. What does the branch target buffer (BTB) do in each case?",
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "The BTB predicts equally well in both cases, since it only tracks taken/not-taken, not " +
-          "targets",
-        "In case A, the BTB quickly learns the single stable target and predicts it correctly on " +
-          "nearly every call, incurring effectively no penalty; in case B, the single BTB entry " +
-          "for that call site can only hold one predicted target at a time, so alternating actual " +
-          "targets repeatedly disagree with whatever was last predicted, causing frequent " +
-          "target mispredictions — each one a full front-end pipeline flush once the real target " +
-          "is resolved in execute",
-        "The BTB entry is disabled automatically once it detects a megamorphic call site, forcing " +
-          "the core into a slower but resolution-free in-order mode",
-        "Indirect branches are never entered into the BTB at all — only direct conditional " +
-          "branches are",
+        "Both cases predict equally well, since the BTB records taken/not-taken outcomes rather " +
+          "than target addresses",
+        "Case A converges on one stable, correctly predicted target; case B keeps predicting " +
+          "whichever target it saw last, so target mispredictions and front-end flushes are frequent",
+        "The BTB entry is disabled once the hardware notices several distinct targets, and the " +
+          "call site then stalls fetch until the target is computed",
+        "Indirect branches are never allocated BTB entries at all; only direct conditional " +
+          "branches are tracked there",
       ],
       correctIndex: 1,
     },
     explanation:
-      "The BTB caches, per branch instruction address, the most recently (or most commonly) " +
-      "observed target address so the front end can redirect fetch before the branch is even " +
-      "decoded, let alone executed. A monomorphic call site's target never changes, so the BTB " +
-      "entry converges to a near-100%-accurate prediction and virtually every call is a free, " +
-      "zero-bubble jump. A megamorphic call site defeats this: a single BTB entry (or the small " +
-      "per-branch indirect-target history most designs maintain) cannot simultaneously represent " +
-      "several live targets, so whichever target was predicted from the last call is frequently " +
-      "wrong, and each misprediction is caught only once the real target is computed and " +
-      "resolved much later in the pipeline, forcing a full speculative-state flush and refetch. " +
-      "This is exactly why virtual-dispatch-heavy or heavily-polymorphic C++/interpreter code " +
-      "(virtual calls, function pointers, switch-based dispatch) is especially sensitive to " +
-      "call-site polymorphism, and why devirtualization, final-marking, and profile-guided " +
-      "monomorphization are real, measurable optimizations on such hot paths.",
+      "The BTB caches, per branch instruction address, the most recently or most commonly " +
+      "observed target so the front end can redirect fetch before the branch is even decoded. A " +
+      "monomorphic call site's target never changes, so its entry converges to near-perfect " +
+      "accuracy and virtually every call is a free, zero-bubble jump. A megamorphic call site " +
+      "defeats that: one BTB entry (or the small per-branch indirect-target history most designs " +
+      "maintain, indexed by global branch history on modern cores) cannot represent several live " +
+      "targets at once, so the prediction carried over from the last call is frequently wrong. " +
+      "The misprediction is caught only when the real target is computed deep in the pipeline, " +
+      "forcing a full speculative-state flush and refetch. That sensitivity is why " +
+      "devirtualization, marking classes or methods final, and profile-guided monomorphization " +
+      "are measurable optimizations on virtual-dispatch-heavy C++ and on interpreter dispatch " +
+      "loops.",
+    references: [
+      "Intel 64 and IA-32 Architectures Optimization Reference Manual, front-end optimization chapter",
+    ],
   },
   {
     id: "computer-architecture-branch-sorted-array-05",
     category: "computer-architecture",
     difficulty: "medium",
-    title: "Why sorting the data speeds up a branchy loop",
+    title: "Sorted vs. unsorted iteration through a branchy loop",
     tags: ["branch-prediction", "predictability"],
     type: "trace",
     prompt:
       "This loop runs over a large array of random 32-bit integers, and is timed twice: once with " +
       "`data` left in random order, once after `std::sort(data.begin(), data.end())` is called " +
-      "first (the sort's own time is excluded from the measurement — only the loop below is " +
-      "timed). The sorted run is measurably faster, often by several times, despite doing the " +
-      "exact same arithmetic and touching the same memory footprint in the same linear order " +
-      "either way. What's the primary cause?",
+      "first (the sort's own time is excluded, only the loop below is timed). The sorted run is " +
+      "measurably faster, often by several times, despite doing the exact same arithmetic and " +
+      "touching the same memory footprint in the same linear order either way. What's the " +
+      "primary cause?",
     snippet: {
       language: "cpp",
       filename: "main.cpp",
@@ -190,38 +183,34 @@ for (size_t i = 0; i < data.size(); ++i) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Better spatial cache locality once sorted — sorted data compresses into fewer cache lines",
-        "Branch prediction accuracy: on sorted data the `>= threshold` outcome is false for a long " +
-          "run and then true for a long run (one transition total), so the predictor converges " +
-          "and predicts nearly every branch correctly; on random data the outcome is essentially a " +
-          "coin flip per element, so the predictor mispredicts roughly half the time, and each " +
-          "misprediction costs a full pipeline flush",
-        "SIMD auto-vectorization only triggers on sorted input",
-        "The sorted array is smaller in memory because duplicate values are removed by sort",
+        "Better spatial locality: sorted data packs into fewer distinct cache lines per pass",
+        "The stride prefetcher only engages on monotonically increasing values, so the sorted run " +
+          "streams from L2 while the random run misses to DRAM",
+        "Auto-vectorization applies only when the compiler can assume the input is monotonic",
+        "Branch predictability: sorted input makes the comparison false for one long run and then " +
+          "true for one long run, while random input mispredicts on roughly half the elements",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
-      "Both runs touch every element exactly once, in the same linear (fully cache-friendly, " +
-      "unit-stride) order — sorting doesn't change the access pattern, footprint, or total " +
-      "arithmetic work, so cache locality is identical either way and cannot explain the " +
-      "difference. What changes is the *sequence of branch outcomes* the conditional produces. " +
-      "On sorted data the outcome is false for every element below the threshold and true for " +
-      "every element at or above it — a single transition across the whole array — which a " +
-      "modern two-level/TAGE-style branch predictor learns almost perfectly after a short warm-up, " +
-      "so nearly every branch executes with zero penalty. On random data the outcome is " +
-      "effectively unpredictable (~50% correlated with recent history at best), so the predictor " +
-      "mispredicts roughly half the time, and on a deep out-of-order pipeline each misprediction " +
-      "costs on the order of 15-20 cycles to squash the wrong-path work and refill the pipeline " +
-      "from the correct target — dwarfing the one or two cycles the branch's actual work would " +
-      "otherwise take. This is the canonical illustration of why data-dependent unpredictable " +
-      "branches, not raw instruction count, often dominate real-world hot-loop performance.",
+      "Both runs touch every element exactly once in the same unit-stride order, so footprint, " +
+      "cache behavior, and total arithmetic are identical; sorting changes the sequence of branch " +
+      "outcomes, nothing else. Prefetchers key off address patterns, not data values, so the " +
+      "linear walk is prefetched equally well in both runs. On sorted data the condition is false " +
+      "for every element below the threshold and true for every element at or above it, a single " +
+      "transition across the whole array, which a two-level or TAGE-style predictor learns almost " +
+      "perfectly after a short warm-up. On random data the outcome is effectively a coin flip, so " +
+      "the predictor mispredicts roughly half the time, and on a deep out-of-order pipeline each " +
+      "misprediction costs on the order of 15-20 cycles to squash wrong-path work and refill from " +
+      "the correct target, dwarfing the branch's own cost. This is the canonical demonstration " +
+      "that unpredictable data-dependent branches, rather than instruction count, often dominate " +
+      "hot-loop performance.",
   },
   {
     id: "computer-architecture-rob-inorder-retirement-06",
     category: "computer-architecture",
-    difficulty: "hard",
-    title: "Reorder buffer preserves in-order retirement",
+    difficulty: "medium",
+    title: "A 20-cycle divide ahead of two independent single-cycle adds",
     tags: ["out-of-order-execution", "rob", "precise-exceptions"],
     type: "trace",
     prompt:
@@ -229,42 +218,39 @@ for (size_t i = 0; i < data.size(); ++i) {
       "I1 (a 20-cycle-latency integer divide), I2 and I3 (single-cycle adds with no dependency on " +
       "I1 or each other). The scheduler dispatches all three as soon as their operands are ready, " +
       "so I2 and I3 finish execution long before I1 does. What governs when I2's and I3's results " +
-      "become visible to the rest of the machine (committed to the architectural register file)?",
+      "become visible to the rest of the machine (committed to architectural state)?",
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "I2 and I3 commit immediately upon finishing execution, since the machine is out-of-order " +
-          "end to end",
-        "I2 and I3 finish execution early and sit in their reorder buffer (ROB) entries marked " +
-          "complete, but do not retire (commit to architectural state) until I1 and every older " +
-          "instruction has retired first — the ROB enforces in-order retirement even though " +
-          "execution itself happened out of order, which is what makes exceptions precise",
-        "The core stalls I2 and I3's execution entirely until I1 finishes, since retirement order " +
-          "equals execution order on this design",
-        "I2 and I3's results are discarded and must be recomputed once I1 retires",
+        "They finish execution early but sit complete in their reorder buffer entries, retiring " +
+          "only after I1 and every older instruction has retired",
+        "They commit to architectural state the moment they finish executing, since the machine is " +
+          "out of order end to end",
+        "Their execution is held back until I1 completes, so that retirement order matches " +
+          "execution order",
+        "Their results are discarded when I1 stalls and recomputed once I1 retires, since the ROB " +
+          "tracks order but not data",
       ],
-      correctIndex: 1,
+      correctIndex: 0,
     },
     explanation:
-      "Out-of-order execution and in-order retirement are two separate mechanisms, and the ROB is " +
-      "what decouples them: every instruction is allocated a ROB entry in program order at " +
-      "dispatch, executes whenever its operands and a functional unit are ready (potentially far " +
-      "out of order), and marks its ROB entry 'complete' with its result — but the retirement " +
-      "logic only ever commits entries from the head of the ROB, in strict program order, one (or " +
-      "a few, superscalar-width) per cycle, and only once they're marked complete. So I2 and I3 " +
-      "can finish computing well before I1, but their results sit buffered in the ROB, invisible " +
-      "to architectural state, until I1 retires ahead of them. This is precisely what gives the " +
-      "machine precise exceptions despite out-of-order execution: if I1 later faults (e.g. divide " +
-      "by zero), the core simply never retires I1 or anything behind it — I2 and I3's already-" +
-      "computed results are quietly discarded from the ROB, and architectural state reflects " +
-      "exactly 'everything up to I1, and nothing after,' exactly as a naive in-order machine would " +
-      "have produced.",
+      "Out-of-order execution and in-order retirement are separate mechanisms, and the ROB " +
+      "decouples them. Every instruction is allocated a ROB entry in program order at dispatch, " +
+      "executes whenever its operands and a functional unit are ready, and then marks its entry " +
+      "complete. Retirement logic only ever commits entries from the head of the ROB, in strict " +
+      "program order, a few per cycle, and only once they are marked complete. So I2 and I3 can " +
+      "finish computing well before I1, but their results stay buffered, invisible to " +
+      "architectural state, until I1 retires ahead of them. That is what makes exceptions precise " +
+      "on an out-of-order core: if I1 faults (say, divide by zero), the core simply never retires " +
+      "I1 or anything behind it, I2 and I3's already-computed results are dropped from the ROB, " +
+      "and architectural state reflects everything up to I1 and nothing after, just as a naive " +
+      "in-order machine would have produced.",
   },
   {
     id: "computer-architecture-speculative-execution-spectre-07",
     category: "computer-architecture",
     difficulty: "hard",
-    title: "Cache residue left behind by a squashed speculative load",
+    title: "Speculation past a trained bounds check with an out-of-bounds index",
     tags: ["speculative-execution", "spectre", "side-channel"],
     type: "trace",
     prompt:
@@ -274,7 +260,7 @@ for (size_t i = 0; i < data.size(); ++i) {
       "`array1[x]` (an out-of-bounds read) and uses that byte to index and load from `array2`, " +
       "all before discovering the branch was mispredicted and squashing the instructions. After " +
       "the misprediction is detected and architectural state is rolled back to what it would have " +
-      "been had the branch gone the other way, what — if anything — remains observable?",
+      "been had the branch gone the other way, what remains observable?",
     snippet: {
       language: "cpp",
       filename: "gadget.cpp",
@@ -285,42 +271,41 @@ for (size_t i = 0; i < data.size(); ++i) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Nothing at all — misprediction rollback perfectly undoes every effect of the squashed " +
-          "instructions, architectural and microarchitectural alike",
-        "The rollback restores architectural state (registers, memory writes are never " +
-          "committed), but it does not undo microarchitectural side effects: the speculative load " +
-          "from `array2` still pulled a specific cache line into the cache before the squash. A " +
-          "later timing probe — measuring access latency to each of array2's possible cache lines " +
-          "— can detect which line is now cached, and back out the value of the out-of-bounds " +
-          "byte, entirely through a covert cache-timing channel that never depended on the " +
-          "transient instructions ever architecturally committing",
-        "The CPU raises a segmentation fault at the moment of the out-of-bounds read, so no data " +
-          "is ever leaked",
-        "The speculative load causes a data race detectable by the OS's memory protection unit",
+        "Nothing: misprediction recovery reverts architectural and microarchitectural state alike, " +
+          "including any lines the squashed loads brought in",
+        "The out-of-bounds read faults the moment it executes, so the dependent load never issues " +
+          "and no secret-dependent state is created",
+        "The cache line that `array2[array1[x] * 4096]` maps to stays resident, and timing loads " +
+          "against each candidate line recovers the out-of-bounds byte",
+        "The secret byte remains in the physical register the squashed load wrote until that " +
+          "register is reallocated, which is where the leak actually comes from",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
-      "Branch misprediction recovery only guarantees that *architectural* state — registers, " +
-      "memory — ends up exactly as if the mispredicted path had never executed; it says nothing " +
-      "about *microarchitectural* state such as cache contents, which are never rolled back " +
-      "because doing so would require tracking and reverting every cache fill a speculative " +
-      "instruction ever caused, which no real design does. The speculative chain here reads an " +
-      "attacker-controlled out-of-bounds byte from array1, uses it to compute an address into " +
-      "array2, and issues a load — pulling exactly one of array2's cache lines (determined by the " +
-      "secret byte) into the cache — before the branch resolves and the whole sequence is " +
-      "squashed. The squash removes any architectural trace (y is never written), but the cache " +
-      "line stays resident; the attacker then times accesses to each of array2's 256 possible " +
-      "lines (one per possible byte value) and the fast one reveals the secret. This is the core " +
-      "mechanism behind Spectre-class attacks: speculative execution transiently computes on data " +
-      "it should never have architecturally touched, and a cache-timing (or other microarchitectural) " +
-      "side channel exfiltrates the result even though the computation itself is 'undone.'",
+      "Misprediction recovery only guarantees that architectural state, registers and committed " +
+      "memory, ends up as if the wrong path had never executed. It says nothing about " +
+      "microarchitectural state such as cache contents, which are never rolled back because doing " +
+      "so would require tracking and reverting every fill a speculative instruction caused. Nor " +
+      "does the fault help: a fault on a transient instruction is only reported at retirement, " +
+      "and this transient instruction never retires, so execution of the dependent load is not " +
+      "prevented. Physical registers are freed by the rename recovery and are not readable by the " +
+      "attacker in any case. What survives is the fill: the speculative chain reads an " +
+      "attacker-chosen out-of-bounds byte, scales it by 4096 so each possible value maps to a " +
+      "distinct page and cache line, and issues a load that pulls exactly one of array2's lines " +
+      "in. The attacker then times accesses to all 256 candidate lines and the fast one names the " +
+      "secret. That is the core of Spectre v1: transient execution computes on data it should " +
+      "never have touched, and a cache-timing side channel exfiltrates the result even though the " +
+      "computation itself was undone.",
+    references: [
+      "Kocher et al., \"Spectre Attacks: Exploiting Speculative Execution\", IEEE S&P 2019",
+    ],
   },
   {
     id: "computer-architecture-cache-hierarchy-latency-08",
     category: "computer-architecture",
     difficulty: "easy",
-    title: "Order-of-magnitude cache hierarchy latencies",
+    title: "Typical access latencies from L1 through DRAM",
     tags: ["cache-hierarchy", "latency"],
     type: "trace",
     prompt:
@@ -331,88 +316,86 @@ for (size_t i = 0; i < data.size(); ++i) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "L1 ~4-5 cycles, L2 ~12-20 cycles, L3 ~40-75 cycles, DRAM ~200-300+ cycles — each level is " +
-          "roughly 3-5x slower than the one above it, and the L3-to-DRAM gap is the largest jump " +
-          "of all",
-        "L1 ~50 cycles, L2 ~100 cycles, L3 ~150 cycles, DRAM ~200 cycles — a roughly linear " +
-          "progression",
-        "All three cache levels are within 2 cycles of each other; only DRAM is meaningfully " +
-          "slower",
-        "L1 ~4 cycles, L2 ~8 cycles, L3 ~1000 cycles, DRAM ~1200 cycles — L3 is nearly as slow as " +
-          "DRAM",
+        "L1 ~4-5 cycles, L2 ~12-20, L3 ~40-75, DRAM ~200-300+",
+        "L1 ~50 cycles, L2 ~100, L3 ~150, DRAM ~200",
+        "L1 ~4 cycles, L2 ~5, L3 ~7, DRAM ~200",
+        "L1 ~4 cycles, L2 ~8, L3 ~1000, DRAM ~1200",
       ],
       correctIndex: 0,
     },
     explanation:
-      "The cache hierarchy is built as a series of exponentially larger, exponentially slower " +
-      "levels precisely to hide the enormous latency gap between core execution speed and DRAM. " +
-      "L1 is small (tens of KB), physically adjacent to the execution units, and tuned for a load-" +
-      "to-use latency of around 4-5 cycles; L2 is larger (hundreds of KB to a few MB) and further " +
-      "away, costing roughly 12-20 cycles; L3 (shared, several MB to tens of MB, often off to the " +
-      "side of the die or in a ring/mesh interconnect) costs roughly 40-75 cycles; and a genuine " +
-      "DRAM access, which must traverse the memory controller and the DRAM row activation/column " +
-      "access protocol off-chip, costs on the order of 200-300+ cycles — by far the largest single " +
-      "jump in the hierarchy. This is why working-set size relative to L2/L3 capacity, and access " +
-      "pattern predictability (for prefetching), dominate the performance of memory-bound HPC " +
-      "code far more than instruction count does.",
+      "The hierarchy is built as a series of exponentially larger, exponentially slower levels to " +
+      "hide the gap between core execution speed and DRAM. L1 is small (tens of KB), sits next to " +
+      "the execution units, and is tuned for a load-to-use latency around 4-5 cycles. L2 is larger " +
+      "(hundreds of KB to a few MB) and further away at roughly 12-20 cycles. L3 is shared, " +
+      "several MB to tens of MB, reached over a ring or mesh interconnect, at roughly 40-75 " +
+      "cycles. A genuine DRAM access must cross the memory controller and go through row " +
+      "activation and column access off-chip, costing on the order of 200-300+ cycles, by far the " +
+      "largest single jump. Exact numbers move with each generation and clock speed, but the " +
+      "roughly 3-5x step between levels is stable, which is why working-set size relative to L2/L3 " +
+      "capacity and access-pattern predictability dominate memory-bound code far more than " +
+      "instruction count does.",
+    references: [
+      "Agner Fog, \"The microarchitecture of Intel, AMD and VIA CPUs\", cache latency tables",
+    ],
   },
   {
     id: "computer-architecture-cache-inclusive-exclusive-09",
     category: "computer-architecture",
     difficulty: "hard",
-    title: "Back-invalidation in an inclusive cache hierarchy",
+    title: "L3 eviction of a line in a strictly inclusive hierarchy",
     tags: ["cache-hierarchy", "inclusion-policy"],
     type: "trace",
     prompt:
       "A core's L3 is strictly inclusive of its L1 and L2 (every line resident in L1 or L2 is " +
       "guaranteed to also be resident in L3). The core is actively, repeatedly hitting on a line " +
-      "in its L1 — it's genuinely hot. Meanwhile, unrelated activity from other cores fills L3 to " +
-      "the point that this line's L3 set becomes full and, per the L3's own replacement policy, " +
-      "this exact line is chosen for eviction from L3. What happens to the line in the core's L1?",
+      "in its L1, so the line is genuinely hot. Meanwhile, unrelated activity from other cores " +
+      "fills L3 to the point that this line's L3 set becomes full and, per the L3's own " +
+      "replacement policy, this exact line is chosen for eviction from L3. What happens to the " +
+      "line in the core's L1?",
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Nothing — L1 and L3 are independent, so the line safely stays resident in L1 regardless " +
-          "of what L3 does",
-        "The inclusion property forces a back-invalidation: the line must also be invalidated out " +
-          "of the core's L1 (and L2) when it's evicted from L3, so the very next access to it — " +
-          "even though it was being hit on constantly a moment ago — misses in L1 and must be " +
-          "refilled all the way from memory (or wherever else it now lives)",
-        "The line is automatically promoted to a permanently pinned L1 entry that can never be " +
-          "evicted from L3 again",
-        "L3 silently refuses the eviction to preserve inclusion, growing its effective capacity",
+        "Nothing: the levels track their contents independently, so the core keeps hitting on its " +
+          "L1 copy",
+        "The L3 replacement policy skips any line a private cache still holds, so a different " +
+          "victim is chosen instead",
+        "The line is written back from L1 into L3 and reinstalled there, so both copies stay valid",
+        "The line is invalidated out of L1 and L2 as well, so the core's next access misses and " +
+          "must refill from further out",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
-      "An inclusive cache hierarchy's defining invariant is that L3's contents are always a " +
-      "superset of what's cached in L1/L2 — this is what lets a coherence snoop check only L3 " +
-      "(rather than probing every core's private caches) to know whether any core has a given " +
-      "line, which simplifies and speeds up coherence traffic. Maintaining that invariant when L3 " +
-      "evicts a line requires back-invalidation: the eviction message is propagated down to force " +
-      "the same line out of any L1/L2 that holds it, even if that core was actively using it, " +
-      "because otherwise L1/L2 could hold a line L3 no longer tracks, silently breaking the " +
-      "inclusion property and, with it, the snoop-filtering optimization it exists to enable. The " +
-      "practical cost is that a large, shared L3 under pressure from *unrelated* cores' traffic " +
-      "can evict — and thereby forcibly evict from L1/L2 — data one particular core is genuinely, " +
-      "repeatedly hot on. Exclusive hierarchies (e.g., AMD's historical designs) avoid this " +
-      "specific pathology: a line lives in exactly one level at a time (L3 holds only what's *not* " +
-      "in L1/L2, receiving a line only when it's evicted from L2), so L3 pressure never evicts a " +
-      "line the core is still actively caching in L1 — at the cost of needing an explicit transfer " +
-      "on every L2 eviction instead.",
+      "An inclusive hierarchy's defining invariant is that L3's contents are a superset of what " +
+      "is cached in L1/L2. That invariant is what lets a coherence snoop check only L3, instead " +
+      "of probing every core's private caches, to learn whether any core holds a line. " +
+      "Maintaining it on an L3 eviction requires back-invalidation: the eviction is propagated " +
+      "down to force the line out of any L1/L2 that holds it, even a core actively using it, " +
+      "because otherwise a private cache would hold a line L3 no longer tracks and the " +
+      "snoop-filtering property would silently break. L3 replacement policies are typically " +
+      "hit-rate driven and, in the simplest implementations, unaware of which lines a private " +
+      "cache is hot on, which is precisely why the pathology bites: pressure from unrelated cores " +
+      "can knock a line out from under the core that is using it. Exclusive hierarchies (AMD's " +
+      "historical designs, for example) avoid this specific problem by keeping a line in exactly " +
+      "one level at a time, at the cost of an explicit transfer on every L2 eviction. Real " +
+      "designs also soften the effect with hints from the private caches or non-inclusive, " +
+      "non-exclusive policies, which is why inclusion victims are a tuning concern rather than a " +
+      "constant catastrophe.",
   },
   {
     id: "computer-architecture-cache-associativity-thrash-10",
     category: "computer-architecture",
     difficulty: "hard",
-    title: "Power-of-two stride conflict-miss thrashing",
+    title: "Striding down a column of a 1024x1024 matrix",
     tags: ["cache-associativity", "conflict-misses"],
     type: "trace",
     prompt:
       "`matrix` is `N x N` of `double` (8 bytes), with `N = 1024` (a power of two), so each row is " +
-      "exactly 8192 bytes. The cache is 8-way set-associative with 64-byte lines. This loop sums " +
-      "column-major (inner loop strides down a column, jumping a full row each iteration). What " +
-      "happens, and why?",
+      "exactly 8192 bytes. The L1 data cache is 32 KB, 8-way set-associative with 64-byte lines " +
+      "(so 64 sets), and the whole matrix fits comfortably inside the much larger shared L3. This " +
+      "loop sums column-major, so the inner loop jumps a full row each iteration. What happens, " +
+      "and why?",
     snippet: {
       language: "cpp",
       filename: "main.cpp",
@@ -426,39 +409,36 @@ for (int j = 0; j < N; ++j) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "No unusual effect — as long as total working set fits in the cache, the access pattern " +
-          "doesn't matter",
-        "Because 8192 bytes is an exact power-of-two multiple of the cache's set-indexing modulus, " +
-          "every element touched by the inner loop maps to the identical cache set; with only 8 " +
-          "ways available in that one set, elements conflict-evict each other well before the " +
-          "8-way limit's worth of rows can coexist, so the loop thrashes with a stream of conflict " +
-          "misses even though the whole matrix is far smaller than total cache capacity",
-        "The loop triggers a structural hazard in the memory controller",
-        "The compiler refuses to compile a column-major traversal of a row-major array",
+        "No unusual effect: the working set fits in cache, so traversal order changes nothing",
+        "Every inner-loop access maps to the same cache set, so with only 8 ways the stream " +
+          "conflict-evicts itself and misses on nearly every access",
+        "The memory controller collapses the column walk onto a single open DRAM row, halving " +
+          "achievable bandwidth for the loop",
+        "The stride prefetcher locks onto the 8192-byte stride and streams the column ahead of " +
+          "demand, so throughput matches the row-major loop",
       ],
       correctIndex: 1,
     },
     explanation:
-      "Which cache set a given address maps to is determined by a fixed slice of the address's " +
-      "middle bits (between the line-offset bits and the tag bits). When the stride between " +
-      "successive accesses is itself a power of two that's a multiple of (cache size / " +
-      "associativity), every access in that stream lands in the same set index, no matter how " +
-      "many total sets the cache has. Here, striding by exactly one row (8192 bytes) means every " +
-      "`matrix[i][j]` for fixed j hits the same set; only 8 lines (the associativity) can be " +
-      "resident there at once, so the 9th distinct row conflict-evicts the 1st, and by the time " +
-      "the loop wraps back to reuse the 1st row's line it's long gone — a conflict miss on every " +
-      "single access, despite the entire matrix easily fitting within the cache's *total* " +
-      "capacity. This is a purely associativity-driven pathology, invisible to a fully-associative " +
-      "or even much-higher-associativity cache of the same size. The standard fix is padding — " +
-      "allocating each row as N+1 (or some other non-power-of-two-friendly) elements so the row " +
+      "Which set an address maps to is decided by a fixed slice of its middle bits, between the " +
+      "line-offset bits and the tag, so the set index repeats every (number of sets x line size) " +
+      "bytes, which is the same quantity as (cache size / associativity). Here that period is 64 " +
+      "sets x 64 bytes = 4096 bytes, and the 8192-byte row stride is an exact multiple of it, so " +
+      "every `matrix[i][j]` for fixed j lands in one set. Only 8 lines fit there, so the 9th " +
+      "distinct row evicts the 1st and the line is long gone by the time the loop wraps back to " +
+      "it. The result is a conflict miss on essentially every access even though the whole matrix " +
+      "fits in total capacity. Prefetching does not rescue it either: hardware stride prefetchers " +
+      "on mainstream x86 do not prefetch across 4 KB page boundaries, and this stride is two " +
+      "pages. The pathology is purely associativity-driven and would vanish on a fully associative " +
+      "cache of the same size. The standard fix is padding each row to N+1 elements so the row " +
       "stride is no longer an exact alias of the set-indexing modulus, spreading accesses back " +
       "across all sets.",
   },
   {
     id: "computer-architecture-mesi-state-walkthrough-11",
     category: "computer-architecture",
-    difficulty: "hard",
-    title: "MESI state transitions across two cores",
+    difficulty: "medium",
+    title: "MESI states after two cores read a line and one then writes it",
     tags: ["cache-coherence", "mesi"],
     type: "trace",
     prompt:
@@ -469,86 +449,77 @@ for (int j = 0; j < N; ++j) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "A = Modified, B = Invalid — A's write requires an invalidation (BusUpgr/BusRdX) " +
-          "transaction that forces out every other sharer's copy before the write can proceed, " +
-          "since Modified must be held exclusively by exactly one cache",
-        "A = Modified, B = Shared — both keep a valid copy, since MESI allows any number of caches " +
-          "to hold the same line even after a write",
-        "A = Shared, B = Shared — a write doesn't change cache state, only the value",
-        "A = Invalid, B = Invalid — the write goes straight to memory, bypassing both caches",
+        "A = Modified, B = Invalid",
+        "A = Modified, B = Shared",
+        "A = Shared, B = Shared",
+        "A = Exclusive, B = Invalid",
       ],
       correctIndex: 0,
     },
     explanation:
-      "After A's initial read, the line is Exclusive in A (no other cache holds it). When B reads " +
-      "it, a coherence snoop finds A's Exclusive copy, A downgrades to Shared, and B loads it as " +
-      "Shared — both now hold clean, matching copies, which is exactly what the Shared state " +
-      "permits (any number of readers, but no writer). When A then writes, MESI's core invariant " +
-      "— a line may be Modified in at most one cache at any time, and if it's Modified anywhere " +
-      "it must be Invalid everywhere else — forces A to first issue an invalidation (a BusUpgr if " +
-      "A already has the line, or a BusRdX equivalent) that every other sharer, including B, must " +
-      "observe and respond to by transitioning their own copy to Invalid before A's write is " +
-      "permitted to complete. Only after B's copy is confirmed Invalid does A's line become " +
-      "Modified. If B were to read X again afterward, that would trigger a fresh coherence " +
-      "transaction: A's Modified data is supplied via a cache-to-cache transfer (and, depending on " +
-      "the exact protocol variant, may be written back to memory at that point too), with both " +
-      "caches ending up Shared again.",
+      "After A's initial read the line is Exclusive in A, since no other cache holds it. When B " +
+      "reads, a snoop finds A's copy, A downgrades to Shared, and B installs it Shared: any " +
+      "number of clean readers, no writer. When A then writes, MESI's central invariant applies, " +
+      "namely that a line may be Modified in at most one cache and must be Invalid in every " +
+      "other. A therefore issues an invalidation first (a BusUpgr, since A already holds the " +
+      "line; a BusRdX if it did not), every sharer including B transitions to Invalid, and only " +
+      "then is A's write allowed to complete, leaving A Modified. Exclusive is wrong here " +
+      "specifically because the line is now dirty relative to memory, which is exactly the " +
+      "distinction between E and M. If B read X again afterward, A's Modified data would be " +
+      "supplied by a cache-to-cache transfer (and, depending on protocol variant, written back to " +
+      "memory at that point), leaving both caches Shared again.",
   },
   {
     id: "computer-architecture-memory-model-tso-arm-litmus-12",
     category: "computer-architecture",
     difficulty: "hard",
-    title: "Store-buffering litmus test: x86 TSO vs. ARM",
+    title: "Store-buffering litmus test on x86 with no fences",
     tags: ["memory-consistency", "tso", "weak-ordering", "litmus-test"],
     type: "trace",
     prompt:
-      "Two hardware threads run raw machine code with no locks, atomics-with-fences, or memory " +
-      "barriers of any kind — just plain loads and stores. X and Y both start at 0. Thread 0 " +
-      "stores X=1, then loads r1=Y. Thread 1 stores Y=1, then loads r2=X. Is the outcome r1==0 && " +
-      "r2==0 (each thread's load reads the *other* thread's variable before that thread's store " +
-      "is globally visible) actually observable on real x86 hardware, given that x86 uses the " +
-      "comparatively strong TSO (total store order) memory model?",
+      "Two hardware threads run raw machine code with no locks, atomics, or memory barriers of " +
+      "any kind, just plain loads and stores. X and Y both start at 0. Thread 0 stores X=1, then " +
+      "loads r1=Y. Thread 1 stores Y=1, then loads r2=X. Is the outcome r1==0 && r2==0 (each " +
+      "thread's load reads the other thread's variable before that thread's store is globally " +
+      "visible) actually observable on real x86 hardware, given that x86 uses the comparatively " +
+      "strong TSO (total store order) memory model?",
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "No — TSO forbids all store/load reordering, so r1==0 && r2==0 is impossible on x86; only " +
-          "the weakly-ordered ARM model permits it",
-        "Yes — this specific pattern (a store followed by a load to a *different* address, with " +
-          "no fence between them) is the one reordering TSO explicitly still permits, because each " +
-          "core's store buffer can hold the store locally while its own subsequent load bypasses " +
-          "it and goes to memory/cache; ARM's weaker model permits the same outcome (and more). An " +
-          "explicit MFENCE (or a LOCK-prefixed instruction) between the store and load is required " +
-          "on x86 to forbid it",
-        "Neither model permits it — global store visibility is instantaneous on any coherent " +
-          "cache-coherent multiprocessor",
-        "It's only observable on x86, never on ARM, because ARM stores are always immediately " +
-          "globally visible",
+        "No: TSO forbids all four reorderings, so the outcome is possible only under a weak model " +
+          "such as ARM's",
+        "No: cache coherence makes a store globally visible the instant it executes, so no " +
+          "coherent multiprocessor permits it",
+        "Yes: TSO still permits a store to be reordered with a later load to a different address, " +
+          "and forbidding it on x86 requires an MFENCE or a LOCK-prefixed instruction between them",
+        "Yes on x86 only: ARM drains stores to the coherence point before any later load may " +
+          "execute, which rules the outcome out there",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
-      "TSO is often summarized as 'strong' relative to weak/relaxed models, which leads to a " +
-      "common misconception that it forbids essentially all reordering — but TSO's precise " +
-      "definition is that it forbids store-store, load-load, and load-store reordering, while " +
-      "explicitly still permitting store-load reordering to different addresses, because each " +
-      "core buffers its own stores locally (a store buffer) before they drain out to the coherent " +
-      "cache hierarchy and become visible to other cores, and a core's own later loads are allowed " +
-      "to bypass its own not-yet-drained stores and complete against memory/cache directly. That's " +
-      "exactly the pattern in this litmus test: Thread 0's load of Y can execute (and observe Y's " +
-      "old value 0) while Thread 0's store of X is still sitting in Thread 0's local store buffer, " +
-      "not yet visible to Thread 1 — and symmetrically for Thread 1 — producing r1==0 && r2==0 on " +
-      "real x86 silicon, not merely in some theoretical weak model. ARM's weaker model permits the " +
-      "same outcome plus considerably more reordering (including store-store and load-load in " +
-      "certain cases without explicit barriers). Forbidding this specific outcome on x86 requires " +
-      "an explicit full fence (MFENCE) or a LOCK-prefixed RMW instruction between the store and the " +
-      "load, which drains the store buffer before the load is allowed to proceed — precisely the " +
-      "mechanism std::memory_order_seq_cst compiles down to on x86.",
+      "TSO gets described as strong relative to weak models, which invites the misconception that " +
+      "it forbids essentially all reordering. Its precise definition forbids store-store, " +
+      "load-load, and load-store reordering, while explicitly permitting store-load reordering to " +
+      "different addresses. The mechanism is the store buffer: each core buffers its own stores " +
+      "locally before they drain into the coherent cache hierarchy, and the core's own later " +
+      "loads may bypass those undrained stores and complete against cache directly. That is " +
+      "exactly this litmus test. Thread 0's load of Y can execute and observe 0 while Thread 0's " +
+      "store of X still sits in Thread 0's store buffer, unseen by Thread 1, and symmetrically for " +
+      "Thread 1, producing r1==0 && r2==0 on real x86 silicon rather than only in theory. ARM and " +
+      "POWER permit the same outcome plus considerably more, including load-load and store-store " +
+      "reordering that TSO rules out. Forbidding the outcome on x86 takes a full fence (MFENCE) " +
+      "or a LOCK-prefixed RMW between the store and the load, which drains the store buffer " +
+      "first, and that is precisely what a seq_cst store lowers to on x86.",
+    references: [
+      "Sewell et al., \"x86-TSO: A Rigorous and Usable Programmer's Model for x86 Multiprocessors\", CACM 2010",
+    ],
   },
   {
     id: "computer-architecture-simd-autovec-dependency-13",
     category: "computer-architecture",
     difficulty: "medium",
-    title: "Loop-carried dependency blocks auto-vectorization",
+    title: "Auto-vectorizing `a[i] = a[i - 1] * 2 + b[i]` at -O3",
     tags: ["simd", "auto-vectorization", "loop-carried-dependency"],
     type: "trace",
     prompt:
@@ -564,37 +535,35 @@ for (int j = 0; j < N; ++j) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Yes, trivially — the compiler speculatively computes all lanes and corrects any that " +
-          "turn out wrong",
-        "No — a[i] depends on a[i-1], a true loop-carried RAW dependency, so each iteration's " +
-          "result is required before the next iteration can even begin; SIMD lanes must compute " +
-          "several loop iterations' worth of independent results simultaneously, which this " +
-          "recurrence structurally forbids, so the compiler falls back to a scalar loop",
-        "Yes, because the compiler rewrites the recurrence into a closed-form expression " +
-          "automatically",
-        "It vectorizes, but silently produces incorrect results for any n > 8",
+        "Yes: the compiler computes all lanes speculatively and fixes up any lane whose input " +
+          "turns out to have changed",
+        "Yes: dependence analysis rewrites the recurrence into a closed form whose lanes are " +
+          "independent",
+        "It vectorizes, and silently produces wrong results once n exceeds the vector width",
+        "No: each iteration needs the previous iteration's result, so no batch of iterations is " +
+          "independent and the compiler emits scalar code",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
-      "Auto-vectorization fundamentally requires that some fixed-size batch of loop iterations be " +
-      "*independent*, so a SIMD instruction can compute all of them in one shot across the vector " +
-      "lanes. Here, a[i] cannot be computed without first having a[i-1] — the definition of a " +
-      "loop-carried dependency (specifically RAW, since a[i-1] was written by the previous " +
-      "iteration and is read by this one) — so lane k's computation is not actually independent of " +
-      "lane k-1's; it strictly requires lane k-1's result to be finished first, which defeats the " +
-      "entire premise of processing multiple iterations in parallel. The compiler's dependence " +
-      "analysis detects this recurrence and refuses to vectorize the loop, emitting ordinary " +
-      "scalar code instead (though it may still unroll it). Contrast this with `a[i] = b[i]*2 + " +
-      "c[i]`, where each iteration only reads from b and c and writes a distinct a[i] — no " +
-      "iteration depends on any other's result — which vectorizes cleanly into wide SIMD loads/" +
-      "multiplies/adds/stores.",
+      "Auto-vectorization requires that some fixed-size batch of iterations be independent, so one " +
+      "SIMD instruction can compute all of them at once across the lanes. Here a[i] cannot be " +
+      "computed without a[i-1], the definition of a loop-carried RAW dependency, so lane k " +
+      "strictly requires lane k-1's result and the premise of parallel lanes collapses. The " +
+      "compiler's dependence analysis detects the recurrence and refuses to vectorize, emitting " +
+      "ordinary scalar code (it may still unroll). A compiler will not silently emit code that " +
+      "changes results, and it does not have a general mechanism for solving arbitrary " +
+      "recurrences in closed form, though specific patterns like prefix sums do have known " +
+      "parallel formulations that a library or hand-written SIMD can exploit. Contrast with `a[i] " +
+      "= b[i]*2 + c[i]`, where each iteration reads only b and c and writes a distinct a[i]: no " +
+      "iteration depends on another, and it vectorizes cleanly into wide loads, multiplies, adds, " +
+      "and stores.",
   },
   {
     id: "computer-architecture-simd-divergent-branch-14",
     category: "computer-architecture",
     difficulty: "hard",
-    title: "Data-dependent branch defeats clean SIMD vectorization",
+    title: "Auto-vectorizing a loop with a data-dependent if/else",
     tags: ["simd", "auto-vectorization", "predication"],
     type: "trace",
     prompt:
@@ -615,44 +584,36 @@ for (int j = 0; j < N; ++j) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "It vectorizes exactly like a branch-free loop; SIMD lanes have no concept of control flow " +
-          "so the branch is simply irrelevant",
-        "The compiler cannot give each SIMD lane independent control flow (all lanes in one vector " +
-          "instruction execute the same operation), so a genuine vectorization here requires " +
-          "predication: computing both f(data[i]) and g(data[i]) unconditionally for every lane, " +
-          "then blending the two results per-lane with a mask derived from the comparison — " +
-          "trading branch unpredictability for strictly more (but uniform, branch-free) work; if " +
-          "the compiler judges that not profitable (e.g. f/g are expensive or not easily " +
-          "vectorizable themselves) it instead leaves the loop scalar, where it pays the original " +
-          "branch-misprediction cost per random element",
-        "The loop fails to compile because branches are illegal inside vectorizable loops",
-        "The compiler vectorizes only the `if` branch and executes the `else` branch scalar, " +
-          "alternating between SIMD and scalar mode every iteration",
+        "It vectorizes exactly like a branch-free loop, since SIMD lanes have no control flow for " +
+          "the branch to disturb",
+        "Lanes cannot diverge, so vectorizing means computing both f and g for every lane and " +
+          "blending by mask, which the compiler weighs against just staying scalar",
+        "The loop is rejected outright with a diagnostic, since branches are not legal inside a " +
+          "vectorizable loop body",
+        "The compiler vectorizes the if-side and runs the else-side scalar, switching between " +
+          "vector and scalar mode per element as the condition changes",
       ],
       correctIndex: 1,
     },
     explanation:
-      "SIMD execution issues one instruction that operates identically across all lanes of a " +
-      "vector register — there is no mechanism for lane 3 to take the if-branch while lane 5 takes " +
-      "the else-branch within a single instruction stream. To vectorize a loop containing " +
-      "data-dependent per-element control flow at all, the compiler must convert control " +
-      "dependence into data dependence via predication/masking: evaluate the comparison to produce " +
-      "a per-lane boolean mask, unconditionally compute *both* f(data[i]) and g(data[i]) for every " +
-      "lane (since some lanes need one and some need the other, and there's no way to skip work " +
-      "per-lane), and then select the correct result per lane with a blend/select instruction using " +
-      "the mask. This is a real, useful technique, but it's only profitable when the extra " +
-      "unconditionally-executed work is cheap relative to the branch-misprediction cost it avoids " +
-      "— since data[i] > threshold here is essentially random, the scalar version would mispredict " +
-      "roughly half the time (a real, high cost per element), which is exactly the scenario where " +
-      "predicated vectorization tends to win; if f or g were expensive, opaque (e.g. contain their " +
-      "own unpredictable branches or aren't vectorizable), the compiler may instead conservatively " +
-      "leave the loop scalar.",
+      "A SIMD instruction applies one operation identically across all lanes of a vector register; " +
+      "there is no mechanism for lane 3 to take the if-branch while lane 5 takes the else-branch " +
+      "within a single instruction. To vectorize data-dependent per-element control flow, the " +
+      "compiler converts control dependence into data dependence through if-conversion: evaluate " +
+      "the comparison into a per-lane mask, compute both f(data[i]) and g(data[i]) unconditionally " +
+      "for every lane, and select per lane with a blend. AVX-512 and SVE add real predicate " +
+      "registers so masked lanes can suppress side effects and faults, but they still do not let " +
+      "different lanes execute different code. The transform is profitable only when the extra " +
+      "unconditional work is cheap relative to the mispredictions it removes. With a random " +
+      "condition the scalar version mispredicts about half the time, which favors predication; if " +
+      "f or g are expensive, opaque, or contain unpredictable branches of their own, the compiler " +
+      "will often decline and leave the loop scalar.",
   },
   {
     id: "computer-architecture-register-renaming-war-waw-15",
     category: "computer-architecture",
     difficulty: "hard",
-    title: "Register renaming eliminates WAR/WAW despite few architectural registers",
+    title: "Two instructions that both write R1",
     tags: ["register-renaming", "war-hazard", "waw-hazard", "out-of-order-execution"],
     type: "trace",
     prompt:
@@ -660,111 +621,102 @@ for (int j = 0; j < N; ++j) {
       "out-of-order core has 180+ physical registers. I1 writes architectural register R1. I2, " +
       "independently, also writes architectural R1 (a WAW hazard on paper) using entirely " +
       "different source operands. I3 reads R1 afterward and must see I2's result (a RAW hazard on " +
-      "I2). What actually lets I1 and I2 execute out of order — even concurrently — despite both " +
-      "targeting the same architectural register?",
+      "I2). What lets I1 and I2 execute out of order, even concurrently, despite both targeting " +
+      "the same architectural register?",
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "They can't — WAW hazards on the same architectural register always force strictly " +
-          "in-order, serialized execution regardless of microarchitecture",
-        "At rename time, each instruction's *destination* is mapped to a fresh, currently-unused " +
-          "physical register from the larger physical register file — I1's write to 'R1' and I2's " +
-          "write to 'R1' become writes to two entirely distinct physical registers, so there is no " +
-          "actual storage conflict between them and no hazard to enforce; I3 is renamed to read " +
-          "whichever physical register I2 (the most recent prior writer of architectural R1 at " +
-          "I3's position in program order) was mapped to, correctly preserving the true RAW " +
-          "dependency",
-        "The compiler statically converts the code to SSA form before it ever reaches the CPU, so " +
-          "the hardware never sees the conflict",
-        "The cache-coherence protocol silently versions each write to R1",
+        "Rename maps each write to a fresh physical register, so the two writes never share " +
+          "storage, and I3 is renamed to read the physical register I2 was given",
+        "Nothing does: I2 must wait for I1 to finish writing R1, so that the register is left " +
+          "holding the younger instruction's value",
+        "The compiler emits the code in SSA form, so the hardware never sees the same name written " +
+          "twice",
+        "The ROB holds both results and retirement keeps the younger one, so no renaming is " +
+          "involved",
       ],
-      correctIndex: 1,
+      correctIndex: 0,
     },
     explanation:
-      "WAR and WAW hazards are not true data dependencies — they're artifacts of a limited number " +
-      "of *names* (architectural registers) being reused, not of any actual value flowing between " +
-      "the instructions. Register renaming exploits exactly this: a rename table (register alias " +
-      "table) maps each architectural register name to whichever physical register currently holds " +
-      "its live value, and every instruction that *writes* a register is allocated a brand-new " +
-      "physical register for that write at rename time, updating the map. Because I1 and I2 each " +
-      "get their own distinct physical register for their respective writes to architectural R1, " +
-      "there's no longer any real storage they're contending over, so the WAW hazard is eliminated " +
-      "entirely — the two instructions can be scheduled and executed in any order, even the same " +
-      "cycle, purely bound by their own operand readiness. I3's read of architectural R1 is renamed " +
-      "at the same time to reference specifically the physical register I2's write is targeting " +
-      "(the correct producer per program order), preserving the genuine RAW dependency I3 actually " +
-      "has. This is precisely why real out-of-order cores can have vastly more in-flight, " +
-      "overlapping computation than the ISA's small architectural register count would naively " +
-      "suggest is possible — the architectural register file is just a naming convention, not the " +
-      "actual physical storage the hardware executes against.",
+      "WAR and WAW are not true data dependencies; they are artifacts of a limited supply of " +
+      "names, not of any value flowing between the instructions. Renaming exploits that: a " +
+      "register alias table maps each architectural name to whichever physical register currently " +
+      "holds its live value, and every instruction that writes a register is allocated a brand-new " +
+      "physical register at rename time, updating the map. Because I1 and I2 each get their own " +
+      "physical destination, there is no storage they contend over, the WAW disappears, and the " +
+      "two can execute in any order or the same cycle, bounded only by their own operand " +
+      "readiness. I3's read of R1 is renamed at the same time to the physical register I2 targets, " +
+      "which is the correct producer at I3's point in program order, preserving the genuine RAW. " +
+      "The ROB tracks ordering and completion but is not what resolves the name conflict, and SSA " +
+      "in the compiler does not survive into the ISA's fixed 16-register namespace. Renaming is " +
+      "why an out-of-order core can keep far more computation in flight than a small architectural " +
+      "register count suggests: those names are a calling convention, not the storage the hardware " +
+      "executes against.",
   },
   {
     id: "computer-architecture-store-load-forwarding-stall-16",
     category: "computer-architecture",
     difficulty: "hard",
-    title: "Store-to-load forwarding: clean forward vs. forwarding stall",
+    title: "Store-to-load forwarding for two store/load overlap patterns",
     tags: ["store-buffer", "load-store-forwarding", "memory-disambiguation"],
     type: "trace",
     prompt:
-      "In scenario A, a store writes a full 8-byte value at address p, and the very next " +
-      "instruction loads a full 8 bytes from the exact same address p, before the store has " +
-      "drained to cache. In scenario B, that same 8-byte store is immediately followed by a load " +
-      "of only 4 bytes starting at address p+4 (the upper half of the just-stored value — a " +
-      "partial, offset overlap rather than an exact address+size match). On typical x86 " +
-      "microarchitectures, how do these two loads differ?",
+      "Scenario A: a single 8-byte store writes address p, and the next instruction loads the " +
+      "upper 4 bytes at p+4, while the store is still in the store buffer. Scenario B: two " +
+      "separate 4-byte stores write p and p+4, and the next instruction loads all 8 bytes at p, " +
+      "again before either store has drained. On mainstream x86 microarchitectures (Sandy Bridge " +
+      "and later), how do these two loads differ?",
     snippet: {
       language: "cpp",
       filename: "main.cpp",
-      code: `int64_t* p64 = &x;
+      code: `// Scenario A: one 8-byte store, then a narrower load contained within it
 *p64 = 0x1122334455667788LL;
+int32_t a = *(reinterpret_cast<int32_t*>(p64) + 1);   // upper 4 bytes
 
-// Scenario A:
-int64_t a = *p64;                                   // same address, same 8-byte width
-
-// Scenario B:
-int32_t* p32 = reinterpret_cast<int32_t*>(p64);
-int32_t  b = *(p32 + 1);                             // upper 4 bytes only — partial overlap`,
+// Scenario B: two 4-byte stores, then one load spanning both of them
+p32[0] = 0x55667788;
+p32[1] = 0x11223344;
+int64_t b = *reinterpret_cast<int64_t*>(p32);          // all 8 bytes`,
     },
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Both loads forward cleanly from the store buffer with no extra latency — the store " +
-          "buffer always resolves any degree of overlap between a pending store and a later load",
-        "Scenario A forwards cleanly from the store buffer at essentially no extra cost, since the " +
-          "load's address and width exactly match the pending store. Scenario B, a partial/" +
-          "misaligned overlap that most store-forwarding hardware cannot service directly, " +
-          "typically triggers a store-to-load-forwarding stall: the load can't be satisfied from " +
-          "the store buffer and must instead wait for the store to retire and commit to cache " +
-          "before re-issuing, a penalty on the order of many cycles, comparable to a cache-miss-" +
-          "like delay, versus scenario A's near-zero cost",
-        "Neither forwards; both always stall, because store-to-load forwarding does not exist on " +
-          "any x86 microarchitecture",
-        "Scenario B is faster than scenario A because it transfers fewer bytes",
+        "Both forward at the same cost: the store buffer resolves any overlap between pending " +
+          "stores and a later load",
+        "Neither forwards: a load always waits for older overlapping stores to commit to cache " +
+          "before it can read them",
+        "A forwards from the single store that covers it; B overlaps two pending stores with no " +
+          "single one covering it, so it waits for both to commit and then re-issues",
+        "B forwards and A does not, since forwarding requires the load and store to start at the " +
+          "same address",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
-      "Store buffers exist so a core's own subsequent loads don't have to wait for every store to " +
-      "drain all the way to the cache/memory hierarchy before being satisfied — the load checks " +
-      "the store buffer for a matching pending store and, if found, forwards the buffered data " +
-      "directly. That fast path, however, is typically implemented for the common case of an exact " +
-      "address-and-width match (or occasionally a load fully contained within a single prior " +
-      "store), because building general-purpose byte-granularity overlap-resolution logic for " +
-      "every possible partial/misaligned overlap is expensive in hardware and rarely worth it. " +
-      "Scenario A hits that fast path directly. Scenario B's load only wants the upper 4 of the " +
-      "pending store's 8 bytes at a non-matching base address — a partial overlap the forwarding " +
-      "logic on most mainstream x86 implementations cannot resolve — so the load is instead blocked " +
-      "(often flagged by hardware performance counters as a 'store forward block' or similar) until " +
-      "the store actually commits to the cache, at which point the load re-issues and reads it " +
-      "normally from there. This is a real, measurable performance pitfall in low-level code that " +
-      "reinterprets/aliases memory at mismatched widths shortly after writing it — a classic trap " +
-      "for hand-rolled serialization or type-punning code in latency-sensitive systems.",
+      "Store buffers let a core's own loads be satisfied without waiting for its stores to drain " +
+      "to cache: the load searches the buffer for a matching pending store and forwards the data. " +
+      "The forwarding network reads from at most one store buffer entry, so what matters is " +
+      "whether a single older store covers the load. On Sandy Bridge and later, a load fully " +
+      "contained within one store of 8 bytes or less forwards successfully regardless of offset, " +
+      "which is scenario A (older microarchitectures did require a matching start address, which " +
+      "is where that misconception comes from). Scenario B is the classic blocker: the load " +
+      "overlaps two distinct pending stores, no single entry covers it, so forwarding fails and " +
+      "the load is blocked until those stores commit to cache and it re-issues to read them from " +
+      "there. Performance counters expose this as a store-forward block " +
+      "(`ld_blocks.store_forward` on Intel), and the penalty is on the order of ten-plus cycles. " +
+      "It shows up in real code that merges narrow writes and reads them back wide: hand-rolled " +
+      "serializers, union-based type punning, and byte-at-a-time buffer assembly followed by a " +
+      "wide read.",
+    references: [
+      "Intel 64 and IA-32 Architectures Optimization Reference Manual, store-forwarding restrictions",
+      "Agner Fog, \"The microarchitecture of Intel, AMD and VIA CPUs\", store forwarding stalls",
+    ],
   },
   {
     id: "computer-architecture-prefetch-stride-vs-pointer-chase-17",
     category: "computer-architecture",
     difficulty: "medium",
-    title: "Hardware stride prefetcher vs. pointer chasing",
+    title: "Summing a vector vs. walking a scattered linked list",
     tags: ["prefetching", "pointer-chasing", "memory-latency"],
     type: "trace",
     prompt:
@@ -778,95 +730,82 @@ int32_t  b = *(p32 + 1);                             // upper 4 bytes only — p
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Both should perform identically — total bytes touched and total instructions executed are " +
-          "the dominant cost, not the access pattern",
-        "Traversal A's constant stride is detected by the hardware stride prefetcher after a few " +
-          "accesses, which then issues prefetch requests well ahead of the demand stream, hiding " +
-          "most of DRAM latency behind useful work; traversal B's next address is only known after " +
-          "dereferencing the current node (it's data-dependent, not a fixed offset), so there is no " +
-          "stride for the prefetcher to detect, and each hop pays the full serial DRAM latency with " +
-          "essentially no overlap with the next hop's access",
-        "std::list has a larger per-element memory overhead than std::vector, and that overhead " +
-          "alone accounts for the entire slowdown",
-        "The prefetcher actively mispredicts and prefetches the wrong cache lines for linked-list " +
-          "traversal, actively slowing it down below what no prefetching at all would achieve",
+        "They should be close: total bytes touched and instructions executed dominate, not the " +
+          "order in which addresses are produced",
+        "std::list's per-node overhead (two pointers plus allocator metadata) is what accounts for " +
+          "the whole difference",
+        "The prefetcher trains on the list walk and speculates wrong lines, making B slower than " +
+          "it would be with prefetching disabled",
+        "A's constant stride lets the prefetcher run far ahead and hide DRAM latency, while B's " +
+          "next address is only known once the current load returns, so each hop pays full latency " +
+          "serially",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
-      "A hardware stride prefetcher watches the sequence of addresses a core accesses and, once it " +
-      "detects a consistent fixed offset between consecutive accesses (a stride), starts issuing " +
-      "speculative loads for addresses further ahead in that same pattern — for traversal A's " +
-      "unit-stride array walk, this means the data the loop will need several iterations from now " +
-      "is often already sitting in L1/L2 by the time the loop actually reaches it, so the ~200+-" +
-      "cycle DRAM latency is amortized/hidden behind the prefetcher running ahead of demand. " +
-      "Traversal B has no such exploitable structure: `node->next` is a value that only becomes " +
-      "known once `node` itself has been loaded and dereferenced — there is no fixed address " +
-      "offset a prefetcher could speculate on, since the next node's address depends entirely on " +
-      "allocation order/history and can be anywhere in the heap. Each hop is therefore a fully " +
-      "serial round trip — issue the load, wait out however much of the ~200-300+ cycle DRAM " +
-      "latency isn't already hidden, get the address, only then can the next dereference even " +
-      "begin — with essentially zero memory-level parallelism between consecutive hops. This is why " +
-      "cache-friendly, contiguous data structures (arrays, or intrusive/flattened trees) so often " +
-      "dramatically outperform pointer-heavy structures for traversal-heavy workloads, even when " +
-      "both are asymptotically 'O(n)'.",
+      "A hardware stride prefetcher watches the address stream and, once it detects a consistent " +
+      "offset between accesses, issues speculative loads further ahead in the same pattern. For " +
+      "A's unit-stride walk that means the data the loop will need several iterations from now is " +
+      "often already in L1/L2 when the loop gets there, so DRAM latency is hidden behind useful " +
+      "work. B offers nothing to train on: `node->next` becomes known only after `node` itself has " +
+      "been loaded, so there is no address pattern to extrapolate, and the next node can be " +
+      "anywhere in the heap. Each hop is a full serial round trip, issue the load, wait out the " +
+      "200-300+ cycle DRAM latency, get the address, only then start the next dereference, with " +
+      "essentially zero memory-level parallelism between hops. Per-node size overhead is real but " +
+      "second order next to that serialization, and prefetchers do not degrade the list walk, they " +
+      "simply have nothing to work with. Contiguous, flattened structures beat pointer-heavy ones " +
+      "for traversal-heavy work for exactly this reason, even when both are nominally O(n).",
   },
   {
     id: "computer-architecture-write-combining-buffer-18",
     category: "computer-architecture",
     difficulty: "hard",
-    title: "Write-combining buffers and interleaved partial-line writes",
+    title: "Streaming 4-byte stores at a device over PCIe",
     tags: ["write-combining", "uncacheable-memory", "bus-transactions"],
     type: "trace",
     prompt:
-      "A tight loop writes small 4-byte values to a memory region marked write-combining (WC) — " +
-      "e.g., a GPU/device-mapped ring buffer over PCIe — rather than normal cacheable write-back " +
-      "memory. The core provides only a handful of write-combining buffer entries (each capable of " +
-      "accumulating one cache-line's worth of pending writes before it must be flushed as a single " +
-      "bus transaction). Case A: the loop finishes writing every byte of one cache line's worth of " +
+      "A tight loop writes small 4-byte values to a memory region marked write-combining (WC), " +
+      "e.g. a GPU or device-mapped ring buffer over PCIe, rather than normal cacheable write-back " +
+      "memory. The core provides only a handful of write-combining buffer entries, each able to " +
+      "accumulate one cache line's worth of pending writes before it must be flushed as a single " +
+      "bus transaction. Case A: the loop finishes writing every byte of one cache line's worth of " +
       "data before moving on to the next line. Case B: the loop interleaves small writes across " +
       "more distinct cache lines than there are WC buffer entries, touching each line only " +
       "sporadically. How do these two access patterns differ in practice?",
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "No difference — write-combining buffers guarantee full coalescing into single-line burst " +
-          "transactions regardless of interleaving pattern or buffer count",
-        "Case A lets each line's WC buffer entry stay open and accumulate all of that line's writes " +
-          "before eviction, so it flushes as one efficient, wide, coalesced burst transaction. Case " +
-          "B forces premature evictions — once more distinct lines are being written concurrently " +
-          "than there are buffer entries, an entry must be flushed (partially filled) to make room " +
-          "for a newly-touched line, so many of the underlying writes go out as small, separate, " +
-          "inefficient bus transactions instead of a few large coalesced ones",
-        "Case B is strictly faster, because touching more cache lines increases effective bus " +
-          "parallelism",
-        "Write combining only applies to reads, so neither case benefits from it at all",
+        "No difference: WC buffers coalesce into full-line bursts regardless of how many lines are " +
+          "in flight at once",
+        "A keeps one entry open per line and flushes full-line bursts, while B touches more lines " +
+          "than there are entries, so entries flush partially filled and the writes go out as many " +
+          "small transactions",
+        "B is faster: spreading writes over more lines keeps more independent bus transactions in " +
+          "flight simultaneously",
+        "Neither benefits: write combining applies only to write-back memory, so a WC region " +
+          "issues one bus transaction per store either way",
       ],
       correctIndex: 1,
     },
     explanation:
-      "Write-combining memory exists specifically for streaming writes to uncacheable regions " +
-      "(classically MMIO/device memory, e.g. a GPU aperture) where ordinary write-back caching " +
-      "isn't applicable but issuing a separate bus transaction for every individual small store " +
-      "would be prohibitively slow. A small number of dedicated WC buffers — typically just a " +
-      "handful of entries on mainstream x86 cores — each hold one cache-line-sized address range " +
-      "open, merging (coalescing) any writes that land within it, and only flush out to the bus as " +
-      "one transaction when the entry is evicted (by running out of buffers, an explicit fence/" +
-      "SFENCE, a CLFLUSH, or certain other events). If software writes out an entire line's worth " +
-      "of data before touching any other line (case A), that line's entry stays open the whole " +
-      "time and flushes as a single, wide, efficient burst — exactly the intended fast path. If " +
-      "software instead interleaves writes across more distinct lines than there are buffer " +
-      "entries (case B), the WC buffers thrash: an entry gets evicted, only partially filled, to " +
-      "make room for a newly-touched line, so its writes go out as several small, separate " +
-      "transactions rather than being coalesced — which, over a narrow, latency-sensitive bus like " +
-      "PCIe, can be dramatically slower than the equivalent line-at-a-time access pattern despite " +
-      "moving the exact same total number of bytes.",
+      "Write-combining memory exists for streaming writes to regions where ordinary write-back " +
+      "caching does not apply (classically MMIO and device apertures) but where a separate bus " +
+      "transaction per small store would be ruinous. A small number of WC buffers, typically a " +
+      "handful of entries on mainstream x86 cores, each hold one cache-line-sized address range " +
+      "open and merge any writes landing within it, flushing as a single transaction when the " +
+      "entry is evicted: on running out of buffers, on an SFENCE, on certain serializing events, " +
+      "or on a CLFLUSH. Writing an entire line before touching another line (case A) keeps that " +
+      "entry open the whole time and flushes one wide burst, the intended fast path. Interleaving " +
+      "across more lines than there are entries (case B) thrashes the buffers: an entry is evicted " +
+      "partially filled to make room for a newly touched line, so its writes go out as several " +
+      "small transactions instead of one coalesced one. Over a narrow, latency-sensitive link like " +
+      "PCIe, that can be dramatically slower for the exact same number of bytes moved.",
   },
   {
     id: "computer-architecture-tlb-huge-pages-19",
     category: "computer-architecture",
     difficulty: "medium",
-    title: "Why huge pages reduce TLB pressure",
+    title: "4 KB vs. 2 MB pages over a 4 GB random working set",
     tags: ["tlb", "huge-pages", "virtual-memory"],
     type: "trace",
     prompt:
@@ -879,100 +818,85 @@ int32_t  b = *(p32 + 1);                             // upper 4 bytes only — p
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Huge pages make individual TLB lookups faster per access, independent of miss rate",
-        "A TLB has a fixed number of entries regardless of page size, but each entry now covers a " +
-          "512x larger contiguous region of virtual address space (2 MB instead of 4 KB); the same " +
-          "fixed-size TLB can therefore 'reach' — cover without a miss — a much larger working set " +
-          "before it runs out of entries, since far fewer distinct mappings are needed to describe " +
-          "the same footprint, directly cutting the frequency of expensive page-table-walk-inducing " +
-          "TLB misses",
-        "Huge pages eliminate page faults entirely, since the whole region is mapped before first " +
-          "use",
-        "Huge pages increase the CPU's L1 cache line size to match, improving spatial locality",
+        "Entry count stays fixed but each entry now maps 512x more address space, so the TLB's " +
+          "reach covers far more of the working set and misses become rare",
+        "Each individual translation lookup completes in fewer cycles with larger pages, " +
+          "independent of the miss rate",
+        "The whole region is populated up front, so the page faults that trigger walks stop " +
+          "occurring after startup",
+        "The walk itself gets shorter, since a 2 MB mapping terminates one level earlier, which is " +
+          "where nearly all of the saving comes from",
       ],
-      correctIndex: 1,
+      correctIndex: 0,
     },
     explanation:
-      "A TLB caches a fixed number of virtual-to-physical page translations; its effective " +
-      "'reach' — the largest working set it can fully cover without missing — is simply (number of " +
-      "entries) x (page size). With 4 KB pages, a 64-entry L1 DTLB only reaches 256 KB, far smaller " +
-      "than a 4 GB working set, so essentially every access outside that tiny reach window misses " +
-      "and requires the hardware page-table walker to walk the (typically 4-level, on x86-64) page " +
-      "tables — itself a handful of dependent memory accesses, potentially each a cache miss, " +
-      "easily costing 50-100+ cycles per TLB miss even before accounting for the actual data " +
-      "access. Switching to 2 MB pages doesn't change the TLB's entry count, but each entry now " +
-      "covers 512x more address space, so the same 64-entry L1 DTLB now reaches 128 MB — and a " +
-      "1,500-entry L2 TLB reaches roughly 3 GB, covering nearly the entire 4 GB working set outright " +
-      "— reducing the number of distinct mappings needed from ~1,000,000 down to ~2,048, which fits " +
-      "comfortably. This is precisely why large in-memory databases, JVMs/GC heaps, and HPC codes " +
-      "with big working sets commonly use explicit huge pages (`madvise(MADV_HUGEPAGE)`, " +
-      "hugetlbfs, or transparent huge pages) — the benefit is specifically about TLB reach, not " +
-      "raw memory bandwidth or cache behavior.",
+      "A TLB caches a fixed number of translations, so its reach, the largest working set it can " +
+      "cover without missing, is simply entries x page size. With 4 KB pages a 64-entry L1 DTLB " +
+      "reaches 256 KB, nothing against a 4 GB footprint, so nearly every access misses and invokes " +
+      "the hardware page-table walker across (on x86-64) four levels of dependent memory accesses, " +
+      "each potentially a cache miss, easily 50-100+ cycles before the data access even starts. " +
+      "Switching to 2 MB pages leaves the entry count unchanged but makes each entry cover 512x " +
+      "more address space, so the same 64-entry L1 DTLB reaches 128 MB and a 1,500-entry L2 TLB " +
+      "reaches roughly 3 GB, covering most of the working set outright. A 2 MB mapping does also " +
+      "terminate one level early, saving one memory access per walk, but that is a small effect " +
+      "next to eliminating the vast majority of walks entirely. Large in-memory databases, GC " +
+      "heaps, and HPC codes use explicit huge pages (`madvise(MADV_HUGEPAGE)`, hugetlbfs, or THP) " +
+      "specifically for reach, not for bandwidth or cache behavior.",
   },
   {
     id: "computer-architecture-dma-cache-coherence-20",
     category: "computer-architecture",
     difficulty: "medium",
-    title: "DMA, CPU concurrency, and a non-coherent DMA coherence bug",
+    title: "Driver read of a DMA-written buffer on a non-coherent platform",
     tags: ["dma", "cache-coherence", "device-drivers"],
     type: "trace",
     prompt:
       "A NIC performs a DMA transfer, writing incoming packet data directly into a buffer in main " +
-      "memory, on a platform where DMA is *not* automatically snooped/kept coherent with the CPU's " +
-      "caches (some embedded SoCs, and certain buffer/bus configurations even on larger systems). " +
-      "The CPU had previously read that same buffer region, so a stale copy may still sit in its " +
-      "cache. After the DMA completes and the driver is notified, the CPU reads the buffer through " +
-      "an ordinary load instruction with no special handling. What's the risk, and why does DMA " +
-      "let the CPU keep executing other code during the transfer in the first place?",
+      "memory, on a platform where DMA is not automatically snooped or kept coherent with the " +
+      "CPU's caches (some embedded SoCs, and certain buffer/bus configurations even on larger " +
+      "systems). The CPU had read that same buffer region earlier, while processing the previous " +
+      "packet. After the DMA completes and the driver is notified by interrupt, the driver reads " +
+      "the buffer through an ordinary load with no cache maintenance of any kind. What does it " +
+      "get?",
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "No risk at all — DMA is always transparently cache-coherent on every platform by " +
-          "definition, and DMA lets the CPU continue executing because it uses a dedicated engine " +
-          "to move data independently of the CPU, only interrupting it on completion rather than " +
-          "requiring the CPU to poll or move the bytes itself",
-        "DMA offloads the actual data movement to a separate engine so the CPU is free to execute " +
-          "unrelated instructions and is only notified (typically via interrupt) on completion, " +
-          "rather than having to poll or copy the bytes itself. But on a non-coherent platform, the " +
-          "CPU's stale cached copy of the buffer is never automatically updated by the DMA write " +
-          "that landed directly in memory — an ordinary load can return the old cached data instead " +
-          "of what the device just wrote, unless the driver explicitly invalidates the relevant " +
-          "cache lines (before reading DMA'd-in data) or flushes them (before letting the device " +
-          "read CPU-written data), using explicit cache-maintenance operations around the transfer",
-        "DMA transfers always block the CPU until completion, identically to polling, so there is " +
-          "no concurrency benefit at all",
-        "The risk is a TLB miss, not a cache coherence issue, since DMA operates purely on physical " +
-          "addresses",
+        "Stale data, but only until the interrupt handler returns: taking the completion interrupt " +
+          "is a serializing event that flushes the CPU's data caches",
+        "Fresh data: a device write to memory always wins, since a clean cached line is dropped " +
+          "rather than trusted the next time the address is loaded",
+        "Possibly stale data: the device's write left the CPU's cached copy of the buffer " +
+          "untouched, so the driver has to invalidate those lines itself before reading",
+        "Fresh data here; the hazard runs only the other way, when a dirty CPU line is written back " +
+          "afterwards over what the device deposited",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
-      "DMA's whole purpose is to let a device move a block of data to or from memory using its own " +
-      "dedicated engine, entirely independent of the CPU's instruction stream, so the CPU can " +
-      "execute unrelated useful work during the transfer and only needs to be notified (usually via " +
-      "an interrupt) once it's done — this is strictly better than either the CPU busy-polling a " +
-      "status register or, far worse, the CPU itself copying every byte via load/store instructions " +
-      "(programmed I/O). The subtlety is that DMA engines on some platforms write directly to main " +
-      "memory, bypassing the CPU's cache hierarchy entirely, without generating the coherence " +
-      "traffic (snoops/invalidations) an equivalent CPU store would generate. On such non-coherent " +
-      "DMA platforms, if the CPU has a stale cached copy of the destination buffer from before the " +
-      "transfer, an ordinary load after the DMA completes can silently return old data rather than " +
-      "what the device just wrote — and conversely, a dirty CPU cache line covering that buffer " +
-      "could later get written back to memory and clobber data the device already DMA'd in, or a " +
-      "device DMA-*reading* stale memory if the CPU's dirty writes haven't been flushed yet. Driver " +
-      "code on such platforms must explicitly manage this with cache-maintenance instructions — " +
-      "invalidate the relevant lines before reading device-written data, flush (clean) them before " +
-      "letting the device read CPU-written data — which is exactly what Linux's " +
-      "`dma_sync_single_for_cpu`/`dma_sync_single_for_device` (and the underlying architecture-" +
-      "specific cache-maintenance ops) exist to do. Fully cache-coherent DMA (common on modern x86/" +
-      "server platforms, where DMA is snooped into the coherence domain like any other agent) " +
-      "avoids this class of bug entirely, but it is a platform property, not a universal guarantee.",
+      "DMA lets a device move a block of data with its own engine while the CPU runs unrelated " +
+      "work, but on a non-coherent platform that engine writes straight to memory without " +
+      "generating the snoops and invalidations an equivalent CPU store would. Nothing tells the " +
+      "CPU's caches the buffer changed underneath them. The previously fetched line is still " +
+      "Valid and clean as far as the cache is concerned, so the load hits on it and silently " +
+      "returns pre-DMA contents. Taking an interrupt does not help: interrupts serialize " +
+      "execution, they do not perform cache maintenance, and no mainstream architecture flushes " +
+      "data caches on interrupt entry. The reverse hazard is real as well, but it is not the only " +
+      "one: a " +
+      "dirty CPU line covering the buffer can later be written back over what the device " +
+      "deposited, and a device reading a CPU-written buffer can pick up stale memory if those " +
+      "dirty lines were never cleaned. Drivers handle both directions explicitly with cache " +
+      "maintenance, invalidating before reading device-written data and cleaning before letting " +
+      "the device read CPU-written data, which is what Linux's `dma_sync_single_for_cpu` and " +
+      "`dma_sync_single_for_device` wrap. Fully coherent DMA, common on modern x86 servers where " +
+      "the device participates in the coherence domain, removes the hazard, but that is a platform " +
+      "property rather than a universal guarantee, which is why portable driver code issues the " +
+      "sync calls anyway and lets them compile away where they are unnecessary.",
   },
   {
     id: "computer-architecture-smt-resource-contention-21",
     category: "computer-architecture",
     difficulty: "hard",
-    title: "SMT sibling contention for shared core resources",
+    title: "An FMA-saturating thread beside an integer thread on one core",
     tags: ["smt", "hyper-threading", "resource-contention"],
     type: "trace",
     prompt:
@@ -984,94 +908,80 @@ int32_t  b = *(p32 + 1);                             // upper 4 bytes only — p
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "No effect — the two logical threads are genuinely independent cores as far as execution " +
-          "resources are concerned; SMT only shares the instruction fetch unit",
-        "Logical thread 1's IPC measurably degrades, because SMT siblings share nearly every " +
-          "core-level microarchitectural resource — fetch/decode bandwidth, the issue ports and " +
-          "execution units, reorder buffer/scheduler/physical register file entries (statically " +
-          "partitioned or dynamically contended for, depending on the design), and the L1/L2 caches " +
-          "— so thread 0's heavy, sustained FMA usage starves thread 1 of issue slots and pollutes " +
-          "shared cache capacity, even though architecturally the two threads look like separate " +
-          "cores to software",
-        "Logical thread 1 speeds up, because thread 0's FP-heavy code leaves the integer ALUs " +
-          "entirely free for exclusive use by thread 1",
-        "The core automatically disables SMT and falls back to single-threaded mode whenever one " +
-          "logical thread saturates an execution unit",
+        "Nothing measurable: SMT duplicates the execution resources and shares only the instruction " +
+          "fetch unit between siblings",
+        "Thread 1 speeds up, since thread 0 confines itself to the FP ports and leaves the integer " +
+          "ALUs entirely uncontended",
+        "The core drops out of SMT into single-threaded mode automatically whenever one sibling " +
+          "saturates an execution unit",
+        "Thread 1's IPC drops: siblings share front-end bandwidth, scheduler and ROB entries, the " +
+          "issue ports, and L1/L2, so thread 0 takes issue slots and cache capacity from it",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
-      "SMT/Hyper-Threading exposes one physical core as two (or more) logical cores to software " +
-      "precisely by duplicating only the architectural state needed to track two independent " +
-      "instruction streams (register files/rename tables, program counters, etc.) while sharing " +
-      "essentially all of the actual execution machinery: the front-end fetch/decode bandwidth, the " +
-      "issue ports and functional units (ALUs, FP/vector units, load/store units), and — depending " +
-      "on the exact microarchitecture — the reorder buffer, scheduler queue entries, and physical " +
-      "register file, plus the L1 and L2 caches unconditionally. SMT's value proposition is filling " +
-      "the idle execution slots that a single thread leaves on the table during stalls (e.g. a " +
-      "cache miss or a dependency chain bubble) with a second thread's independent work — not " +
-      "providing two genuinely independent cores' worth of throughput. When one sibling saturates a " +
-      "shared resource — here, thread 0's AVX FMA stream keeps the FP/vector ports continuously " +
-      "occupied, and its working set pressures the shared L1/L2 — thread 1 is left competing for " +
-      "whatever fetch/decode cycles, issue slots, and cache capacity remain, so its effective IPC " +
-      "drops measurably relative to running alone on the core. This is exactly why latency-" +
-      "sensitive HPC/trading workloads frequently disable SMT (or pin only one logical thread per " +
-      "physical core) for their hottest paths — predictable, uncontended access to shared " +
-      "execution resources is often worth more than the extra logical thread's nominal throughput.",
+      "SMT presents one physical core as two logical cores by duplicating only the architectural " +
+      "state needed to track two instruction streams (program counters, architectural register " +
+      "state, rename tables) while sharing essentially all the execution machinery: fetch and " +
+      "decode bandwidth, issue ports and functional units, and, depending on the microarchitecture, " +
+      "the ROB, scheduler entries, and physical register file, plus L1 and L2 unconditionally. The " +
+      "point of SMT is filling issue slots one thread leaves idle during stalls, not delivering " +
+      "two cores' worth of throughput. The assumption that FP and integer work never collide is " +
+      "wrong on Intel cores in particular, where the vector FMA units live on the same ports (0 " +
+      "and 1 on Skylake) that host integer ALUs, so a saturating FMA stream directly removes " +
+      "integer issue capacity as well as competing for fetch cycles and cache. Thread 1's IPC " +
+      "therefore drops measurably against running alone. Latency-sensitive HPC and trading " +
+      "workloads frequently disable SMT, or pin one thread per physical core, because predictable " +
+      "uncontended access to these structures is worth more than the extra logical thread's " +
+      "nominal throughput.",
   },
   {
     id: "computer-architecture-store-buffer-forwarding-22",
     category: "computer-architecture",
-    difficulty: "hard",
-    title: "A core sees its own store before other cores do",
+    difficulty: "medium",
+    title: "Reading back an address whose store hasn't drained",
     tags: ["store-buffer", "memory-ordering", "tso"],
     type: "trace",
     prompt:
       "Core A executes a store to address X (value 1), followed immediately by a load of X. At " +
       "this point the store has not yet drained out of Core A's store buffer into the coherent " +
-      "cache hierarchy, so Core B — which also has X cached — still observes the old value if it " +
+      "cache hierarchy, so Core B, which also has X cached, still observes the old value if it " +
       "were to read X right now. Does Core A's own very next load of X see the value it just " +
       "stored (1), or the old value that other cores still see?",
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Core A's load must wait until the store fully drains to the coherent cache/memory and " +
-          "becomes visible to other cores before it can complete — same latency and same value " +
-          "visibility as Core B would get",
-        "Core A's load checks its own store buffer first and forwards the pending value directly " +
-          "(store buffer forwarding / store-to-load forwarding), so it sees its own just-written 1 " +
-          "immediately — well before that store is globally visible to Core B or any other core. A " +
-          "core is always guaranteed to observe its own stores in program order, but other cores " +
-          "can lag behind that, which is exactly the mechanism that permits the classic store-" +
-          "buffering (SB) litmus test's surprising outcome even under x86 TSO",
-        "The load returns an unspecified/undefined value until the store commits",
-        "This configuration is illegal — a core is never allowed to load an address it has a " +
-          "pending store to",
+        "The load waits for the store to reach coherent cache, so it observes the same value and " +
+          "the same timing Core B would",
+        "The load is satisfied out of Core A's own store buffer and returns 1 immediately, while " +
+          "Core B still sees the old value",
+        "The load returns an unspecified value until the store commits, which is why lock-free " +
+          "code needs a fence in this position",
+        "The core disallows it: a load is blocked at issue while the same core has an unresolved " +
+          "store pending to that address",
       ],
       correctIndex: 1,
     },
     explanation:
-      "If a core's own loads had to wait for every one of its own prior stores to fully drain all " +
-      "the way out to the coherent cache hierarchy before proceeding, single-threaded performance " +
-      "would collapse — every store-then-load-same-address sequence (extremely common) would stall " +
-      "for the store's full latency. Store buffer forwarding avoids this: a load checks the core's " +
-      "own store buffer for a matching pending store before (or instead of) going to the cache, and " +
-      "if found, forwards that value directly, letting the load complete immediately. Program order " +
-      "within a single core is therefore always preserved from that core's own point of view — it " +
-      "never sees its own stores 'out of order.' The catch is that other cores have no visibility " +
-      "into Core A's store buffer at all; they only observe the store once it actually drains and " +
-      "becomes globally visible through the coherence protocol, which can happen well after Core A " +
-      "itself already 'saw' the new value via forwarding. This asymmetry — a core seeing its own " +
-      "stores early, while other cores can still see stale values — is precisely the microarchitectural " +
-      "mechanism underlying the store-buffering (SB) litmus test result: two cores can each read " +
-      "the other's variable as still-old, momentarily, even though each has already 'written and " +
-      "read back' its own variable locally.",
+      "If a core's own loads had to wait for its prior stores to drain to the coherent hierarchy, " +
+      "single-threaded performance would collapse, since store-then-load-same-address is extremely " +
+      "common. Store buffer forwarding avoids that: a load searches the core's own store buffer " +
+      "for a matching pending store and, on a hit, takes the value directly and completes. Program " +
+      "order within a core is therefore always preserved from that core's own point of view, which " +
+      "is an architectural guarantee on every mainstream ISA, not a microarchitectural accident, " +
+      "so nothing here is unspecified and no fence is required for self-consistency. What other " +
+      "cores see is a different matter: they have no visibility into Core A's store buffer and " +
+      "observe the store only once it drains and becomes globally visible through the coherence " +
+      "protocol. That asymmetry, a core seeing its own store early while others still read stale " +
+      "values, is the mechanism behind the store-buffering litmus test, where two cores can each " +
+      "read the other's variable as still-old even though each has already written and read back " +
+      "its own.",
   },
   {
     id: "computer-architecture-ilp-dependency-chain-23",
     category: "computer-architecture",
-    difficulty: "hard",
-    title: "Dependency chains vs. independent ops on a superscalar core",
+    difficulty: "medium",
+    title: "Chained vs. independent additions on a 4-wide superscalar core",
     tags: ["ilp", "dependency-chain", "superscalar"],
     type: "trace",
     prompt:
@@ -1095,96 +1005,79 @@ int x2 = p + q + r;`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "They finish in the same number of cycles — a 4-wide core issues 4 ops/cycle regardless of " +
-          "dependencies, so both are bound purely by instruction count",
-        "Version B finishes sooner: version A's critical path is the full length of its dependency " +
-          "chain (5 sequential adds, each waiting on the previous one's result — 5 cycles minimum, " +
-          "however wide the machine is, since issue width goes unused when there's nothing " +
-          "independent ready to issue), while version B's first three adds have no dependency on " +
-          "each other and can all issue the same cycle, cutting the critical path roughly in half",
-        "Version A finishes sooner, because fewer temporary variables means fewer physical " +
-          "registers are needed",
-        "Both stall indefinitely, since neither version fits in a single fetch bundle",
+        "B: A's five adds form one serial chain and need about 5 cycles however wide the machine " +
+          "is, while B's first three adds issue together and cut the critical path to about 3",
+        "The same: a 4-wide core issues 4 ops per cycle regardless of dependencies, so instruction " +
+          "count is what decides",
+        "A: fewer named temporaries means less rename pressure and fewer physical registers in " +
+          "flight",
+        "The same: the renamer gives each add its own physical destination, which breaks A's chain " +
+          "just as B's rewrite does",
       ],
-      correctIndex: 1,
+      correctIndex: 0,
     },
     explanation:
-      "A superscalar core's issue width (how many instructions it *can* dispatch per cycle) is an " +
-      "upper bound, not a guarantee — it can only be reached when enough independent, ready " +
-      "instructions actually exist in the same cycle. Version A is a strict, linear dependency " +
-      "chain: each add's operand is the previous add's result, so the second add cannot even begin " +
-      "until the first has produced its output, and so on — the critical path is exactly 5 " +
-      "sequential 1-cycle adds, i.e. 5 cycles minimum, and the core's remaining 3 issue slots each " +
-      "cycle simply go unused because there's nothing else ready to fill them. Version B restructures " +
-      "the exact same mathematical computation (same associative operation, same operand count) so " +
-      "that `p = a+b`, `q = c+d`, and `r = e+f` are mutually independent — all three can issue and " +
-      "execute in the very same cycle across separate ALU ports — after which only two more " +
-      "dependent adds remain to combine p, q, and r, for a critical path of roughly 3 cycles total " +
-      "instead of 5. This is the essence of instruction-level parallelism: total instruction count " +
-      "is a poor predictor of runtime on an out-of-order superscalar core; the length of the " +
-      "longest true dependency chain (the critical path) is what actually bounds performance, and " +
-      "restructuring code to shorten or parallelize dependency chains — exactly what compilers " +
-      "attempt via reassociation, and what expert HPC code does by hand for reductions — is a real, " +
-      "significant optimization technique.",
+      "Issue width is an upper bound on what a core can dispatch per cycle, reachable only when " +
+      "enough independent ready instructions exist that cycle. Version A is a strict linear chain: " +
+      "each add's operand is the previous add's result, so its critical path is 5 sequential " +
+      "1-cycle adds and the other 3 issue slots per cycle go unused for want of anything ready. " +
+      "Version B restructures the same computation so that `p = a+b`, `q = c+d`, and `r = e+f` are " +
+      "mutually independent, all three issuing in one cycle across separate ALU ports, leaving " +
+      "only two dependent adds to combine them, for a critical path around 3 cycles. Renaming does " +
+      "not help A, since renaming removes WAR and WAW hazards caused by name reuse, not the true " +
+      "RAW dependencies that define a chain. This is the essence of instruction-level parallelism: " +
+      "the length of the longest true dependency chain bounds performance far more tightly than " +
+      "instruction count does, and shortening chains is what compiler reassociation (for integers, " +
+      "or for floats only under fast-math) and hand-tuned HPC reductions are after.",
   },
   {
     id: "computer-architecture-false-sharing-mesi-24",
     category: "computer-architecture",
-    difficulty: "hard",
-    title: "False sharing traced through MESI transitions",
+    difficulty: "medium",
+    title: "Two counters eight bytes apart, two cores",
     tags: ["false-sharing", "cache-coherence", "mesi"],
     type: "trace",
     prompt:
-      "Two `int64_t` counters, `a` and `b`, live 8 bytes apart in memory — well within the same 64-" +
-      "byte cache line. Core 0 repeatedly writes only `a`; Core 1 repeatedly writes only `b`; " +
+      "Two `int64_t` counters, `a` and `b`, live 8 bytes apart in memory, well within the same " +
+      "64-byte cache line. Core 0 repeatedly writes only `a`; Core 1 repeatedly writes only `b`; " +
       "neither core ever touches the other's variable. In precise MESI terms, why does this run " +
       "far slower than if `a` and `b` were on separate cache lines, given that the two cores never " +
       "actually share any data?",
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "It doesn't — MESI coherence operates per-variable, not per-cache-line, so two cores " +
-          "writing distinct variables never generate any coherence traffic regardless of their " +
-          "physical proximity in memory",
-        "Coherence operates at cache-line granularity, not byte/variable granularity: every write " +
-          "by one core forces the *entire line* to Invalid in the other core's cache, regardless of " +
-          "which of the two variables was actually touched. So each core's next write to its own " +
-          "variable finds its local copy Invalid and must first issue a coherence transaction " +
-          "(invalidating/fetching the line, e.g. via BusUpgr/BusRdX) to regain exclusive Modified " +
-          "ownership before the write can proceed — the line perpetually ping-pongs Modified <-> " +
-          "Invalid between the two caches, so essentially every write pays a cross-core coherence-" +
-          "transaction latency instead of completing as a fast, purely local L1 hit",
-        "False sharing silently corrupts one or both counters' final values, which is the actual " +
-          "source of the slowdown (extra retries to reach a correct result)",
-        "The slowdown is caused by the TLB, not cache coherence — each write triggers a page-table " +
-          "walk",
+        "It doesn't: coherence tracks the bytes actually written, so two cores writing distinct " +
+          "variables generate no coherence traffic between them",
+        "Updates to the two counters can be lost, and the retries needed to converge on correct " +
+          "values are where the time goes",
+        "Coherence works per line, so each write invalidates the other core's copy of the whole " +
+          "line and it ping-pongs Modified/Invalid, putting a cross-core transaction on nearly " +
+          "every write",
+        "Writes to a line another core also holds are downgraded to write-through, so both " +
+          "counters bypass L1 and every increment is sent out to memory",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
-      "MESI (and every mainstream hardware coherence protocol) tracks state per cache line, because " +
-      "that's the unit caches actually move and invalidate — there is no hardware concept of " +
-      "'invalidate just these 8 bytes.' When Core 0 writes `a`, it must gain the line in Modified " +
-      "state, which requires invalidating any other cache holding it — including Core 1's copy, " +
-      "even though Core 1's copy is only 'needed' for the unrelated `b`. The instant Core 1 next " +
-      "writes `b`, it finds its own cached copy Invalid (evicted by Core 0's write), so it must " +
-      "issue its own coherence transaction to re-fetch the line (now Modified in Core 0, requiring a " +
-      "cache-to-cache transfer) and invalidate Core 0's copy in turn to gain its own Modified " +
-      "ownership. Every single write from either core therefore triggers a cross-core coherence " +
-      "round trip — the line perpetually bounces Modified/Invalid between the two caches — turning " +
-      "what should be a ~1-cycle local L1 hit into an operation bound by inter-core communication " +
-      "latency (potentially tens to 100+ cycles for a cache-to-cache transfer), even though the two " +
-      "cores' actual data is logically completely independent. This is precisely why false sharing " +
-      "is invisible at the level of program correctness — no race, no wrong values, nothing a " +
-      "debugger would ever flag — yet catastrophic for throughput, and why the fix (padding/" +
-      "aligning each independently-written variable to its own cache line, e.g. `alignas(64)`) is " +
-      "purely about layout, not logic.",
+      "MESI, like every mainstream hardware coherence protocol, tracks state per cache line, " +
+      "because a line is the unit caches move and invalidate; there is no hardware notion of " +
+      "invalidating just 8 bytes. When Core 0 writes `a` it must hold the line Modified, which " +
+      "requires invalidating every other copy, including Core 1's, even though Core 1 only cares " +
+      "about `b`. The instant Core 1 writes `b` it finds its own copy Invalid, so it issues its " +
+      "own transaction to refetch the line (now Modified in Core 0, so a cache-to-cache transfer) " +
+      "and invalidate Core 0 in turn. Every write from either core therefore costs a cross-core " +
+      "round trip, and the line bounces between the two caches, turning a roughly 1-cycle local L1 " +
+      "hit into an operation bound by inter-core latency, potentially tens to over a hundred " +
+      "cycles. Nothing is incorrect while this happens: no race, no lost update, nothing a " +
+      "debugger would flag, which is what makes false sharing so easy to miss and why the fix " +
+      "(padding or aligning each independently written variable to its own line, e.g. " +
+      "`alignas(64)`) is purely about layout.",
   },
   {
     id: "computer-architecture-branchless-cmov-25",
     category: "computer-architecture",
     difficulty: "medium",
-    title: "Branchless arithmetic to eliminate misprediction cost",
+    title: "Branchy vs. branchless code on unpredictable data",
     tags: ["branchless", "cmov", "branch-prediction"],
     type: "trace",
     prompt:
@@ -1198,7 +1091,7 @@ int x2 = p + q + r;`,
       code: `// Version A: data-dependent branch
 for (int i = 0; i < n; ++i) {
     if (arr[i] & 1) sum += arr[i];
-    else             sum -= arr[i];
+    else            sum -= arr[i];
 }
 
 // Version B: branchless
@@ -1210,45 +1103,38 @@ for (int i = 0; i < n; ++i) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Version A is faster — fewer total instructions always wins on a modern core",
-        "Version B is typically faster: version A's branch outcome is effectively random per " +
-          "element, so the branch predictor mispredicts roughly half the time, and each " +
-          "misprediction costs a full pipeline flush (order of ~15-20 cycles) — far more expensive " +
-          "than the handful of extra, but cheap and fully pipelined, ALU instructions version B " +
-          "executes unconditionally every iteration. Trading guaranteed small extra work for " +
-          "removing an unpredictable branch entirely is a real, standard optimization in low-" +
-          "latency/HPC code",
-        "Both run identically, since the compiler always converts A into B automatically regardless " +
-          "of branch predictability",
-        "Version B is undefined behavior because `mask` may be a negative int used in a bitwise op",
+        "A: it executes fewer instructions per element, and instruction count is what a modern core " +
+          "is bound by here",
+        "Neither: the compiler lowers A to the same branchless sequence anyway, so the two are the " +
+          "same machine code",
+        "B is undefined behavior: negating `arr[i] & 1` and masking with the result relies on a " +
+          "particular signed representation",
+        "B: A mispredicts on roughly half the elements at ~15-20 cycles each, far more than the few " +
+          "extra fully pipelined ALU ops B pays unconditionally",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
-      "The relevant cost comparison isn't instruction count in the abstract, it's expected cycles: " +
-      "version A's branch depends on essentially-random per-element data, so a modern branch " +
-      "predictor — no matter how sophisticated — cannot do meaningfully better than chance on it, " +
-      "meaning roughly half of all iterations mispredict; each misprediction forces the core to " +
-      "squash whatever wrong-path work it spent this deep, wide pipeline speculatively executing and " +
-      "refill from the correct target, typically costing on the order of 15-20 cycles on a " +
-      "contemporary out-of-order core. Version B replaces that gamble with a small, fixed number of " +
-      "extra ALU instructions (a negation, two ANDs, a subtraction) executed unconditionally, every " +
-      "iteration, with no branch at all — cheap, fully pipelined, and predictable work that a 4+-" +
-      "wide superscalar core can issue essentially for free relative to a misprediction's cost. This " +
-      "trade — deterministic small overhead in exchange for eliminating an unpredictable branch — is " +
-      "exactly what compilers attempt automatically via conditional-move (cmov) generation for " +
-      "simple enough conditionals, and exactly what HPC/low-latency-trading engineers do by hand " +
-      "(via cmov intrinsics, bit tricks, or SIMD masking/blend) when the compiler doesn't or can't: " +
-      "removing tail-latency variance from data-dependent branches is often worth more than average-" +
-      "case instruction-count purity. (`mask` here is fine: `-(arr[i] & 1)` is 0 or 1 before the " +
-      "negation, and negating a small non-negative int is well-defined two's-complement bit " +
-      "manipulation.)",
+      "The comparison is expected cycles, not instruction count. Version A's branch depends on " +
+      "essentially random per-element data, so no predictor, however sophisticated, does better " +
+      "than chance, and roughly half of all iterations mispredict. Each misprediction squashes the " +
+      "wrong-path work already in flight across a deep pipeline and refills from the correct " +
+      "target, typically 15-20 cycles on a contemporary out-of-order core. Version B replaces that " +
+      "gamble with a negation, two ANDs, and a subtraction executed unconditionally, cheap fully " +
+      "pipelined work a 4-wide core absorbs almost for free by comparison. Compilers attempt this " +
+      "transform themselves via cmov for simple enough conditionals, but they do it based on " +
+      "heuristics and profile data rather than always, and they can guess wrong in both " +
+      "directions, which is why this rewrite is still done by hand in low-latency code via cmov " +
+      "intrinsics, bit tricks, or SIMD blends. For a highly predictable branch the tradeoff " +
+      "reverses: the predicted branch costs nearly nothing while the branchless version " +
+      "still pays for every operation. The mask is well defined: `arr[i] & 1` is 0 or 1 before the " +
+      "negation, and negating a small non-negative int is ordinary two's-complement arithmetic.",
   },
   {
     id: "computer-architecture-aos-vs-soa-cache-line-26",
     category: "computer-architecture",
     difficulty: "easy",
-    title: "Wasted cache-line bandwidth from array-of-structs field extraction",
+    title: "Summing one field of a four-field struct",
     tags: ["cache-lines", "spatial-locality", "data-layout"],
     type: "trace",
     prompt:
@@ -1269,38 +1155,34 @@ for (const auto& p : points) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "100% — the cache only ever fetches the exact bytes a load instruction requests",
-        "Only 25%: every 64-byte line fetched brings in 4 whole Points (x,y,z,w each), but the loop " +
-          "only ever reads the x field, so 3 of every 4 floats (y, z, w) pulled into cache and " +
-          "occupying cache/bandwidth are pure waste — an array-of-structs (AoS) layout used this " +
-          "way wastes 3/4 of the memory bandwidth and effective cache capacity a structure-of-" +
-          "arrays (SoA) layout (a separate contiguous `x[]` array) would need for the same " +
-          "computation",
-        "50%, because floats are 4 bytes and cache lines fetch in 8-byte granules",
-        "It depends on compiler optimization level, but is always at least 90% in practice",
+        "100%: a cache only ever fetches the bytes the load instruction actually requested",
+        "25%: each 64-byte line brings in 4 whole Points but only their 4 x floats are read, so " +
+          "three quarters of the fetched bytes and cache capacity are wasted",
+        "50%: lines are transferred in 8-byte granules, so each granule carries one used float and " +
+          "one unused one",
+        "Effectively 100% at -O3: the optimizer splits the struct so only the x fields are " +
+          "streamed in",
       ],
       correctIndex: 1,
     },
     explanation:
-      "Caches always fetch in whole-line granules (here, 64 bytes) regardless of how many bytes " +
-      "the triggering load actually asked for — there's no such thing as fetching 'just the x " +
-      "field.' Since each Point is 16 bytes, one 64-byte line holds exactly 4 complete Points, i.e. " +
-      "16 floats, but the loop only ever reads 4 of those 16 floats (one x per Point) — meaning 12 " +
-      "of the 16 floats transferred from memory into cache are pulled in and occupy cache capacity " +
-      "for no benefit at all. This is the classic argument for structure-of-arrays (SoA) layout in " +
-      "performance-sensitive code: storing all x values contiguously in their own array means every " +
-      "byte of every fetched cache line is one this loop actually consumes, quadrupling effective " +
-      "memory bandwidth utilization and cache capacity for this specific access pattern (at the " +
-      "cost of worse locality if some *other* code path needs to access x, y, z, and w together for " +
-      "the same Point). Which layout wins depends entirely on the dominant access pattern — AoS is " +
-      "better when whole objects are usually processed together; SoA is better when the same single " +
-      "field is processed across many objects, exactly as here.",
+      "Caches fetch whole lines, here 64 bytes, regardless of how few bytes the triggering load " +
+      "asked for; there is no such thing as fetching just the x field, and no mainstream compiler " +
+      "performs whole-program struct splitting on a `std::vector<Point>` whose layout is " +
+      "observable. Since each Point is 16 bytes, one line holds 4 Points, 16 floats, and the loop " +
+      "reads 4 of them, so 12 of the 16 floats transferred occupy cache capacity and memory " +
+      "bandwidth for no benefit. That is the standard argument for structure-of-arrays layout in " +
+      "performance-sensitive code: with all x values contiguous in their own array, every byte of " +
+      "every fetched line is consumed, quadrupling effective bandwidth and cache utilization for " +
+      "this access pattern. The tradeoff runs the other way for code that needs x, y, z, and w of " +
+      "one Point together, where AoS keeps them on a single line. Which layout wins is decided by " +
+      "the dominant access pattern, not by either being better in the abstract.",
   },
   {
     id: "computer-architecture-misprediction-penalty-cycles-27",
     category: "computer-architecture",
-    difficulty: "medium",
-    title: "Quantifying the branch misprediction penalty",
+    difficulty: "easy",
+    title: "Cost of a branch misprediction on a deep out-of-order pipeline",
     tags: ["branch-prediction", "pipeline-flush", "misprediction-penalty"],
     type: "trace",
     prompt:
@@ -1311,51 +1193,46 @@ for (const auto& p : points) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Roughly 1 cycle — out-of-order cores hide almost the entire penalty via speculation",
-        "Roughly 15-20 cycles — the penalty is, to first order, bounded by the number of pipeline " +
-          "stages between fetch and the point where the branch's true outcome/target is finally " +
-          "known: everything speculatively fetched, decoded, renamed, and issued down the wrong " +
-          "path across that entire span must be squashed from the ROB/scheduler, and the front end " +
-          "must restart fetching at the correct target and refill the whole pipeline before " +
-          "meaningful retirement resumes",
-        "Roughly 1,000+ cycles — comparable to a full DRAM access, since the branch's target must " +
-          "be fetched from main memory",
-        "Exactly 0 cycles whenever the branch was predicted with high confidence, regardless of " +
-          "whether the prediction turns out right or wrong",
+        "Roughly 15-20 cycles, set by the number of stages between fetch and where the branch's " +
+          "outcome and target are finally known",
+        "Roughly 1 cycle: the out-of-order window covers the bubble with other in-flight work " +
+          "already past rename",
+        "Roughly 200-300 cycles, comparable to a DRAM access, since the correct target has to be " +
+          "re-fetched from memory",
+        "Zero when the predictor was confident, since a high-confidence prediction is verified in " +
+          "the front end rather than in execute",
       ],
-      correctIndex: 1,
+      correctIndex: 0,
     },
     explanation:
-      "The misprediction penalty is fundamentally a function of pipeline depth: a mispredicted " +
-      "branch means every instruction fetched, decoded, and issued speculatively down the wrong " +
-      "path during the stages between fetch and the branch's actual resolution point represents " +
-      "wasted work that must be discarded, and the front end has nothing correct to feed the back " +
-      "end until it restarts fetching from the correct target and that new stream works its way " +
-      "back through the same number of stages before instructions can retire again. On a " +
-      "contemporary deep out-of-order core with roughly 15-20 stages between fetch and branch " +
-      "resolution, that translates to roughly 15-20 lost cycles per misprediction — independent of " +
-      "how 'confident' the predictor was, since confidence doesn't change the pipeline depth the " +
-      "recovery has to traverse. This single number is the crux of why branch predictor accuracy " +
-      "matters so much on modern cores: a 95% vs. 99% prediction accuracy on a hot, frequently-" +
-      "executed branch can be the difference between a workload being front-end-bound by " +
-      "misprediction recovery versus not, and it's exactly why deeper pipelines (which buy higher " +
-      "clock frequency) trade off against a steeper misprediction penalty, pushing designs toward " +
-      "ever more sophisticated predictors (two-level, TAGE, neural/perceptron-based) to keep " +
-      "accuracy high enough to justify the depth.",
+      "The penalty is fundamentally a function of pipeline depth. Everything fetched, decoded, " +
+      "renamed, and issued speculatively down the wrong path between fetch and the branch's " +
+      "resolution point is wasted and must be squashed, and the front end has nothing correct to " +
+      "feed the back end until it restarts at the right target and that new stream works its way " +
+      "through the same stages before instructions retire again. On a contemporary core with " +
+      "roughly 15-20 stages between fetch and branch resolution, that is roughly 15-20 lost cycles " +
+      "per misprediction, and predictor confidence does not change the depth that recovery must " +
+      "traverse. Recovering the correct target rarely costs a memory access, since it usually hits " +
+      "in the instruction cache or a micro-op cache, so a DRAM-scale penalty is the wrong order of " +
+      "magnitude. This one number is why predictor accuracy matters so much: on a hot branch, 95% " +
+      "versus 99% accuracy can decide whether a workload is front-end bound by recovery, and it is " +
+      "the tension that pushes deep, high-frequency pipelines toward ever more elaborate " +
+      "predictors (two-level, TAGE, perceptron-based) to justify their depth.",
   },
   {
     id: "computer-architecture-loop-unrolling-ilp-28",
     category: "computer-architecture",
     difficulty: "hard",
-    title: "Multiple accumulators break a reduction's dependency-chain bottleneck",
+    title: "One running sum vs. four partial sums",
     tags: ["ilp", "loop-unrolling", "reduction"],
     type: "trace",
     prompt:
       "Assume floating-point `add` has a 4-cycle latency but the core can issue a new independent " +
       "add every cycle (throughput 1/cycle across multiple FP add pipelines/ports). Version A " +
       "accumulates into a single running sum. Version B unrolls by 4 and accumulates into four " +
-      "independent partial sums, combined only once at the very end. For a large array, what's the " +
-      "realistic throughput difference?",
+      "independent partial sums, combined only once at the very end. The array is large but stays " +
+      "resident in cache, so neither version is limited by memory bandwidth. What's the realistic " +
+      "throughput difference?",
     snippet: {
       language: "cpp",
       filename: "main.cpp",
@@ -1376,44 +1253,42 @@ double sum = (s0 + s1) + (s2 + s3);`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "No meaningful difference — both perform the same number of adds, and the core's issue " +
-          "width is the only thing that matters",
-        "Version A is latency-bound, not throughput-bound: each add must wait for the *previous* " +
-          "add's result (a single 4-cycle-latency dependency chain), so a new add can only be " +
-          "issued once every 4 cycles regardless of the core's superscalar width, wasting most of " +
-          "the available issue slots and add-pipeline throughput. Version B's four accumulators are " +
-          "mutually independent, so the core can have up to four adds from different chains in " +
-          "flight simultaneously, approaching the 1-add-per-cycle throughput limit instead of the " +
-          "4-cycle latency limit — roughly a 4x speedup on the accumulation loop itself",
-        "Version B is slower, because it uses four times as many registers",
-        "Version A is faster, because it has fewer total instructions in the loop body",
+        "No meaningful difference: both execute the same number of adds, and issue width is the " +
+          "binding constraint in either case",
+        "A wins: its loop body is shorter and keeps only one accumulator live, so it retires more " +
+          "iterations per cycle",
+        "B is roughly 4x faster on the loop: A can only start an add every 4 cycles because each " +
+          "waits on the previous result, while B keeps four independent chains in flight and " +
+          "approaches one add per cycle",
+        "B is slower: four live accumulators raise register pressure enough to force spills in the " +
+          "inner loop",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
-      "A reduction into a single accumulator creates a strict serial dependency chain: `sum += " +
-      "a[i]` can't begin until the *previous* iteration's `sum +=` has produced its result, because " +
-      "each add both reads and writes the same `sum`. With a 4-cycle add latency, that means a new " +
-      "useful add can only be issued once every 4 cycles no matter how many ALU ports or how wide " +
-      "the issue width is — the bottleneck is purely the latency of the dependency chain, and 3 out " +
-      "of every 4 cycles' worth of issue capacity simply goes unused waiting on the chain. Splitting " +
-      "the reduction into 4 independent partial sums breaks that single long chain into 4 separate, " +
-      "mutually independent 4-cycle-latency chains — since s0's next add doesn't depend on s1, s2, " +
-      "or s3 at all, the core can have all four in flight simultaneously, issuing a new add for " +
-      "some chain essentially every cycle instead of every 4th cycle, now bound by the core's add " +
-      "throughput (1/cycle) rather than by the chain's latency (4 cycles) — a roughly 4x improvement " +
-      "on the accumulation loop's steady-state rate. The one-time combine at the end (`(s0+s1)+" +
-      "(s2+s3)`) adds a negligible fixed cost outside the hot loop. This exact technique — breaking " +
-      "a serial reduction into several independent partial accumulators sized to the target " +
-      "latency/throughput ratio — is a standard, textbook HPC optimization, and is precisely what " +
-      "vectorizing compilers and hand-tuned SIMD reduction code do internally (each SIMD lane " +
-      "effectively acting as one more independent accumulator).",
+      "A reduction into one accumulator is a strict serial dependency chain, since `sum += a[i]` " +
+      "both reads and writes `sum` and cannot start until the previous iteration's add produced " +
+      "its result. With a 4-cycle add latency a new useful add starts only every 4 cycles no " +
+      "matter how many FP ports exist, so three quarters of the issue capacity idles waiting on " +
+      "the chain: the loop is latency-bound, not throughput-bound. Splitting into four partial " +
+      "sums creates four independent 4-cycle chains, so the core can have all four in flight and " +
+      "issue an add nearly every cycle, now bound by add throughput instead of add latency, " +
+      "roughly a 4x improvement in steady state. The final combine is a fixed cost outside the hot " +
+      "loop. The win is bounded by whatever the next constraint turns out to be: stream the same " +
+      "array from DRAM instead and both versions collapse onto memory bandwidth, where the extra " +
+      "accumulators buy nothing. A compiler will also not perform this transform on floating-point " +
+      "code on its own without `-ffast-math` or equivalent, because reassociating FP addition " +
+      "changes the result; for integers, where addition is associative, it will. Sizing the " +
+      "accumulator count " +
+      "to the latency-to-throughput ratio is the standard version of this optimization, and it is " +
+      "what vectorized reductions do implicitly, each lane acting as one more independent " +
+      "accumulator.",
   },
   {
     id: "computer-architecture-numa-remote-latency-29",
     category: "computer-architecture",
-    difficulty: "hard",
-    title: "NUMA remote memory access latency",
+    difficulty: "medium",
+    title: "A buffer first-touched on one socket, consumed on the other",
     tags: ["numa", "memory-latency", "multi-socket"],
     type: "trace",
     prompt:
@@ -1426,47 +1301,38 @@ double sum = (s0 + s1) + (s2 + s3);`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "None — a cache-coherent NUMA (ccNUMA) system presents a single memory latency for all " +
-          "addresses; 'NUMA' only affects total capacity, not per-access latency",
-        "Node 1's accesses to this Node-0-resident buffer incur substantially higher latency (and " +
-          "consume shared inter-socket interconnect bandwidth) than local accesses would, because " +
-          "each request must cross the inter-socket interconnect to reach Node 0's memory " +
-          "controller and typically also perform a remote coherence/directory lookup — even though " +
-          "the buffer is architecturally indistinguishable from local memory to software running on " +
-          "Node 1",
-        "The access fails outright with a segmentation fault, since a core cannot address another " +
-          "socket's physical memory",
-        "The OS transparently and immediately migrates the entire buffer to Node 1 the first time " +
-          "Node 1 touches it, eliminating any latency penalty from the second access onward",
+        "None: a ccNUMA system presents one uniform access latency for every address, and NUMA " +
+          "affects only total addressable capacity",
+        "The accesses fault, since a core cannot address physical memory owned by another socket's " +
+          "memory controller",
+        "The OS migrates the pages to Node 1 on the first remote touch, so only that first access " +
+          "pays a penalty",
+        "Every access crosses the inter-socket link to Node 0's memory controller, adding latency " +
+          "and consuming shared interconnect bandwidth, though software sees ordinary memory",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
-      "ccNUMA (cache-coherent NUMA) systems present a single, flat, coherent physical address space " +
-      "to software — any core can legally load or store any address regardless of which socket's " +
-      "memory controller actually owns it — but 'can access' and 'accesses equally fast' are " +
-      "different things. Physical memory in a multi-socket system is partitioned per node, each " +
-      "with its own local memory controller; an access from Node 1 to an address that physically " +
-      "lives in Node 0's DRAM must traverse the inter-socket interconnect (UPI/Infinity Fabric/" +
-      "equivalent) to reach Node 0's controller, and typically also involves a directory or snoop-" +
-      "filter lookup to maintain coherence across sockets — both of which add real, measurable " +
-      "latency (often on the order of 1.5-2x+ a local access) beyond what a same-node access costs, " +
-      "and both consume shared, finite interconnect bandwidth that competes with other cross-socket " +
-      "traffic. Which node a given page's *physical* memory actually lives on is typically decided " +
-      "by first-touch (the page is placed local to whichever thread/core first faults it in), not " +
-      "by which thread called malloc — so a buffer allocated by one thread but handed off to and " +
-      "used by a thread on a different socket routinely ends up permanently 'remote' relative to its " +
-      "actual consumer unless something explicitly intervenes. This is exactly why NUMA-aware " +
-      "software either pins allocating threads to the node that will do the bulk of the accessing, " +
-      "uses explicit node-local allocation APIs (e.g. `numa_alloc_onnode`), or explicitly migrates/" +
-      "replicates hot data — leaving placement to chance can silently cost a large, consistent " +
-      "fraction of memory-bound performance on multi-socket hardware.",
+      "ccNUMA presents a single flat coherent physical address space, so any core may legally load " +
+      "or store any address regardless of which socket's controller owns it, but being able to " +
+      "access memory and accessing it equally fast are different claims. Physical memory is " +
+      "partitioned per node, each with its own controller; an access from Node 1 to an address " +
+      "living in Node 0's DRAM must traverse the inter-socket interconnect and typically also " +
+      "consult a directory or snoop filter for coherence, adding real latency (commonly 1.5-2x a " +
+      "local access) and consuming finite shared link bandwidth that competes with other " +
+      "cross-socket traffic. Which node holds a page is decided by first touch, the faulting " +
+      "thread's node, not by which thread called malloc, so a buffer produced on one socket and " +
+      "consumed on another stays remote indefinitely unless something intervenes. Automatic NUMA " +
+      "balancing in Linux can migrate pages after observing access patterns, but it is a " +
+      "sampling-driven background policy, not an immediate first-remote-touch migration. NUMA-aware " +
+      "code instead pins allocating threads to the consuming node, allocates explicitly with " +
+      "`numa_alloc_onnode`, or replicates hot read-only data.",
   },
   {
     id: "computer-architecture-speculative-store-bypass-30",
     category: "computer-architecture",
     difficulty: "hard",
-    title: "Memory disambiguation speculation lets a load jump ahead of an older store",
+    title: "A load executed past an older store whose address is unresolved",
     tags: ["speculative-execution", "memory-disambiguation", "spectre-v4"],
     type: "trace",
     prompt:
@@ -1474,50 +1340,86 @@ double sum = (s0 + s1) + (s2 + s3);`,
       "isn't fully resolved yet (p is itself the result of a not-yet-complete computation), " +
       "immediately followed by a load from `*q` (q's address ready sooner). Rather than stall the " +
       "load until the older store's address is known and definitively ruled out as aliasing, the " +
-      "core's memory disambiguation predictor speculatively guesses that the load does *not* alias " +
+      "core's memory disambiguation predictor speculatively guesses that the load does not alias " +
       "the pending store, and lets the load execute early against memory/cache. What happens if p " +
-      "and q later turn out to actually be equal (a true RAW dependency the core incorrectly bet " +
-      "against)?",
+      "and q later turn out to actually be equal (a true RAW dependency the core bet against)?",
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Nothing — the hardware always waits for every older store's address to resolve before any " +
-          "later load is permitted to execute, so this scenario can never arise",
-        "The core detects the misspeculation once the store's address is finally resolved and " +
-          "compared, and replays/squashes the load and everything that consumed its (now known to " +
-          "be stale) value — a recovery broadly comparable in cost to a branch misprediction. This " +
-          "speculative 'assume no aliasing' mechanism (memory/store-to-load disambiguation " +
-          "prediction) is what lets loads execute ahead of older, address-unresolved stores in the " +
-          "common (non-aliasing) case, and it is the specific microarchitectural mechanism " +
-          "underlying the Spectre variant 4 (Speculative Store Bypass) side channel",
-        "The result is silently and permanently wrong; the core has no mechanism to detect or " +
-          "correct this class of error",
-        "Compile-time alias analysis guarantees p and q can never alias, so this situation is " +
-          "impossible in valid code",
+        "Nothing: hardware always waits for every older store's address to resolve before a later " +
+          "load may execute, so the scenario cannot arise",
+        "The core detects the aliasing when the store's address resolves, then squashes and " +
+          "replays the load and everything that consumed its stale value, at a cost broadly like a " +
+          "branch misprediction",
+        "The load keeps the stale value permanently, since nothing compares addresses after the " +
+          "fact; this is why compilers must emit their own alias checks",
+        "The store buffer merges the newer store into the already-executed load's destination " +
+          "register, so no replay is needed",
       ],
       correctIndex: 1,
     },
     explanation:
-      "Naively, an out-of-order core could always stall a load until every older store's address is " +
-      "fully known, guaranteeing correctness but sacrificing significant performance, since the " +
-      "large majority of load/store pairs never actually alias in practice. To recover that " +
-      "performance, modern cores include a memory disambiguation (store-to-load dependence) " +
-      "predictor that learns, per load, whether it has historically aliased with nearby older " +
-      "stores, and speculatively allows a load to execute early against memory/cache — ahead of an " +
-      "older store whose address isn't resolved yet — whenever it predicts no aliasing, exactly " +
-      "like a branch predictor speculating on a not-yet-resolved branch. Compile-time alias " +
-      "analysis (e.g. C's restrict-based reasoning) is a separate, conservative, static guarantee " +
-      "that constrains what the compiler may assume when generating code; it says nothing about " +
-      "runtime pointer values computed via arbitrary indexing/arithmetic, which is exactly the case " +
-      "the hardware predictor is dealing with here. Once the store's address genuinely resolves and " +
-      "the core discovers p == q (a real RAW hazard it bet against), it must treat this like any " +
-      "other misspeculation: squash the load and every downstream instruction that consumed the " +
-      "load's now-known-to-be-wrong value, and re-execute them with the correct, forwarded value — a " +
-      "recovery whose cost is broadly comparable to a branch misprediction. Crucially — and this is " +
-      "exactly the basis of the Spectre variant 4 (Speculative Store Bypass) side channel — the " +
-      "transiently-executed, ultimately-squashed instructions can still leave microarchitectural " +
-      "traces (e.g. cache lines touched by a load fed from the stale, incorrect value) before the " +
-      "misspeculation is caught, which a timing side channel can then probe, exactly as with branch-" +
-      "predictor-based Spectre variants.",
+      "A core could always stall a load until every older store's address is known, which is " +
+      "correct but costly, since the large majority of load/store pairs never alias. Modern cores " +
+      "instead include a memory disambiguation predictor that learns, per load, whether it has " +
+      "historically aliased with nearby older stores, and lets the load execute early whenever it " +
+      "predicts no aliasing, much as a branch predictor speculates past an unresolved branch. The " +
+      "load/store queue keeps the addresses, so when the store's address finally resolves the " +
+      "hardware compares it against younger executed loads; on a match it must treat the situation " +
+      "as misspeculation, squash the load and every downstream consumer of its now-wrong value, " +
+      "and re-execute them with the correctly forwarded data, at a recovery cost broadly " +
+      "comparable to a branch misprediction. Compile-time alias analysis, including restrict-based " +
+      "reasoning, is a separate static guarantee about what the compiler may assume; it says " +
+      "nothing about runtime pointer values and is not what keeps the hardware correct. The " +
+      "security angle is that the transiently executed, ultimately squashed instructions still " +
+      "leave microarchitectural traces such as cache lines touched using the stale value, probeable " +
+      "by a timing side channel, which is Spectre variant 4 (Speculative Store Bypass).",
+    references: [
+      "Intel, \"Speculative Store Bypass\" (CVE-2018-3639) technical advisory",
+    ],
+  },
+  {
+    id: "computer-architecture-numa-false-sharing-31",
+    category: "computer-architecture",
+    difficulty: "medium",
+    title: "Two counters sharing a cache line across two NUMA nodes",
+    tags: ["numa", "false-sharing", "cache-coherence", "performance"],
+    type: "trace",
+    prompt:
+      "Two counters share a single 64-byte cache line, exactly as in a same-socket false-sharing " +
+      "scenario, but now Thread 1 is pinned to a core on NUMA node 0 and Thread 2 is pinned to a " +
+      "core on NUMA node 1, and the cache line's backing physical memory is homed on node 0 " +
+      "(typical, since it was first touched by code running there under a first-touch allocation " +
+      "policy). How does pinning the two threads to different NUMA nodes change the false-sharing " +
+      "analysis, if at all?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "No difference from the same-socket case: coherence traffic costs the same cycles wherever the line's home memory physically sits.",
+        "Better, if anything: each NUMA node has its own coherence domain, so cross-node false sharing cannot arise in the first place.",
+        "Identical to the non-NUMA case, except the OS scheduler migrates one of the two threads onto the other's node to resolve it.",
+        "Worse: each ping-pong now crosses the inter-socket interconnect, and node 1 additionally pays remote-memory latency on every miss.",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "Same-socket false sharing already costs cache-coherence ping-pong traffic (MESI/MOESI " +
+      "invalidations and re-fetches) traveling over an on-chip interconnect (ring bus / mesh) at " +
+      "relatively low latency. Once the two contending threads live on different NUMA nodes, the " +
+      "same coherence traffic must instead cross a socket-to-socket interconnect, which carries " +
+      "meaningfully higher per-hop latency than an intra-socket path (Intel UPI or AMD Infinity " +
+      "Fabric rather than the on-die ring or mesh), so every invalidate/fetch round trip gets " +
+      "more expensive purely from physical distance and interconnect hops, before considering " +
+      "anything else. Separately, cache-coherence protocols on NUMA systems are " +
+      "typically directory-based: a remote node's request for a line may need to consult a directory " +
+      "or snoop filter associated with whichever node's memory controller actually owns that " +
+      "physical address, adding another cross-interconnect round trip specifically because the line " +
+      "is homed remotely relative to the requester. So false sharing across NUMA nodes compounds two " +
+      "costs rather than one: the coherence traffic itself, present even same-socket, plus " +
+      "remote-memory-access latency, present because the accessed physical memory is not local to " +
+      "the requesting node. Fixing it requires both per-line padding (to eliminate the false " +
+      "sharing itself) and NUMA-aware allocation such as first-touch placement or explicit " +
+      "node-local allocation (e.g., numa_alloc_onnode on Linux), so that each thread's working set is " +
+      "physically local to the node it actually runs on.",
   },
 ];

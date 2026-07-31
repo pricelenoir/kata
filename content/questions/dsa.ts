@@ -5,7 +5,7 @@ export const dsaQuestions: TraceQuestion[] = [
     id: "dsa-avl-rotation-01",
     category: "dsa",
     difficulty: "medium",
-    title: "AVL insertion triggering a double (LR) rotation",
+    title: "Three insertions into an empty AVL tree",
     tags: ["avl-tree", "self-balancing", "rotations"],
     type: "trace",
     prompt:
@@ -17,25 +17,27 @@ export const dsaQuestions: TraceQuestion[] = [
       choices: [
         "A single right rotation about 30, making 10 the new root",
         "A single left rotation about 10, making 20 the new root",
-        "A double rotation (left rotation about 10, then right rotation about 30 — the LR case), making 20 the new root",
-        "A double rotation (right rotation about 10, then left rotation about 30 — the RL case), making 20 the new root",
+        "A right rotation about 10 followed by a left rotation about 30, making 20 the new root",
+        "A left rotation about 10 followed by a right rotation about 30, making 20 the new root",
       ],
-      correctIndex: 2,
+      correctIndex: 3,
     },
     explanation:
       "After inserting 30 then 10, 10 is the left child of 30. Inserting 20 (10 < 20 < 30) makes " +
-      "it the right child of 10, so the newly inserted node sits in a left-then-right zig-zag " +
-      "position relative to the root — the classic LR case. The root's balance factor becomes " +
-      "height(left) - height(right) = 1 - (-1) = 2, an imbalance. A single rotation about 30 " +
-      "cannot fix a zig-zag imbalance; the standard fix first left-rotates about 10 (converting " +
-      "it into a straight-line LL shape) and then right-rotates about 30. The net effect leaves " +
-      "20 as the new root with 10 as its left child and 30 as its right child.",
+      "it the right child of 10, so the new node sits in a left-then-right zig-zag position " +
+      "relative to the root: the classic LR case. The root's balance factor becomes " +
+      "height(left) - height(right) = 1 - (-1) = 2, an imbalance. A single right rotation about " +
+      "30 does not fix a zig-zag shape, it only moves the imbalance to the other side (10 would " +
+      "become the root with balance factor -2). The standard fix first left-rotates about 10, " +
+      "converting the subtree into a straight-line LL shape, and then right-rotates about 30. " +
+      "The net effect leaves 20 as the new root with 10 as its left child and 30 as its right " +
+      "child.",
   },
   {
     id: "dsa-redblack-fixup-01",
     category: "dsa",
     difficulty: "hard",
-    title: "Red-black insertion fixup: recolor or rotate?",
+    title: "Red-black tree insertion fixup after a red-red violation",
     tags: ["red-black-tree", "self-balancing", "rotations", "recoloring"],
     type: "trace",
     prompt:
@@ -47,24 +49,25 @@ export const dsaQuestions: TraceQuestion[] = [
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Recolor 3 and 15 to black and 10 to red, since 3's uncle (15) is red — pushing the violation up to the grandparent",
-        "Recolor 3 to black only, since a red node with one red child is already a valid pattern",
-        "Rotate right about 5 (the LL case: 1 is a left child of a left child) and recolor, since 3's uncle — the nil right child of 5 — is black",
-        "Rotate left about 3, then right about 5 (the LR case), and recolor, since 3's uncle is black but 1 is a right child of 3",
+        "Rotate right about 5, then recolor 3 black and 5 red",
+        "Rotate left about 3, then right about 5, then recolor 1 black and 5 red",
+        "Recolor 3 and 15 black and 10 red, pushing the violation up to the grandparent",
+        "Recolor 3 black only, leaving every other node's color untouched",
       ],
-      correctIndex: 2,
+      correctIndex: 0,
     },
     explanation:
-      "The fixup for a red-red violation examines the color of the *uncle* of the newly inserted " +
+      "The fixup for a red-red violation examines the color of the uncle of the newly inserted " +
       "node, not the uncle of its parent. Here the new node is 1, its parent is 3, its " +
-      "grandparent is 5, and its uncle is 5's other child — the nil right child of 5, which " +
+      "grandparent is 5, and its uncle is 5's other child: the nil right child of 5, which " +
       "counts as black. A black (or nil) uncle rules out the pure-recolor case and forces a " +
-      "rotation; the shape determines which one. Since 1 is a left child of 3, and 3 is a left " +
+      "rotation, and the shape decides which one. Since 1 is a left child of 3 and 3 is a left " +
       "child of 5, this is the 'same side' LL case, handled with a single right rotation about " +
       "the grandparent (5), after which the rotated-up node (3) is recolored black and the old " +
-      "grandparent (5) recolored red. Recoloring alone (as in the red-uncle case) only applies " +
-      "when the uncle is red, because that case can push the violation upward without changing " +
-      "any subtree heights — that option isn't available here.",
+      "grandparent (5) recolored red. Recoloring alone applies only when the uncle is red, since " +
+      "that is the case where flipping colors preserves every root-to-leaf black count without " +
+      "restructuring anything; with a black uncle, recoloring would change the black height of " +
+      "one side only, so a rotation is unavoidable.",
     references: [
       "https://en.wikipedia.org/wiki/Red%E2%80%93black_tree#Insertion",
     ],
@@ -73,7 +76,7 @@ export const dsaQuestions: TraceQuestion[] = [
     id: "dsa-btree-io-01",
     category: "dsa",
     difficulty: "easy",
-    title: "Why databases index with B+-trees instead of balanced BSTs",
+    title: "B+-trees vs. balanced BSTs for a disk-backed index",
     tags: ["b-tree", "b-plus-tree", "disk-io", "databases"],
     type: "trace",
     prompt:
@@ -83,90 +86,92 @@ export const dsaQuestions: TraceQuestion[] = [
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "B+-trees have a better asymptotic comparison complexity than BSTs",
-        "B+-trees maximize branching factor so each node fits one disk page; this minimizes the tree's height in terms of number of nodes (i.e. disk I/Os) visited per lookup, even though key-comparison count is still O(log n)",
-        "B+-trees never need to rebalance, unlike BSTs",
-        "B+-trees keep all data resident in RAM, avoiding disk access entirely",
-      ],
-      correctIndex: 1,
-    },
-    explanation:
-      "The real bottleneck for disk-backed structures is I/O count, not comparison count — each " +
-      "node visited is, in the worst case, a separate disk seek. A BST with branching factor 2 " +
-      "has height Θ(log2 n); with millions of keys that is dozens of disk reads per lookup. A " +
-      "B+-tree node is sized to exactly one disk page (often holding hundreds to thousands of " +
-      "keys), so its branching factor b is huge and its height is Θ(log_b n) — often only 3-4 " +
-      "levels even for billions of keys. Comparisons within an already-loaded page are cheap, so " +
-      "the dominant real-world cost, page reads, is minimized by maximizing b, not by improving " +
-      "the comparison-count asymptotics (which stay O(log n) either way). B-trees still rebalance " +
-      "via node splits/merges, just far less often given their high fanout.",
-  },
-  {
-    id: "dsa-bplustree-leaves-01",
-    category: "dsa",
-    difficulty: "hard",
-    title: "Range scans in a B+-tree: why no repeated descents",
-    tags: ["b-plus-tree", "range-query", "disk-io"],
-    type: "trace",
-    prompt:
-      "In a B+-tree (unlike a classic B-tree), internal nodes hold only routing keys — no " +
-      "records — and every actual record lives in a leaf; the leaves are additionally threaded " +
-      "into a sorted linked list. Given this, what is the complexity of a range query returning " +
-      "k matching records, and why?",
-    answerFormat: {
-      kind: "multiple-choice",
-      choices: [
-        "O(log n) total — internal routing nodes cache enough data that the whole range can be read from a single node",
-        "O(k log n) — every one of the k matching records requires its own O(log n) descent from the root",
-        "O(log n + k) — one O(log n) descent locates the first matching leaf, then the leaf-linked-list is walked forward k times, each an O(1) hop, with no further descents",
-        "O(n) — a range query must scan every leaf because B+-trees do not support ordered traversal",
+        "Their comparison complexity is asymptotically better, O(log_b n) rather than O(log n)",
+        "They never rebalance, avoiding the rotation cost a BST pays on every insertion",
+        "Their high fanout sizes each node to one disk page, minimizing page reads per lookup",
+        "They keep the whole index resident in RAM, so a lookup never touches the disk at all",
       ],
       correctIndex: 2,
     },
     explanation:
+      "The real bottleneck for a disk-backed structure is I/O count, not comparison count: each " +
+      "node visited is, in the worst case, a separate disk seek. A BST with branching factor 2 " +
+      "has height Θ(log2 n), so with millions of keys that is dozens of disk reads per lookup. A " +
+      "B+-tree node is sized to exactly one disk page (often holding hundreds to thousands of " +
+      "keys), so its branching factor b is huge and its height is Θ(log_b n), commonly only 3 or " +
+      "4 levels even for billions of keys. Comparisons within an already-loaded page are cheap, " +
+      "so the dominant real-world cost, page reads, is minimized by maximizing b rather than by " +
+      "improving the comparison-count asymptotics, which stay O(log n) either way (changing the " +
+      "logarithm's base is only a constant factor). B-trees do still rebalance, via node splits " +
+      "and merges, just far less often given their high fanout.",
+  },
+  {
+    id: "dsa-bplustree-leaves-01",
+    category: "dsa",
+    difficulty: "medium",
+    title: "Range query complexity in a B+-tree",
+    tags: ["b-plus-tree", "range-query", "disk-io"],
+    type: "trace",
+    prompt:
+      "In a B+-tree (unlike a classic B-tree), internal nodes hold only routing keys, never " +
+      "records: every record lives in a leaf, and the leaves are additionally threaded into a " +
+      "sorted linked list. Given this, what is the complexity of a range query returning k " +
+      "matching records?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "O(k log n), one root-to-leaf descent per matching record",
+        "O(log n + k), one descent plus k-1 hops along the leaf list",
+        "O(log n), with the routing keys alone summarizing the range",
+        "O(n), since ordered retrieval has to sweep the whole leaf level",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
       "The single descent from root to leaf costs O(log_b n) node visits (b = branching factor) " +
-      "to locate the first key at or above the range's lower bound. A classic B-tree can store " +
-      "data in internal nodes too, so a range scan there may need to re-descend repeatedly; a " +
-      "B+-tree avoids this specifically by pushing all records to the leaf level and threading " +
-      "leaves into a linked list in sorted order. After the initial descent, retrieving the " +
-      "remaining k-1 matches is just k-1 O(1) pointer hops across sibling leaves, never " +
-      "revisiting internal nodes. Total cost is O(log n + k), which is why B+-trees, not " +
-      "B-trees, are the near-universal choice for database range queries and cursor-style " +
-      "pagination.",
+      "to locate the first key at or above the range's lower bound. A classic B-tree stores data " +
+      "in internal nodes too, so a range scan there has to keep re-descending to reach the next " +
+      "key in order. A B+-tree avoids that by pushing all records down to the leaf level and " +
+      "threading the leaves into a sorted linked list. After the initial descent, retrieving the " +
+      "remaining k-1 matches is just k-1 O(1) pointer hops across sibling leaves, with no " +
+      "internal node revisited. Total cost is O(log n + k), the output-sensitive bound that makes " +
+      "B+-trees, rather than B-trees, the near-universal choice for database range queries and " +
+      "cursor-style pagination.",
   },
   {
     id: "dsa-trie-space-01",
     category: "dsa",
-    difficulty: "hard",
+    difficulty: "medium",
     title: "Trie node count: shared prefixes vs. disjoint strings",
     tags: ["trie", "space-complexity"],
     type: "trace",
     prompt:
       "You insert n = 100,000 strings, each of length L = 50, into an uncompressed trie (one " +
-      "child pointer per character; no compression of single-child chains). Case A: all strings " +
+      "child pointer per character; no compression of single-child chains). The alphabet is large " +
+      "enough that 100,000 distinct characters are available at any position. Case A: all strings " +
       "share the same 49-character prefix and differ only in their last character. Case B: no " +
       "two strings share even a single character of prefix. Approximately how many trie nodes " +
-      "does each case create, and how do they compare?",
+      "does each case create?",
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Both cases create roughly n × L = 5,000,000 nodes, since trie size depends only on (n, L), not on shared structure",
-        "Case A creates roughly L + n ≈ 100,050 nodes (one shared 49-node chain, then n branches at the final level); Case B creates roughly n × L = 5,000,000 nodes (a fully separate path per string) — about a 50x difference for identical (n, L)",
-        "Case A creates more nodes than Case B, because shared prefixes force extra branching nodes at every level",
-        "Both cases create roughly n nodes total, since a trie stores one node per string regardless of length",
+        "Case A about L + n ≈ 100,050 nodes; Case B about n × L = 5,000,000 nodes",
+        "Case A about n × L = 5,000,000 nodes; Case B about L + n ≈ 100,050 nodes",
+        "Both about n × L = 5,000,000 nodes, since node count is fixed by n and L alone",
+        "Both about n = 100,000 nodes, since a trie stores one node per inserted string",
       ],
-      correctIndex: 1,
+      correctIndex: 0,
     },
     explanation:
-      "A trie's node count equals the number of distinct root-to-node paths actually used, not " +
-      "simply n·L — that product is only a worst-case bound. In Case A, the first 49 characters " +
-      "are identical across every string, so they collapse onto a single shared chain of 49 " +
-      "nodes; only the final differing character needs up to n separate leaf nodes, giving " +
-      "Θ(L + n) nodes total. In Case B, no prefix is shared at all, so every character of every " +
-      "string needs its own distinct node, giving the full Θ(n·L). Both are valid tries built " +
-      "over strings of the same (n, L), yet their memory footprints differ by roughly a factor " +
-      "of L — exactly why 'trie space is O(total characters inserted)' is a correct worst-case " +
-      "bound that can be wildly pessimistic for prefix-heavy data such as URLs or file paths.",
+      "A trie's node count equals the number of distinct prefixes actually inserted, not simply " +
+      "n·L, which is only a worst-case bound. In Case A the first 49 characters are identical " +
+      "across every string, so they collapse onto a single shared chain of 49 nodes, and only " +
+      "the final differing character needs up to n separate leaves: Θ(L + n) nodes total. In " +
+      "Case B no prefix is shared at all, so every character of every string gets its own node, " +
+      "giving the full Θ(n·L). Both tries are built over strings with the same n and the same L, " +
+      "yet their memory footprints differ by roughly a factor of L. That gap is why 'trie space " +
+      "is O(total characters inserted)' is a correct worst-case bound that can be wildly " +
+      "pessimistic for prefix-heavy data such as URLs or file paths.",
   },
   {
     id: "dsa-skiplist-expected-01",
@@ -183,30 +188,31 @@ export const dsaQuestions: TraceQuestion[] = [
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "O(n), because without explicit rebalancing there is no way to bound the structure's shape",
-        "O(log n) expected — the expected number of levels is Θ(log n), and the expected work per level before dropping down is O(1), so total expected search cost is O(log n); a pathologically unlucky run of coin flips can still degrade this toward O(n)",
-        "O(sqrt n), matching the classic unrolled-linked-list bound",
-        "O(1) amortized, same as a hash table, since randomized levels make lookups effectively random-access",
+        "O(sqrt n) expected, matching the classic unrolled-linked-list bound",
+        "O(1) amortized, the same bound a hash table gives on lookup",
+        "O(n) expected and O(n) worst case, since nothing bounds the structure's shape",
+        "O(log n) expected, with an O(n) worst case",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
-      "Pugh's original analysis shows that with promotion probability 1/2, the expected number " +
-      "of levels a skip list builds is Θ(log n), and a backward analysis of the search path " +
-      "shows the expected number of leftward/downward steps taken at each level before dropping " +
-      "down is O(1). Summing O(1) work across O(log n) levels gives O(log n) expected search " +
-      "time — matching a balanced BST without any rotations or explicit rebalancing. This bound " +
-      "holds in expectation over the random coin flips, not in the worst case: an astronomically " +
-      "unlikely sequence of flips could leave every node at level 1, degenerating the structure " +
-      "into a plain sorted linked list with O(n) search. Randomization trades a worst-case " +
-      "guarantee for implementation simplicity while keeping the same expected asymptotics as a " +
-      "red-black tree.",
+      "With promotion probability 1/2, the probability that any given node reaches level k is " +
+      "2^-k, so the expected number of nodes at level k is n/2^k and the highest occupied level " +
+      "is Θ(log n) with high probability. Pugh's backward analysis of the search path walks it " +
+      "from the target back to the head: at each step the path either moves left (probability " +
+      "1/2, the node was not promoted) or up a level (probability 1/2), so the expected number " +
+      "of leftward steps taken per level is O(1). Summing O(1) work across Θ(log n) levels gives " +
+      "O(log n) expected search time, matching a balanced BST with no rotations and no explicit " +
+      "rebalancing at all. The bound holds in expectation over the coin flips, not in the worst " +
+      "case: an astronomically unlikely run of flips could leave every node at level 1, " +
+      "degenerating the structure into a plain sorted linked list with O(n) search. " +
+      "Randomization buys implementation simplicity at the price of a worst-case guarantee.",
   },
   {
     id: "dsa-skiplist-correctness-01",
     category: "dsa",
-    difficulty: "hard",
-    title: "Skip list correctness when the coin flip is biased or removed",
+    difficulty: "medium",
+    title: "A skip list with level promotion disabled",
     tags: ["skip-list", "correctness", "randomized-algorithms"],
     type: "trace",
     prompt:
@@ -218,24 +224,24 @@ export const dsaQuestions: TraceQuestion[] = [
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "The skip list becomes incorrect — searches can return wrong results — because the express-lane levels are what guarantee finding the target key",
-        "The skip list remains fully correct — every search still finds the right key or correctly reports absence — because level 1 is always a complete, sorted linked list of every element; performance degrades to O(n) per operation since there are no higher express lanes, but correctness never depended on how many levels exist",
-        "The skip list stays correct for search, but insertion and deletion become unsafe and can corrupt the level-1 list",
-        "The skip list silently discards elements, since nodes are only kept if promoted past level 1",
+        "Searches can now return wrong results, since the express lanes are what locate a key",
+        "Every operation stays correct, with performance degrading to O(n) per operation",
+        "Search stays correct, but insertion and deletion can now corrupt the level-1 list",
+        "Elements are silently dropped, since a node is only linked in once it is promoted",
       ],
       correctIndex: 1,
     },
     explanation:
-      "The invariant a skip list actually relies on for correctness is that level 1 is always a " +
-      "complete, sorted linked list containing every element — that invariant holds regardless " +
-      "of how, or whether, higher levels get built. Higher levels are purely a performance " +
-      "optimization ('express lanes') consulted opportunistically; the algorithm always falls " +
-      "through to a level-1 scan to pinpoint the exact key or its correct insertion point. " +
-      "Forcing every node to height 1 collapses the structure into an ordinary sorted linked " +
-      "list — correctness is completely untouched, but performance regresses from expected " +
-      "O(log n) to O(n) per operation, since there is no faster path anymore. The same reasoning " +
-      "applies symmetrically to a heavily biased coin (say p = 0.99): still correct, just " +
-      "wasting space on levels that provide little balance benefit.",
+      "The invariant a skip list relies on for correctness is that level 1 is always a complete, " +
+      "sorted linked list containing every element, and that invariant holds regardless of how, " +
+      "or whether, higher levels get built. Higher levels are purely a performance optimization " +
+      "(the 'express lanes'), consulted opportunistically: the search always drops down through " +
+      "them and finishes with a level-1 scan that pinpoints the exact key or its insertion " +
+      "point. Forcing every node to height 1 collapses the structure into an ordinary sorted " +
+      "linked list, leaving correctness untouched while performance regresses from expected " +
+      "O(log n) to O(n) per operation. The same reasoning runs in the other direction for a " +
+      "heavily biased coin such as p = 0.99: still correct, just wasting space on towers of " +
+      "levels that buy almost nothing.",
   },
   {
     id: "dsa-unionfind-01",
@@ -253,25 +259,25 @@ export const dsaQuestions: TraceQuestion[] = [
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "All three give O(log n) worst case per operation — the two optimizations are redundant with each other",
-        "(1) can degenerate to O(n) per find (a tree can become a straight-line chain of n nodes); (2) guarantees O(log n) worst case per operation, since union-by-rank alone bounds tree height at O(log n); (3) achieves O(α(n)) amortized per operation, α being the inverse Ackermann function — effectively constant for any n that fits in the physical universe",
-        "(1) and (2) are both O(log n) amortized; only (3) improves further, to O(1) worst case per operation",
-        "Path compression alone is strictly worse than no optimization at all, since it performs extra pointer writes on every find",
+        "(1) O(log n) amortized per find; (2) O(log n) worst case; (3) O(1) worst case per operation",
+        "(1) O(n) per find; (2) O(n) per find as well; (3) O(log n) amortized per operation",
+        "(1) O(n) per find; (2) O(log n) worst case; (3) O(α(n)) amortized per operation",
+        "All three are O(log n) worst case per operation, since the two optimizations overlap",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
-      "Without either optimization, repeatedly unioning in the 'wrong' direction can build a " +
-      "tree that is a path of length n, making a single find cost O(n). Union-by-rank alone " +
-      "(always attach the shorter/lower-rank tree under the taller one) provably bounds tree " +
-      "height at O(log n), giving O(log n) worst case per find even with zero path compression. " +
-      "Path compression alone (flattening the path to the root on every find) can be shown via a " +
-      "potential-function argument to give O(log n) amortized per operation — better than the " +
-      "naive case, but a weaker worst-single-operation guarantee than rank alone. Combining both " +
-      "is Tarjan's classic result: amortized cost per operation is O(α(n)), the inverse Ackermann " +
-      "function, which stays at most 4 for any n up to numbers vastly larger than the number of " +
-      "atoms in the observable universe — for all practical purposes O(1), which is why " +
-      "union-find with both optimizations is treated as 'essentially constant time.'",
+      "Without either optimization, repeatedly unioning in the 'wrong' direction builds a tree " +
+      "that is a path of n nodes, so a single find costs O(n). Union-by-rank alone (always " +
+      "attach the lower-rank root under the higher-rank one) bounds tree height at O(log n): a " +
+      "root of rank r is the root of a tree with at least 2^r nodes, by induction on the fact " +
+      "that rank only increases when two equal-rank trees merge, so r ≤ log2 n and every find " +
+      "walks at most that many parent pointers. Path compression alone, with no rank rule, gives " +
+      "O(log n) amortized per operation, better than the naive case but a weaker guarantee on " +
+      "any single find than rank alone provides. Combining both is Tarjan's result: the " +
+      "amortized cost per operation is O(α(n)), where α is the inverse Ackermann function, which " +
+      "stays at or below 4 for any n that could ever be stored, so the combination is treated in " +
+      "practice as essentially constant time.",
   },
   {
     id: "dsa-segtree-basic-01",
@@ -315,29 +321,29 @@ struct SegTree {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "O(n) for both, since query/update might visit every leaf",
-        "O(log n) for update, O(n) for query, since a range can span the whole array",
-        "O(log n) for both — update descends one root-to-leaf path (tree height O(log n)); query visits at most O(log n) 'canonical' nodes because any range decomposes into at most a couple of nodes per recursion level",
-        "O(sqrt n) for both, matching a sqrt-decomposition structure",
+        "O(log n) for update, O(log n) for query",
+        "O(log n) for update, O(log^2 n) for query",
+        "O(log n) for update, O(n) for query",
+        "O(n) for update, O(n) for query",
       ],
-      correctIndex: 2,
+      correctIndex: 0,
     },
     explanation:
       "update descends exactly one root-to-leaf path, whose length is the tree height, Θ(log n) " +
       "for a segment tree over n leaves. query looks more dangerous because it recurses into " +
-      "both children, but the key structural fact is that at each depth of the recursion at " +
-      "most two nodes are only 'partially' overlapping the query range — the ones straddling the " +
-      "left and right boundary; every other visited node either fully matches or fully misses " +
-      "the range and returns immediately. That caps the number of nodes actually explored per " +
-      "level at a small constant, so total work across O(log n) levels is O(log n), not O(n). " +
-      "This 'any range decomposes into O(log n) canonical segments' argument is the same idea " +
-      "that gives Fenwick trees their efficiency.",
+      "both children, but the key structural fact is that at each depth of the recursion at most " +
+      "two nodes only partially overlap the query range: the two straddling the left and right " +
+      "boundary. Every other visited node either fully matches (returns its stored value) or " +
+      "fully misses (returns the identity) and stops immediately. That caps the nodes actually " +
+      "explored per level at a small constant, so total work across O(log n) levels is O(log n), " +
+      "not O(n) and not O(log^2 n). The same decomposition of an arbitrary range into O(log n) " +
+      "canonical segments is what gives Fenwick trees their efficiency.",
   },
   {
     id: "dsa-segtree-lazy-01",
     category: "dsa",
     difficulty: "hard",
-    title: "Why lazy propagation is needed for range updates",
+    title: "Segment tree range updates with and without lazy propagation",
     tags: ["segment-tree", "lazy-propagation"],
     type: "trace",
     prompt:
@@ -360,24 +366,24 @@ struct SegTree {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Naive: O(log n), same as a point update, since tree height doesn't change; lazy propagation only helps queries, not updates",
-        "Naive: O(n) worst case, since a range spanning the whole array touches all n leaves individually; lazy propagation stamps a pending value on the O(log n) canonical nodes covering [l, r] instead of recursing into children, pushing the tag down only when a later operation actually needs to descend past that node — restoring O(log n) per update",
-        "Naive and lazy propagation have identical complexity; lazy propagation is purely a constant-factor optimization",
-        "Naive: O(log^2 n); lazy propagation reduces it to O(log n) by caching partial sums",
+        "Naive: O(log n) per range update; lazy propagation speeds up queries only",
+        "Naive: O(log^2 n) per range update; lazy propagation reduces that to O(log n)",
+        "Naive: O(n) per range update; lazy propagation is a constant-factor win, still O(n)",
+        "Naive: O(n) per range update; lazy propagation brings it back to O(log n)",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
-      "rangeUpdateNaive always recurses down to start == end before applying anything, so a " +
-      "range spanning the whole array (l=0, r=n-1) touches all n leaves — O(n) worst case, no " +
-      "better than a brute-force array scan and defeating the point of the tree. Lazy " +
+      "rangeUpdateNaive always recurses down to start == end before applying anything, so a range " +
+      "spanning the whole array (l=0, r=n-1) touches all n leaves. That is O(n) worst case, no " +
+      "better than a brute-force array scan, which defeats the point of building the tree. Lazy " +
       "propagation instead applies the update only at the O(log n) canonical nodes that exactly " +
       "cover [l, r] (the same nodes query() would visit), storing the pending delta in a 'lazy' " +
-      "tag at each such node rather than recursing further; the tag is pushed down to children " +
+      "tag at each such node rather than recursing further. The tag is pushed down to children " +
       "only the next time the tree actually needs to descend past that node, for a later " +
-      "overlapping query or update. This restores O(log n) per range update while keeping " +
-      "queries correct, at the cost of a push-down step before recursing into any node — the " +
-      "standard technique for range-update/range-query segment trees.",
+      "overlapping query or update. Each range update therefore touches O(log n) nodes again, at " +
+      "the cost of one push-down step before recursing into any node, which is the standard " +
+      "technique for range-update/range-query segment trees.",
   },
   {
     id: "dsa-fenwick-bittrick-01",
@@ -407,24 +413,25 @@ long long prefixSum(vector<long long>& bit, int i) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Only index 5, since i & -i isolates the value itself when an update is meant to stay local",
-        "Indices 5, 6, 8 — each step adds i's lowest set bit (i & -i) to jump to the next index whose owned range also covers position 5; since an n-bit integer has at most O(log n) distinct lowest-set-bit positions as it's repeatedly cleared, at most O(log n) such jumps occur before i exceeds n",
-        "Indices 5, 6, 7, 8, incrementing by 1 each time — O(n) in the worst case",
-        "Indices 5, then 10, 20, 40, ..., doubling each time until exceeding n",
+        "Indices 5, 6, 7, 8; i rises by one per step, so the loop is O(n)",
+        "Indices 5, 6, 8; i gains its own lowest set bit per step, so the loop is O(log n)",
+        "Indices 5, 10, 20, 40; i doubles per step, so the loop is O(log n)",
+        "Index 5 alone; the body runs once, so a Fenwick update is O(1)",
       ],
       correctIndex: 1,
     },
     explanation:
-      "i & -i isolates the lowest set bit of i's two's-complement representation — for i=5 " +
+      "i & -i isolates the lowest set bit of i's two's-complement representation. For i=5 " +
       "(0b101), i & -i = 1, so i becomes 6 (0b110); for i=6, i & -i = 2, so i becomes 8 " +
       "(0b1000); for i=8, i & -i = 8, so i becomes 16, which exceeds n=8 and stops the loop. So " +
-      "update(5, ...) touches bit[5], bit[6], bit[8] — each Fenwick index 'owns' a range whose " +
-      "size equals its lowest set bit, and adding that value walks up to the next index whose " +
-      "owned range also covers position 5. Because any n-bit integer has at most O(log n) bit " +
-      "positions that can serve as 'the lowest set bit' as bits are cleared and higher ones set, " +
-      "this ascent takes O(log n) steps — the same asymptotic bound as a segment tree but with a " +
-      "smaller constant factor, since there's no recursion or pointer chasing, just array " +
-      "indexing and one bitwise AND per step.",
+      "update(5, ...) touches bit[5], bit[6], bit[8]. Each Fenwick index owns a range whose size " +
+      "equals its lowest set bit, and adding that value walks up to the next index whose owned " +
+      "range also covers position 5. Every such step clears the current lowest set bit and " +
+      "carries into a strictly higher bit position, so i's lowest set bit strictly increases in " +
+      "significance each iteration; with only O(log n) bit positions available below n, the " +
+      "ascent takes O(log n) steps. That matches a segment tree asymptotically with a much " +
+      "smaller constant, since there is no recursion or pointer chasing, just array indexing and " +
+      "one bitwise AND per step.",
     references: ["https://cp-algorithms.com/data_structures/fenwick.html"],
   },
   {
@@ -444,31 +451,30 @@ long long prefixSum(vector<long long>& bit, int i) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Binary heap: O(E log V); Fibonacci heap: O(E + V log V) — identical up to constants, so the Fibonacci heap has no practical benefit",
-        "Binary heap: O(E log V), dominated by up to E decrease-keys at O(log V) each; Fibonacci heap: O(E + V log V), since all E decrease-keys collectively cost only O(E) amortized and only the V extract-mins pay the O(log V) factor — asymptotically better whenever E is ω(V), i.e. on dense graphs",
-        "Both are O(V^2) regardless of the heap, since Dijkstra must examine every vertex pair",
-        "The Fibonacci heap makes Dijkstra O(E) overall, removing the log factor entirely, since both its operations are O(1) amortized",
+        "Both come out O(V^2) whatever the heap, since Dijkstra inspects every vertex pair",
+        "Binary heap O(E log V); Fibonacci heap O(E), with the log factor gone entirely",
+        "Binary heap O(E log V); Fibonacci heap O(E + V log V), the better bound once E is ω(V)",
+        "Binary heap O(E log V); Fibonacci heap O(E + V log V), the same bound rewritten",
       ],
-      correctIndex: 1,
+      correctIndex: 2,
     },
     explanation:
       "With a binary heap, every decrease-key is an O(log V) sift-up, so up to E of them cost " +
-      "O(E log V) total, dominating the O(V log V) from V extract-mins — giving overall " +
-      "O(E log V) (equivalently O((V+E) log V)). A Fibonacci heap's decrease-key is O(1) " +
-      "amortized (via lazy consolidation and cascading cuts, whose cost is only paid off at the " +
-      "next extract-min), so the E decrease-keys collapse to O(E) total, leaving only the V " +
-      "extract-mins, each O(log V) amortized, as the log-factor term: O(E + V log V). For sparse " +
-      "graphs (E = O(V)) the two bounds are asymptotically similar, but for dense graphs (E close " +
-      "to V^2) the Fibonacci-heap bound O(V^2 + V log V) = O(V^2) beats the binary-heap bound " +
-      "O(V^2 log V) by a full log V factor — the textbook reason Fibonacci heaps are paired with " +
-      "Dijkstra in complexity theory, even though large constant factors usually make d-ary " +
-      "heaps faster in practice.",
+      "O(E log V) total, dominating the O(V log V) from V extract-mins and giving O(E log V) " +
+      "overall (equivalently O((V+E) log V)). A Fibonacci heap's decrease-key is O(1) amortized, " +
+      "via lazy consolidation and cascading cuts whose cost is only paid off at the next " +
+      "extract-min, so the E decrease-keys collapse to O(E) total and only the V extract-mins " +
+      "carry a log factor: O(E + V log V). For sparse graphs (E = O(V)) the two bounds coincide " +
+      "at O(V log V). For dense graphs (E close to V^2) the Fibonacci-heap bound " +
+      "O(V^2 + V log V) = O(V^2) beats the binary-heap bound O(V^2 log V) by a full log V " +
+      "factor, which is why Fibonacci heaps are paired with Dijkstra in complexity theory even " +
+      "though their large constant factors usually make d-ary heaps faster in practice.",
   },
   {
     id: "dsa-hash-collision-01",
     category: "dsa",
     difficulty: "medium",
-    title: "Primary clustering under linear probing vs. separate chaining",
+    title: "Linear probing vs. separate chaining at 90% load",
     tags: ["hash-table", "open-addressing", "separate-chaining", "load-factor"],
     type: "trace",
     prompt:
@@ -478,24 +484,25 @@ long long prefixSum(vector<long long>& bit, int i) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "They're equal — load factor alone determines expected probes, independent of collision-resolution strategy",
-        "Separate chaining is worse, since following pointers has worse cache locality than open addressing",
-        "Linear probing is worse: occupied slots merge into long runs ('primary clustering'), so a collision anywhere in a run forces probing through the whole run; expected probes for an unsuccessful search grow like ~(1+1/(1-α)^2)/2, blowing up as α→1, versus separate chaining's much gentler ~1+α",
-        "Linear probing is worse only for successful searches; unsuccessful searches perform identically under both schemes",
+        "They tie at about 1/(1-α) probes, the uniform-hashing bound, which ignores the strategy",
+        "Separate chaining is worse, since pointer chasing has worse cache locality than probing does",
+        "Linear probing is worse: its expected probes grow like ~(1+1/(1-α)^2)/2 against chaining's ~1+α",
+        "Linear probing is worse for successful searches only; on unsuccessful ones the two schemes tie",
       ],
       correctIndex: 2,
     },
     explanation:
-      "Linear probing's defining pathology is primary clustering: once several keys collide near " +
+      "Linear probing's defining pathology is primary clustering. Once several keys collide near " +
       "each other, the run of occupied slots they form keeps growing, because any new key that " +
-      "hashes into that run must probe past the entire run to find an empty slot — runs are " +
+      "hashes anywhere into that run must probe past the whole run to find an empty slot, which " +
+      "extends the run and makes it an even larger target for the next key. Runs are " +
       "self-reinforcing. Knuth's classical analysis gives the expected number of probes for an " +
       "unsuccessful search under linear probing as approximately (1 + 1/(1-α)^2)/2, which " +
-      "diverges sharply as α approaches 1 (at α=0.9 that's already roughly 50 probes). Separate " +
-      "chaining has no clustering at all — a collision just extends one bucket's linked list " +
-      "independently of neighboring buckets — so its expected unsuccessful-search cost grows " +
-      "only linearly with α, roughly 1+α (about 1.9 at α=0.9). This is why open-addressing " +
-      "tables are typically resized well before α approaches 1, often around 0.7, while chained " +
+      "diverges sharply as α approaches 1: at α=0.9 that is already roughly 50 probes. Separate " +
+      "chaining has no clustering at all, since a collision just extends one bucket's linked " +
+      "list independently of every neighboring bucket, so its expected unsuccessful-search cost " +
+      "grows only linearly with α, roughly 1+α (about 1.9 at α=0.9). Open-addressing tables are " +
+      "therefore typically resized well before α approaches 1, often around 0.7, while chained " +
       "tables tolerate higher load factors far more gracefully.",
     references: ["https://en.wikipedia.org/wiki/Linear_probing#Analysis"],
   },
@@ -503,7 +510,7 @@ long long prefixSum(vector<long long>& bit, int i) {
     id: "dsa-bloomfilter-negatives-01",
     category: "dsa",
     difficulty: "easy",
-    title: "Why a Bloom filter never produces false negatives",
+    title: "False positives and false negatives in a Bloom filter",
     tags: ["bloom-filter", "probabilistic-data-structures"],
     type: "trace",
     prompt:
@@ -513,30 +520,31 @@ long long prefixSum(vector<long long>& bit, int i) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Because the hash functions are cryptographically secure and collision-resistant",
-        "Because inserting an element deterministically sets all k of its hash-mapped bits to 1, and those bits are never cleared (no deletion), so querying a previously-inserted element always finds all k bits set; a false positive can only occur when other insertions coincidentally set all k bits an absent element hashes to",
-        "Because the bit array is resized whenever it gets too full, preventing any bit from ever being overwritten",
-        "Because each element is also stored in a small backup list alongside the bit array, guaranteeing exact recall",
+        "The hash functions are cryptographically secure, so two elements never share a bit position",
+        "Insertion sets all k of an element's bits to 1 and nothing ever clears them back to 0",
+        "The bit array is resized whenever it fills up, so no earlier element's bits are overwritten",
+        "Each element is also kept in a small backup list, which the query consults before answering",
       ],
       correctIndex: 1,
     },
     explanation:
       "Inserting an element x sets bits h1(x)...hk(x) to 1 unconditionally, and a standard Bloom " +
       "filter provides no operation that ever clears a bit back to 0. So if x was inserted, " +
-      "every one of its k bits is guaranteed to still be 1 whenever it is later queried, meaning " +
-      "the query — which just checks all k bits — always answers 'present.' A false positive " +
-      "arises only in the opposite direction: some element y that was never inserted can still " +
-      "have all k of its bits happen to be 1, purely because other elements' insertions " +
-      "independently set those same positions — an unlucky coincidence, not a guaranteed " +
-      "outcome. This asymmetry (no false negatives, possible false positives) is what makes " +
-      "Bloom filters useful as a fast pre-filter in front of an expensive exact check: a " +
-      "negative answer can always be trusted completely.",
+      "every one of its k bits is guaranteed to still be 1 whenever it is later queried, and the " +
+      "query does nothing but check those k bits, so it always answers 'present.' A false " +
+      "positive arises only in the opposite direction: some element y that was never inserted " +
+      "can still have all k of its bits happen to be 1, purely because other elements' " +
+      "insertions independently set those same positions. That is an unlucky coincidence rather " +
+      "than a guaranteed outcome, and its probability is what the false-positive rate measures. " +
+      "The asymmetry (no false negatives, possible false positives) is what makes Bloom filters " +
+      "useful as a cheap pre-filter in front of an expensive exact check: a negative answer can " +
+      "be trusted completely, so only positives need to be verified against the real store.",
   },
   {
     id: "dsa-bloomfilter-fprate-01",
     category: "dsa",
     difficulty: "hard",
-    title: "Optimal hash count and the false-positive-rate blowup",
+    title: "An engineer raises a Bloom filter's hash count to 20",
     tags: ["bloom-filter", "false-positive-rate", "hash-functions"],
     type: "trace",
     prompt:
@@ -548,30 +556,31 @@ long long prefixSum(vector<long long>& bit, int i) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "It keeps decreasing, since checking more bits per query can only make a false positive harder to achieve",
-        "It stays essentially the same, since the formula is dominated by m/n, not k",
-        "It increases relative to k=7, because each insertion now sets 20 bits instead of 7, saturating the bit array with 1s much faster; past the optimal k*, extra hash functions cost more in array saturation than they gain in additional independent checks",
-        "It becomes exactly 0, since 20 hash functions provide enough redundancy to eliminate all collisions",
+        "It keeps falling, since checking more bits per query makes an accidental all-ones hit rarer",
+        "It stays essentially unchanged, since the rate is dominated by the m/n ratio rather than k",
+        "It rises above the k=7 rate, since each insertion now sets 20 bits and saturates the array",
+        "It drops to zero, since 20 independent hash functions leave no shared bit pattern possible",
       ],
       correctIndex: 2,
     },
     explanation:
-      "The formula (1 - e^(-kn/m))^k captures a genuine tradeoff: more hash functions add more " +
-      "independent bit checks (good for reducing false positives), but each insertion also sets " +
-      "more bits, so the array's saturation (fraction of bits that are 1) grows faster as more " +
-      "elements are inserted (bad). k* = (m/n)·ln 2 is exactly the balance point between these " +
-      "two effects; past it, saturation cost dominates and the false-positive rate rises again as " +
-      "k grows further. At m/n=10, k*≈6.93, so k=7 is near-optimal; jumping to k=20 pushes the " +
-      "array toward being almost entirely 1s well before all n elements are inserted, making " +
-      "essentially every query — including for absent elements — report 'possibly present,' " +
-      "driving the false-positive rate up rather than down. This non-monotonicity — more hashing " +
-      "is not free redundancy — is exactly the subtlety interviewers probe for.",
+      "The formula (1 - e^(-kn/m))^k captures a genuine tradeoff. More hash functions add more " +
+      "independent bit checks, which pushes the rate down, but each insertion also sets more " +
+      "bits, so the array's saturation (the fraction of bits equal to 1) climbs faster as " +
+      "elements are inserted, which pushes the rate back up. k* = (m/n)·ln 2 is the balance " +
+      "point between the two effects, the value of k that leaves the array almost exactly half " +
+      "full after all n insertions; past k*, the saturation term dominates and the rate rises " +
+      "again. Plugging in m/n = 10: at k=7 the rate is about 0.0082, while at k=20 the exponent " +
+      "kn/m = 2 gives (1 - e^-2)^20 ≈ 0.055, nearly seven times worse. With 20 bits set per " +
+      "element the array is roughly 86% ones, so most absent elements find all their bits " +
+      "already lit. Extra hashing is not free redundancy: it buys checks at the cost of the very " +
+      "sparsity those checks depend on.",
   },
   {
     id: "dsa-lru-cache-01",
     category: "dsa",
     difficulty: "hard",
-    title: "A supposedly O(1) LRU cache with a hidden linear scan",
+    title: "An LRU cache built from a hash map and a linked list",
     tags: ["lru-cache", "hash-map", "linked-list", "complexity-analysis"],
     type: "trace",
     prompt:
@@ -614,30 +623,32 @@ public:
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Yes — the unordered_map gives O(1) lookup and the list gives O(1) reordering, so both operations are O(1)",
-        "No — order.remove(key) performs a linear scan of the doubly linked list to find the node holding key, since the map only stores key -> value, not key -> list iterator; both get and put are therefore O(n) worst case, not O(1)",
-        "No — only put is O(n); get is genuinely O(1) since it never touches the list",
-        "No — the unordered_map itself is O(n) per lookup regardless of the list logic, due to hash collisions",
+        "No: order.remove(key) scans the list linearly, so get and put are both O(n) worst case",
+        "Yes: the map gives O(1) lookup and the list O(1) reordering, so both operations are O(1)",
+        "No: only put is O(n); get is genuinely O(1), since it never has to search the list at all",
+        "No: the unordered_map lookup is itself O(n) under collisions, whatever the list logic does",
       ],
-      correctIndex: 1,
+      correctIndex: 0,
     },
     explanation:
-      "std::list::remove(value) erases all elements equal to value by scanning the list from the " +
-      "front — an O(n) linear pass, because a plain list node offers no way to jump directly to " +
-      "the element holding a given key. The cache's unordered_map only maps key to value, giving " +
-      "no shortcut to the corresponding list node. Both get (which calls order.remove(key) to " +
-      "move the accessed key to the front) and put (which does the same, plus possibly evicting " +
-      "the back) therefore cost O(n) worst case, defeating the entire point of using a linked " +
-      "list for reordering. The standard fix is to make the map store key -> " +
-      "std::list<int>::iterator (alongside or instead of the value), so the exact node can be " +
-      "located in O(1) and relocated with list::splice, moving an existing node to the front in " +
-      "O(1) with no scan and no reallocation — that is the real O(1)-both-operations LRU design.",
+      "std::list::remove(value) erases every element equal to value by scanning the list from the " +
+      "front, an O(n) linear pass, because a plain list node offers no way to jump directly to " +
+      "the element holding a given key. The cache's unordered_map only maps key to value, so it " +
+      "provides no shortcut to the corresponding list node. Both get (which calls " +
+      "order.remove(key) to move the accessed key to the front) and put (which does the same, " +
+      "plus possibly evicting the back) therefore cost O(n) worst case, defeating the entire " +
+      "point of using a linked list for reordering. The structural insight is that a linked " +
+      "list's O(1) splice is only reachable if you already hold a handle to the node; searching " +
+      "for that handle costs the linear scan the list was supposed to avoid. The standard fix is " +
+      "to store key -> std::list<int>::iterator in the map alongside the value, so the exact " +
+      "node is located in O(1) and relocated with list::splice, which moves an existing node to " +
+      "the front with no scan and no reallocation.",
   },
   {
     id: "dsa-dijkstra-negative-01",
     category: "dsa",
-    difficulty: "hard",
-    title: "Why Dijkstra's algorithm is wrong with a negative edge",
+    difficulty: "medium",
+    title: "Dijkstra's algorithm on a graph with one negative edge",
     tags: ["dijkstra", "graph-algorithms", "shortest-path", "negative-weights"],
     type: "trace",
     prompt:
@@ -655,30 +666,33 @@ C --(-10)--> B`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Dijkstra reports dist[B] = 1, which is correct — that is indeed the shortest path",
-        "Dijkstra reports dist[B] = 1, but the true shortest distance is -6 via A→C→B; Dijkstra finalizes B before C is ever processed, and its greedy invariant — a finalized vertex's distance can never improve — silently assumes no later-relaxed edge can decrease it, which fails as soon as a negative edge like C→B exists",
-        "Dijkstra reports dist[B] = -6 correctly, because it always relaxes every outgoing edge of every vertex before finalizing any of them",
-        "Dijkstra enters an infinite loop, since C→B has negative weight",
+        "dist[B] = 1, which is correct: no path to B in this graph is shorter than that",
+        "dist[B] = -6, since Dijkstra relaxes all outgoing edges before finalizing any vertex",
+        "It never terminates, since relaxing C→B keeps re-inserting B into the priority queue",
+        "dist[B] = 1, though the true shortest distance is -6 along the path A→C→B",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
-      "Tracing it: dist[A]=0; relaxing A's edges gives dist[B]=1, dist[C]=4. The priority queue's " +
-      "minimum is B (1 < 4), so Dijkstra extracts and permanently finalizes B at distance 1 — " +
-      "the algorithm never revisits a finalized vertex's distance. It then extracts C (distance " +
-      "4) and relaxes C→B: 4 + (-10) = -6, strictly less than B's finalized 1, but there is no " +
-      "mechanism to un-finalize B, so the improvement is simply discarded. The root cause is " +
-      "Dijkstra's correctness proof, which relies on the invariant that once a vertex is popped " +
-      "with the current minimum tentative distance, no unexplored path can beat it — a claim " +
-      "that only holds when all edge weights are non-negative, since a negative edge is exactly " +
-      "the kind of thing that can make a 'longer-looking' path cheaper after the fact. This is " +
-      "precisely why negative weights require Bellman-Ford or Johnson's algorithm instead.",
+      "Tracing it: dist[A]=0, and relaxing A's edges gives dist[B]=1, dist[C]=4. The priority " +
+      "queue's minimum is B (1 < 4), so Dijkstra extracts and permanently finalizes B at " +
+      "distance 1, and the algorithm never revisits a finalized vertex's distance. It then " +
+      "extracts C (distance 4) and relaxes C→B: 4 + (-10) = -6, strictly less than B's finalized " +
+      "1, but there is no mechanism to un-finalize B, so the improvement is discarded. The root " +
+      "cause is Dijkstra's correctness proof, which rests on the invariant that once a vertex is " +
+      "popped with the current minimum tentative distance, no path still under construction can " +
+      "beat it. Every other path out of the frontier already costs at least as much and can only " +
+      "get more expensive as it grows, which holds precisely because edge weights are " +
+      "non-negative. A negative edge breaks that monotonicity: it lets a path that looks longer " +
+      "at the frontier turn out cheaper later. Termination is never at risk here (each vertex is " +
+      "still popped once), only correctness. Graphs with negative weights need Bellman-Ford, or " +
+      "Johnson's algorithm if all-pairs distances are wanted.",
   },
   {
     id: "dsa-bellmanford-01",
     category: "dsa",
     difficulty: "medium",
-    title: "Bellman-Ford's iteration count and negative-cycle detection",
+    title: "A Bellman-Ford that stops after V-1 rounds",
     tags: ["bellman-ford", "graph-algorithms", "negative-cycle"],
     type: "trace",
     prompt:
@@ -695,20 +709,20 @@ C --(-10)--> B`,
             dist[v] = dist[u] + w;
     }
 }
-// stops here — no extra round, no negative-cycle check`,
+// stops here: no extra round, no negative-cycle check`,
     },
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "O(V + E); it lacks nothing, this is the complete algorithm",
-        "O(VE); it correctly computes shortest paths when no negative cycle is reachable from the source (V-1 rounds suffice, since a shortest simple path has at most V-1 edges), but it cannot detect a negative cycle — that requires one further round checking whether any edge can still be relaxed, which would be impossible if all distances had already converged",
-        "O(V^2 E); it lacks the ability to handle negative edge weights at all, only negative cycles",
-        "O(E log V); it lacks a priority queue, which Bellman-Ford requires to terminate correctly",
+        "O(V + E); nothing is missing, this is the complete textbook algorithm as written",
+        "O(VE); distances are right absent a reachable negative cycle, but it cannot detect one",
+        "O(V^2 E); it cannot handle negative edge weights at all, only strictly positive ones",
+        "O(E log V); it is missing the priority queue Bellman-Ford needs to terminate correctly",
       ],
       correctIndex: 1,
     },
     explanation:
-      "Each of the V-1 rounds relaxes all E edges, giving O(VE) total — the standard bound. The " +
+      "Each of the V-1 rounds relaxes all E edges, giving the standard O(VE) bound. The " +
       "V-1 count isn't arbitrary: a simple shortest path in a graph with no negative cycle " +
       "visits at most V vertices and so has at most V-1 edges, so after V-1 rounds of relaxing " +
       "every edge, all shortest-path distances are guaranteed to have converged, provided no " +
@@ -743,12 +757,12 @@ C --(-10)--> B`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Time O(V^2), space O(V^2) — k just indexes an optimization pass",
-        "Time O(V^3), space O(V^2) — the triple-nested loop runs exactly V^3 iterations of O(1) work; k represents 'the highest-indexed intermediate vertex allowed on the path so far', with dist[i][j] after the k-th outer iteration holding the shortest i→j path using only vertices {0..k} as intermediates",
-        "Time O(V^3 log V), space O(V^3) — a hidden logarithmic factor comes from the comparison in the if-statement",
-        "Time O(E·V), space O(V) — Floyd-Warshall runs Bellman-Ford from every source",
+        "Time O(V^2), space O(V^2); k just indexes an extra optimization pass over the matrix",
+        "Time O(V^3 log V), space O(V^3); the comparison inside the loop adds a logarithmic factor",
+        "Time O(E·V), space O(V); the loops amount to running Bellman-Ford from every source",
+        "Time O(V^3), space O(V^2); k is the highest-indexed vertex allowed as an intermediate",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
       "The three nested loops each run V times with no early termination, giving exactly V^3 " +
@@ -766,7 +780,7 @@ C --(-10)--> B`,
     id: "dsa-toposort-kahns-01",
     category: "dsa",
     difficulty: "medium",
-    title: "Detecting a cycle with Kahn's algorithm",
+    title: "Kahn's algorithm on a graph containing a cycle",
     tags: ["topological-sort", "kahns-algorithm", "cycle-detection"],
     type: "trace",
     prompt:
@@ -777,30 +791,31 @@ C --(-10)--> B`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "The queue never empties — it loops forever revisiting A, B, and C",
-        "It throws a runtime error the moment it tries to decrement an in-degree below 0",
-        "Every vertex in the cycle starts with in-degree ≥ 1 contributed by another vertex in the same cycle, so none of them ever reaches in-degree 0 and none is ever enqueued; the algorithm terminates normally once the queue empties, but the output has fewer than V vertices — that shortfall is exactly how Kahn's algorithm detects a cycle, with no explicit coloring or recursion-stack tracking needed",
-        "It silently produces an incorrect but complete ordering of all V vertices, with no indication anything is wrong",
+        "The queue never empties, so the algorithm loops forever revisiting A, B, and C in turn",
+        "It faults the moment it tries to decrement an in-degree that has already reached 0",
+        "It terminates normally, but the output holds fewer than V vertices, omitting the cycle",
+        "It emits an ordering of all V vertices that silently violates some of the edge constraints",
       ],
       correctIndex: 2,
     },
     explanation:
       "Every vertex on a cycle has at least one incoming edge from another vertex on that same " +
-      "cycle, so as long as no acyclic part of the graph satisfies that incoming edge, the " +
-      "cycle's in-degree count can never drop to 0 purely by processing outside vertices. Since " +
-      "Kahn's algorithm only enqueues a vertex once its in-degree hits exactly 0, the cycle " +
-      "members mutually 'wait' on each other forever and are simply never enqueued — the " +
-      "algorithm still terminates cleanly (the queue empties once every non-cycle-dependent " +
-      "vertex is processed), it just produces an output shorter than V. Comparing output length " +
-      "to V (equivalently, checking for any vertex left with nonzero in-degree) is the standard, " +
-      "elegant way Kahn's algorithm detects cycles as a side effect of bookkeeping it needs " +
-      "anyway, with no separate DFS coloring pass required.",
+      "cycle, so once the acyclic part of the graph has been drained, each cycle member still " +
+      "carries an in-degree of at least 1 contributed from inside the cycle. Kahn's algorithm " +
+      "only enqueues a vertex whose in-degree has hit exactly 0, so the cycle members wait on " +
+      "each other indefinitely and none is ever enqueued. Nothing spins, though: the queue " +
+      "empties as soon as every reachable in-degree-0 vertex has been processed, and the loop " +
+      "exits cleanly, having emitted fewer than V vertices. Comparing the output length against " +
+      "V (equivalently, checking whether any vertex still has nonzero in-degree) is how Kahn's " +
+      "algorithm reports a cycle, and it costs nothing extra, since the in-degree counters are " +
+      "bookkeeping the algorithm already maintains. No coloring scheme or recursion-stack " +
+      "tracking is needed, unlike the DFS formulation of topological sort.",
   },
   {
     id: "dsa-toposort-dfs-01",
     category: "dsa",
     difficulty: "hard",
-    title: "DFS topological sort: back edges require three colors, not two",
+    title: "DFS cycle detection on a diamond-shaped graph",
     tags: ["topological-sort", "dfs", "cycle-detection"],
     type: "trace",
     prompt:
@@ -827,33 +842,32 @@ void dfs(int u, vector<vector<int>>& adj) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "hasCycle = false, correctly identifying this as a DAG",
-        "hasCycle = true — incorrectly, because once B's subtree finishes visiting D, D is already in visited when C also points to it; this implementation only distinguishes 'never seen' from 'seen', so it cannot tell a back edge (to an ancestor still on the current recursion stack — a real cycle) from a cross/forward edge (to an already-fully-processed, unrelated subtree — no cycle at all)",
-        "The program crashes with infinite recursion since D has two incoming edges",
-        "hasCycle = true, and that is actually correct, since D has in-degree 2",
+        "hasCycle = true, incorrectly: D is already in visited when C reaches it by the second path",
+        "hasCycle = false, correctly identifying the diamond as a DAG with no back edge anywhere",
+        "The program recurses infinitely, since D is reachable along two distinct paths from A",
+        "hasCycle = true, and correctly so, since D genuinely has in-degree 2 in this graph",
       ],
-      correctIndex: 1,
+      correctIndex: 0,
     },
     explanation:
-      "A correct DFS-based cycle check needs three states per vertex — unvisited (white), " +
-      "currently on the recursion stack (gray), and fully finished (black) — because a cycle " +
-      "exists only when an edge points to a gray vertex, a 'back edge' to a genuine ancestor " +
-      "still being explored. An edge to a black vertex (already fully explored and popped off " +
-      "the stack, like D once B's subtree finishes) is a harmless 'cross edge', completely " +
-      "normal in a DAG with shared descendants. This implementation collapses gray and black " +
-      "into a single visited set, so it cannot distinguish 'D is an ancestor of the current " +
-      "path' from 'D was already fully explored via an unrelated branch' — both simply look " +
-      "like 'already visited.' On the diamond, once B's subtree finishes exploring D, D sits in " +
-      "visited; when C later also points to D, the code flags a cycle that doesn't exist. The " +
-      "fix is the classic white/gray/black scheme, or an explicit onStack set that is cleared as " +
-      "recursion unwinds.",
+      "A correct DFS-based cycle check needs three states per vertex: unvisited (white), " +
+      "currently on the recursion stack (gray), and fully finished (black). A cycle exists only " +
+      "when an edge points to a gray vertex, a back edge to a genuine ancestor still being " +
+      "explored. An edge to a black vertex (already fully explored and popped off the stack, " +
+      "like D once B's subtree finishes) is a harmless cross edge, completely normal in a DAG " +
+      "with shared descendants. This implementation collapses gray and black into a single " +
+      "visited set, so 'D is an ancestor on the current path' and 'D was fully explored via an " +
+      "unrelated branch' both look identical to it. Tracing the diamond: dfs(A) visits B, B " +
+      "visits D, both return, and then A visits C, which points at a D that is already sitting " +
+      "in visited, so the code flags a cycle that does not exist. The fix is the three-color " +
+      "scheme, or an explicit onStack set that a vertex is removed from as the recursion " +
+      "unwinds past it.",
   },
   {
     id: "dsa-scc-tarjan-01",
     category: "dsa",
     difficulty: "hard",
-    title:
-      "Tarjan's single-pass low-link SCC algorithm vs. Kosaraju's two-pass approach",
+    title: "Tarjan's vs. Kosaraju's for strongly connected components",
     tags: ["strongly-connected-components", "tarjan", "kosaraju", "graph-algorithms"],
     type: "trace",
     prompt:
@@ -862,27 +876,28 @@ void dfs(int u, vector<vector<int>>& adj) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Tarjan's requires building and traversing the transpose graph; Kosaraju's does not",
-        "Kosaraju's requires two full DFS passes — one on the original graph to compute a finishing-order stack, and a second on the transpose graph processing vertices in reverse finishing order, where each resulting DFS tree is exactly one SCC; Tarjan's needs only a single DFS pass, maintaining a discovery index and a 'low-link' value per vertex (the smallest discovery index reachable from that vertex's subtree via at most one back edge) plus an explicit stack of in-progress vertices, popping off a completed SCC whenever a vertex's low-link equals its own discovery index",
-        "Both algorithms require building the transpose graph and run two DFS passes each",
-        "Tarjan's is O(V+E) but Kosaraju's is O(V·E) because of the transpose construction",
+        "Tarjan's builds and traverses the transpose graph; Kosaraju's works on the original only",
+        "Both build the transpose and run two DFS passes, differing only in per-vertex bookkeeping",
+        "Tarjan's is O(V+E), while Kosaraju's is O(V·E) because of the transpose construction",
+        "Kosaraju's runs two DFS passes and needs the transpose; Tarjan's needs one pass and a stack",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
-      "Kosaraju's approach is conceptually simple but needs the graph in two forms: a first DFS " +
-      "on the original graph orders vertices by finishing time, then a second DFS on the " +
-      "transpose (all edges reversed) visits vertices in decreasing finish-time order — every " +
-      "tree produced by that second DFS is precisely one SCC, a consequence of how finishing " +
-      "times relate to reachability across the reversal. Tarjan's algorithm never materializes a " +
-      "transpose graph or runs a second pass: during a single DFS it tracks each vertex's " +
-      "discovery index and low-link (the minimum discovery index reachable from its subtree " +
-      "using at most one back edge), pushing vertices onto an auxiliary stack as they're " +
-      "discovered; when a vertex's low-link equals its own discovery index, that vertex is the " +
-      "root of a completed SCC, and everything above it on the stack down to that root is popped " +
-      "off as one component. Both run in O(V+E) — the same asymptotic bound — but Tarjan's is a " +
-      "single traversal with more bookkeeping per vertex, while Kosaraju's trades a second " +
-      "traversal and an explicit transpose for a much simpler mental model.",
+      "Kosaraju's approach is conceptually simple but needs the graph in two forms. A first DFS " +
+      "on the original graph orders vertices by finishing time; a second DFS on the transpose " +
+      "(all edges reversed) then visits vertices in decreasing finish-time order, and every tree " +
+      "produced by that second pass is precisely one SCC, a consequence of how finishing times " +
+      "relate to reachability once the edges are reversed. Tarjan's algorithm never materializes " +
+      "a transpose or runs a second pass. During a single DFS it tracks each vertex's discovery " +
+      "index and its low-link, the minimum discovery index reachable from that vertex's subtree " +
+      "using at most one back edge, pushing vertices onto an auxiliary stack as they are " +
+      "discovered. When a vertex's low-link equals its own discovery index, no edge out of its " +
+      "subtree escapes to anything discovered earlier, so that vertex is the root of a completed " +
+      "SCC, and everything sitting above it on the stack is popped off as one component. Both " +
+      "run in O(V+E). The tradeoff is that Tarjan's is a single traversal with more state per " +
+      "vertex, while Kosaraju's pays for a second traversal and an explicit transpose in " +
+      "exchange for a much simpler correctness argument.",
   },
   {
     id: "dsa-mst-kruskal-prim-01",
@@ -900,21 +915,22 @@ void dfs(int u, vector<vector<int>>& adj) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Kruskal's, since sorting is always faster than heap operations in practice",
-        "They're identical, since both are 'just' O(E log V) for any graph",
-        "Prim's (Fibonacci-heap version): its bound becomes O(V^2 + V log V) = O(V^2); Kruskal's becomes O(V^2 log V) — a full log V factor worse, because Kruskal's cost is tied to sorting all E edges regardless of density, while Prim's decrease-key operations only pay the log factor V times, once per vertex extraction, not once per edge",
-        "Neither can be used on dense graphs; both require E = O(V) to terminate in polynomial time",
+        "Kruskal's, since sorting E edges once beats repeated heap operations at any density",
+        "Prim's with a Fibonacci heap: O(V^2 + V log V) = O(V^2) against Kruskal's O(V^2 log V)",
+        "They tie, since both reduce to O(E log V) whatever the graph's density turns out to be",
+        "Neither is usable at that density; both need E = O(V) for their stated bounds to hold",
       ],
-      correctIndex: 2,
+      correctIndex: 1,
     },
     explanation:
       "Substituting E = Θ(V^2) into each bound makes the difference concrete: Kruskal's " +
       "O(E log E) becomes O(V^2 log V^2) = O(V^2 log V), since sorting cost scales directly with " +
       "the number of edges, and a dense graph simply has many more of them to sort. Prim's " +
-      "Fibonacci-heap bound O(E + V log V) becomes O(V^2 + V log V) = O(V^2), since — just as " +
-      "with Dijkstra — the log factor there only multiplies the V extract-min operations, not " +
-      "the E edge-relaxations/decrease-keys, which are O(1) amortized each. So on dense graphs " +
-      "Prim's (with a Fibonacci heap) is asymptotically better by a log V factor; on sparse " +
+      "Fibonacci-heap bound O(E + V log V) becomes O(V^2 + V log V) = O(V^2). The reason is the " +
+      "same one that shows up in Dijkstra: the log factor multiplies only the V extract-min " +
+      "operations, never the E edge relaxations and decrease-keys, which are O(1) amortized " +
+      "each. So on dense graphs Prim's with a Fibonacci heap is asymptotically better by a full " +
+      "log V factor; on sparse " +
       "graphs (E = O(V)) the two bounds converge to roughly the same O(V log V), and Kruskal's is " +
       "often preferred there anyway for its simplicity, since a Fibonacci heap's large constant " +
       "factors rarely pay off unless V is huge.",
@@ -936,31 +952,30 @@ void dfs(int u, vector<vector<int>>& adj) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "O(n·k), since there are O(n·k) distinct (i,d) states and memoization means each is computed exactly once",
-        "O(n^2), since the O(n) scan dominates and the k dimension doesn't matter",
-        "O(n^2·k) — there are Θ(n·k) distinct memoized subproblems, and each one performs an O(n) scan during its single evaluation, so total work is (number of states) × (work per state) = Θ(n·k) × O(n) = O(n^2·k)",
-        "O(n log n · k), by analogy with the classic O(n log n) patience-sorting LIS algorithm",
+        "O(n·k), since there are Θ(n·k) distinct states and memoization computes each exactly once",
+        "O(n^2), since the inner scan dominates and the deletion dimension adds no asymptotic cost",
+        "O(n^2·k), the Θ(n·k) states each paying an O(n) scan during their single evaluation",
+        "O(n log n · k), by analogy with the patience-sorting O(n log n) algorithm for plain LIS",
       ],
       correctIndex: 2,
     },
     explanation:
       "Memoization guarantees each distinct state is computed once, but 'computed once' still " +
-      "costs whatever the transition itself costs — the number of subproblems is not the same as " +
-      "the total running time unless the transition is O(1). Here there are Θ(n) choices for i " +
-      "and Θ(k) choices for d, giving Θ(n·k) distinct (i,d) states; each state's transition scans " +
-      "all j < i looking for a valid predecessor, costing up to O(n). The correct complexity is " +
-      "(number of states) × (cost per state) = Θ(n·k) × O(n) = O(n^2·k), not simply O(n·k) " +
-      "(which forgets the transition cost) and not O(n^2) (which forgets the k dimension " +
-      "entirely). This is exactly the trap that separates 'I know it's DP so it's polynomial' " +
-      "from a candidate who can actually multiply state-space size by per-state work — a " +
-      "distinction that matters enormously if, say, k were itself Θ(n), turning what looks like " +
-      "a 'small' extra dimension into a full extra factor of n.",
+      "costs whatever the transition itself costs. The number of subproblems equals the total " +
+      "running time only when the transition is O(1). Here there are Θ(n) choices for i and Θ(k) " +
+      "choices for d, giving Θ(n·k) distinct (i,d) states, and each state's transition scans " +
+      "every j < i looking for a valid predecessor, costing up to O(n). The complexity is " +
+      "therefore (number of states) × (cost per state) = Θ(n·k) × O(n) = O(n^2·k). Answering " +
+      "O(n·k) forgets the transition cost; answering O(n^2) forgets the k dimension. The " +
+      "distinction is not academic: if k is itself Θ(n), the seemingly small extra dimension " +
+      "turns an O(n^2) algorithm into an O(n^3) one, which is the difference between a solution " +
+      "that runs and one that times out.",
   },
   {
     id: "dsa-amortized-vector-01",
     category: "dsa",
     difficulty: "medium",
-    title: "Amortized O(1) push_back via capacity doubling",
+    title: "Counting element copies across n push_backs",
     tags: ["amortized-analysis", "dynamic-array", "std-vector"],
     type: "trace",
     prompt:
@@ -972,31 +987,32 @@ void dfs(int u, vector<vector<int>>& adj) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Θ(n log n) total copies, so amortized O(log n) per push_back — each of the O(log n) reallocations copies O(n) elements",
-        "Θ(n) total copies — reallocations happen at sizes 1, 2, 4, 8, ..., n, and copying at each reallocation costs that many elements, so total copies are 1+2+4+...+n < 2n, a geometric series bounded by O(n); dividing by n push_back calls gives O(1) amortized cost per call, even though any individual push_back that triggers a reallocation is itself O(n)",
-        "Θ(n^2) total copies, since every reallocation re-copies all elements seen so far including ones already copied multiple times, and there are Θ(n) reallocations",
-        "Exactly n total copies, one per element, since each element is only ever copied once in its lifetime",
+        "Θ(n log n) copies, so O(log n) amortized: O(log n) reallocations each copying O(n) elements",
+        "Θ(n) copies, so O(1) amortized: the geometric series 1+2+4+...+n sums to less than 2n",
+        "Θ(n^2) copies, so O(n) amortized: each of the Θ(n) reallocations recopies everything so far",
+        "Exactly n copies, so O(1) worst case: each element is moved into a buffer only once ever",
       ],
       correctIndex: 1,
     },
     explanation:
-      "Reallocation happens only when capacity is exhausted, at sizes roughly 1, 2, 4, 8, ..., n " +
-      "— O(log n) reallocations total, but the cost of each is proportional to how many elements " +
-      "exist at that point, since they all must be copied to the new buffer. Summing the " +
-      "geometric series 1+2+4+...+n gives strictly less than 2n total element copies across the " +
-      "entire sequence of n push_backs — not Θ(n log n), because the series is geometric " +
-      "(dominated by its largest term) rather than O(log n) terms of size O(n) each. Spreading " +
-      "that Θ(n) total cost evenly over the n push_back calls gives O(1) amortized per call — the " +
-      "standard aggregate-method argument — even though a single push_back that happens to " +
-      "trigger a reallocation is genuinely O(n) in that instant. This is the textbook " +
-      "justification for treating push_back as 'O(1)' despite its occasional expensive " +
-      "worst-case call.",
+      "Reallocation happens only when capacity is exhausted, at sizes roughly 1, 2, 4, 8, ..., " +
+      "n, so there are O(log n) reallocations, and the cost of each is proportional to how many " +
+      "elements exist at that moment, since all of them must be copied into the new buffer. The " +
+      "tempting move is to multiply O(log n) reallocations by O(n) elements each, but that " +
+      "overcounts badly: only the final reallocation copies close to n elements, and every " +
+      "earlier one copies half as much as the one after it. Summing the geometric series " +
+      "1+2+4+...+n gives strictly less than 2n total copies across the whole sequence, because a " +
+      "geometric series is dominated by its largest term. Spreading that Θ(n) total cost over " +
+      "the n push_back calls gives O(1) amortized per call by the aggregate method, even though " +
+      "a single push_back that happens to trigger a reallocation is genuinely O(n) at that " +
+      "instant. That gap between the amortized and worst-case bound is why push_back is " +
+      "documented as amortized constant rather than constant.",
   },
   {
     id: "dsa-amortized-vector-02",
     category: "dsa",
     difficulty: "hard",
-    title: "Fixed-increment growth breaks the amortized O(1) bound",
+    title: "A dynamic array that grows by a fixed 100 slots",
     tags: ["amortized-analysis", "dynamic-array"],
     type: "trace",
     prompt:
@@ -1007,30 +1023,29 @@ void dfs(int u, vector<vector<int>>& adj) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Still Θ(n) total, O(1) amortized — the growth strategy doesn't matter as long as capacity keeps increasing",
-        "Θ(n^2/C) total copies — reallocations happen Θ(n/C) times (at sizes C, 2C, 3C, ...), and the k-th reallocation copies Θ(kC) elements, so total copies sum to C + 2C + ... + (n/C)·C = Θ(n^2/C), an arithmetic (not geometric) series; dividing by n calls gives Θ(n/C) amortized per push_back — linear in n, not constant",
-        "Θ(n log n) total copies, O(log n) amortized, matching a comparison-sort-like bound",
-        "Θ(n) total copies still, but now O(1) worst-case per call instead of merely amortized, which is strictly better than doubling",
+        "Still Θ(n) total and O(1) amortized; only the constant changes when growth stays additive",
+        "Θ(n log n) total copies and O(log n) amortized, matching a comparison-sort-style bound",
+        "Θ(n) total copies, but now O(1) worst case per call rather than merely amortized",
+        "Θ(n^2/C) total copies, so Θ(n/C) amortized: the reallocation sizes form an arithmetic series",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
-      "With fixed-increment growth, reallocations occur at sizes C, 2C, 3C, ..., about n/C of " +
-      "them, and the k-th reallocation must copy the roughly kC elements that exist at that " +
-      "point. Summing k=1 to n/C of kC gives C · (1+2+...+n/C) = C · Θ((n/C)^2) = Θ(n^2/C) — an " +
-      "arithmetic series growing quadratically in n (scaled by 1/C), in sharp contrast to " +
-      "doubling's geometric series, which stays linear in n. Dividing that Θ(n^2/C) total cost by " +
-      "n push_back calls gives Θ(n/C) amortized cost per call — since C is a constant, this is " +
-      "Θ(n): the amortized cost per push_back grows linearly with the size of the array, not " +
-      "O(1). This is precisely why every serious dynamic-array implementation uses a " +
-      "multiplicative growth factor (doubling, 1.5x, etc.) rather than a fixed increment — the " +
-      "difference between geometric and arithmetic reallocation-size series is the difference " +
-      "between O(1) and O(n) amortized insertion.",
+      "With fixed-increment growth, reallocations occur at sizes C, 2C, 3C, and so on, about n/C " +
+      "of them, and the k-th reallocation must copy the roughly kC elements that exist at that " +
+      "point. Summing kC for k = 1 to n/C gives C · (1+2+...+n/C) = C · Θ((n/C)^2) = Θ(n^2/C), " +
+      "an arithmetic series that grows quadratically in n. That is the crucial contrast with " +
+      "doubling, whose reallocation sizes form a geometric series and therefore stay linear in " +
+      "total. Dividing Θ(n^2/C) by n push_back calls gives Θ(n/C) amortized per call, and since " +
+      "C is a constant this is Θ(n): the amortized cost per push_back grows with the array " +
+      "rather than staying flat. Raising C to 1000 or 10000 shrinks the constant but leaves the " +
+      "growth rate untouched, which is why every serious dynamic-array implementation multiplies " +
+      "its capacity (by 2, or 1.5 to make freed blocks reusable) instead of adding to it.",
   },
   {
     id: "dsa-master-theorem-01",
     category: "dsa",
-    difficulty: "medium",
+    difficulty: "hard",
     title: "Master theorem on T(n) = 2T(n/2) + n log n",
     tags: ["master-theorem", "recurrence-relations", "divide-and-conquer"],
     type: "trace",
@@ -1040,24 +1055,25 @@ void dfs(int u, vector<vector<int>>& adj) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Θ(n log n) — f(n) already matches n log n, so that's just the answer directly",
-        "Θ(n) — since n^(log_b a) = n dominates any f(n) that isn't polynomially larger, this falls under case 1",
-        "Θ(n log^2 n) — f(n) = n log n = Θ(n^(log_b a) · log^1 n), the boundary (case 2) extension of the master theorem, which gives Θ(n^(log_b a) · log^(k+1) n) when f(n) = Θ(n^(log_b a) log^k n); here k=1, so the extra log n from f(n) contributes one additional factor of log n, not zero",
-        "The master theorem does not apply here, since f(n) = n log n is not a polynomial in n",
+        "Θ(n log^2 n), by the case-2 extension for f(n) = Θ(n^(log_b a) log^k n) with k = 1",
+        "Θ(n log n), since f(n) is already n log n and dominates the recursive term outright",
+        "Θ(n), since n^(log_b a) = n and no f(n) that is not polynomially larger can beat it",
+        "The master theorem does not apply, since f(n) = n log n is not a polynomial in n",
       ],
-      correctIndex: 2,
+      correctIndex: 0,
     },
     explanation:
-      "The standard master theorem has a well-known extension for the boundary case where " +
-      "f(n) = Θ(n^(log_b a) · log^k n) for some k ≥ 0 (plain case 2 is the k=0 special case, " +
-      "giving Θ(n^(log_b a) log n)): the general result is T(n) = Θ(n^(log_b a) · log^(k+1) n). " +
-      "Here n^(log_b a) = n^(log_2 2) = n, and f(n) = n log n = n · log^1 n matches that form with " +
-      "k=1, so the theorem gives Θ(n · log^2 n) — one power of log higher than f(n) itself. A " +
-      "common mistake is to answer Θ(n log n) by pattern-matching f(n) directly, forgetting that " +
-      "at this exact boundary — where the recursive term's total work and f(n)'s per-level " +
-      "contribution are of the same asymptotic order — the O(log n) levels of recursion each " +
-      "contribute comparable work, and those contributions sum to one extra factor of log n, not " +
-      "a plain restatement of f(n).",
+      "The standard master theorem has a well-known extension covering the boundary case where " +
+      "f(n) = Θ(n^(log_b a) · log^k n) for some k ≥ 0, with plain case 2 being the k=0 instance " +
+      "that yields Θ(n^(log_b a) log n). The general result is T(n) = Θ(n^(log_b a) · log^(k+1) " +
+      "n). Here n^(log_b a) = n^(log_2 2) = n and f(n) = n log n = n · log^1 n, matching the form " +
+      "with k=1, so the theorem gives Θ(n · log^2 n), one power of log higher than f(n) itself. " +
+      "The recursion tree makes the extra factor concrete. Level i holds 2^i subproblems of size " +
+      "n/2^i, each doing (n/2^i)·log(n/2^i) work, so the whole level costs n·(log n - i). " +
+      "Summing that over i = 0 to log n gives n·(log n + (log n - 1) + ... + 1) = Θ(n log^2 n). " +
+      "Answering Θ(n log n) means pattern-matching f(n) and ignoring that every one of the log n " +
+      "levels contributes work of nearly the same order as the top one, so the levels do not " +
+      "collapse into a single dominant term the way they do in cases 1 and 3.",
     references: [
       "https://en.wikipedia.org/wiki/Master_theorem_(analysis_of_algorithms)",
     ],
@@ -1066,7 +1082,7 @@ void dfs(int u, vector<vector<int>>& adj) {
     id: "dsa-quickselect-01",
     category: "dsa",
     difficulty: "hard",
-    title: "Quickselect's expected O(n) vs. worst-case O(n^2)",
+    title: "Quickselect pivoting on the first element",
     tags: ["quickselect", "selection-algorithm", "randomized-algorithms"],
     type: "trace",
     prompt:
@@ -1096,32 +1112,35 @@ int quickselect(vector<int>& a, int lo, int hi, int k) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Worst case O(n log n), triggered by any already-sorted input; switching to a median pivot fixes it to a worst-case O(n log n)",
-        "Worst case O(n^2), triggered by an already-sorted (or reverse-sorted) array, since pivoting on a[lo] always produces the most unbalanced possible partition (0 elements on one side, n-1 on the other) on such input, giving the arithmetic sum n+(n-1)+...+1 = Θ(n^2); choosing the pivot uniformly at random (or via median-of-medians for a worst-case guarantee) restores expected O(n), since a random pivot is unlikely to repeatedly produce maximally unbalanced partitions",
-        "Worst case O(n^2) regardless of input or pivot strategy, since quickselect always inspects every element at every level of recursion",
-        "Worst case O(2^n), since each partition step can recurse into both halves in the worst case",
+        "O(n log n) worst case, on sorted input; a median-of-three pivot brings it down to O(n)",
+        "O(n^2) worst case, on sorted input; a uniformly random pivot restores expected O(n)",
+        "O(n^2) worst case on any input whatever the pivot, since every level scans all n elements",
+        "O(2^n) worst case, since a bad partition forces recursion into both sides of the pivot",
       ],
       correctIndex: 1,
     },
     explanation:
-      "On an already-sorted array, pivoting on a[lo] (the smallest remaining element) makes " +
-      "every partition step put 0 elements before the pivot and all n-1 remaining elements after " +
-      "it, so the recursion never shrinks the problem by more than one element per call — total " +
-      "work n + (n-1) + ... + 1 = Θ(n^2), the classic degenerate quicksort/quickselect " +
-      "pathology. This is a deterministic worst case triggered by ordinary sorted input, not " +
-      "some rare adversarial construction. Selecting the pivot uniformly at random from the " +
-      "current subrange (or using a linear-time worst-case-guaranteed selection like " +
-      "median-of-medians for the pivot) makes this pathology exponentially unlikely: with a " +
-      "random pivot, the expected partition split is balanced enough that the expected total " +
-      "work satisfies T(n) = O(n) + (average over pivot rank of T(larger side)), which resolves " +
-      "via a standard recurrence to Θ(n) expected time — the reason production libraries either " +
-      "randomize the pivot or use introselect rather than a fixed-position pivot.",
+      "On an already-sorted array, pivoting on a[lo] picks the smallest remaining element every " +
+      "time, so each partition step puts 0 elements before the pivot and all n-1 remaining " +
+      "elements after it. The recursion then shrinks the problem by exactly one element per " +
+      "call, and the partition scans cost n + (n-1) + ... + 1 = Θ(n^2). Reverse-sorted input is " +
+      "just as bad in the mirror direction. This is a deterministic worst case triggered by " +
+      "ordinary sorted data, not a rare adversarial construction, which is what makes a " +
+      "fixed-position pivot dangerous in production. Choosing the pivot uniformly at random from " +
+      "the current subrange fixes this. With probability at least 1/2 a random pivot lands in " +
+      "the middle half of the range, leaving a subproblem of at most 3n/4, so the expected work " +
+      "satisfies T(n) ≤ T(3n/4) + O(n). That unrolls into the geometric series " +
+      "n + 3n/4 + 9n/16 + ... < 4n, giving Θ(n) expected time: subproblem sizes decay " +
+      "geometrically instead of arithmetically. Median-of-medians turns the same O(n) into a " +
+      "worst-case rather than expected guarantee, at a noticeably larger constant, which is why " +
+      "library implementations reach for introselect: a randomized or median-of-three pivot with " +
+      "a guaranteed fallback once the recursion runs too deep.",
   },
   {
     id: "dsa-introsort-01",
     category: "dsa",
     difficulty: "hard",
-    title: "Introsort's hybrid strategy and why std::sort still uses insertion sort",
+    title: "Introsort's depth counter and its small-partition cutoff",
     tags: ["introsort", "quicksort", "heapsort", "insertion-sort", "std-sort"],
     type: "trace",
     prompt:
@@ -1135,33 +1154,34 @@ int quickselect(vector<int>& a, int lo, int hi, int k) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Both thresholds are pure micro-optimizations with no effect on asymptotic guarantees — plain quicksort is already Θ(n log n) worst case",
-        "The depth-based switch to heapsort caps the overall worst case at Θ(n log n) — it bounds how much of the sort can suffer quicksort's Θ(n^2) degenerate partitioning before bailing out to a method with a guaranteed Θ(n log n) worst case; the insertion-sort cutoff for small partitions is purely a constant-factor win, since insertion sort's low overhead and good cache/branch behavior beat continuing to recurse with quicksort for small n, even though its asymptotic complexity is worse in general",
-        "The depth-based switch guarantees a stable sort, and the insertion-sort cutoff guarantees in-place sorting — neither is about complexity",
-        "Both thresholds exist solely to reduce memory allocations, with no effect on time complexity at all",
+        "Both are constant-factor tuning; plain quicksort already has a Θ(n log n) worst case",
+        "The depth switch makes the sort stable; the cutoff makes it in-place, neither affects time",
+        "Both exist to cut allocation counts and have no effect on time complexity whatsoever",
+        "The depth switch caps the worst case at Θ(n log n); the cutoff is a constant-factor win",
       ],
-      correctIndex: 1,
+      correctIndex: 3,
     },
     explanation:
-      "Plain quicksort has Θ(n log n) expected time but Θ(n^2) worst case (e.g. sorted input " +
-      "with a naive pivot, as in the quickselect example). Introsort's depth counter detects " +
-      "when recursion is going deeper than a well-balanced quicksort ever should — 2·log2(n) is " +
-      "a generous multiple of the expected Θ(log n) depth — and that is the signal that " +
-      "partitioning is degenerating; switching the offending partition to heapsort caps the " +
-      "damage, since heapsort is Θ(n log n) worst case unconditionally, regardless of input " +
-      "order. This is what lets std::sort legally advertise Θ(n log n) worst-case complexity " +
-      "despite using quicksort as its primary strategy. The insertion-sort cutoff is a " +
-      "completely different kind of optimization: for small n (below roughly 16), insertion " +
-      "sort's Θ(n^2) is a non-issue in absolute terms, and it wins in practice because it has far " +
-      "less per-element overhead — no recursive calls, no partitioning logic, tight sequential " +
-      "memory access — than continuing to recurse with quicksort down to single elements, a pure " +
-      "constant-factor, not asymptotic, improvement.",
+      "Plain quicksort has Θ(n log n) expected time but a Θ(n^2) worst case, reachable on sorted " +
+      "input with a naive pivot exactly as in the quickselect example. Introsort's depth counter " +
+      "watches for recursion going deeper than a well-balanced quicksort ever would: 2·log2(n) " +
+      "is a generous multiple of the Θ(log n) depth a balanced split produces, so exceeding it " +
+      "is a reliable signal that partitioning has degenerated. Switching that partition to " +
+      "heapsort caps the damage, since heapsort is Θ(n log n) worst case unconditionally " +
+      "whatever the input order, and this is what lets std::sort advertise a Θ(n log n) " +
+      "worst-case guarantee while still using quicksort as its primary strategy. The " +
+      "insertion-sort cutoff is a different kind of optimization entirely. For n below roughly " +
+      "16, insertion sort's Θ(n^2) is at most a couple of hundred operations, and it wins on " +
+      "constants: no recursive calls, no partitioning logic, no pivot selection, and a tight " +
+      "sequential scan that the prefetcher and branch predictor both handle well. The asymptotic " +
+      "guarantee comes from the first threshold; most of the observed speed comes from the " +
+      "second.",
   },
   {
     id: "dsa-suffixarray-01",
     category: "dsa",
     difficulty: "medium",
-    title: "Suffix arrays: capability and the space/time tradeoff vs. suffix trees",
+    title: "Suffix arrays vs. suffix trees for substring search",
     tags: ["suffix-array", "suffix-tree", "string-algorithms"],
     type: "trace",
     prompt:
@@ -1172,27 +1192,28 @@ int quickselect(vector<int>& a, int lo, int hi, int k) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "It enables O(m log n) substring search for a pattern of length m via binary search over the sorted suffixes (improvable to O(m + log n) with an LCP array), using O(n) words of space with a small constant factor; a suffix tree supports O(m) pattern matching directly but typically uses several times more memory per character due to per-node child-pointer/edge-label bookkeeping, though both can be built in O(n) time with sufficiently sophisticated algorithms (e.g. SA-IS for suffix arrays, Ukkonen's for suffix trees)",
-        "It enables only exact whole-string equality checks, not substring search, unlike a suffix tree",
-        "It requires O(n^2) space, exactly like a naive suffix trie, which is why suffix trees are always preferred in practice",
-        "It can only be constructed in O(n^2 log n) time with no known faster algorithm, making it impractical for large texts",
+        "O(m log n) substring search by binary search, in O(n) words with a small constant factor",
+        "Only exact whole-string equality checks, not substring search, unlike what a suffix tree gives",
+        "O(n^2) space, exactly like a naive suffix trie, so suffix trees dominate it in practice",
+        "O(m) search, but construction is stuck at O(n^2 log n) with no known faster algorithm",
       ],
       correctIndex: 0,
     },
     explanation:
-      "Because the suffix array is sorted, any substring is a prefix of some contiguous range of " +
-      "suffixes, so checking whether a pattern of length m occurs can be done via binary search " +
-      "over the n suffixes, each comparison costing up to O(m) — O(m log n) total, which an " +
-      "accompanying LCP (longest common prefix) array plus a range-minimum-query structure can " +
-      "sharpen to O(m + log n). A suffix tree, by contrast, lets you walk directly from the root " +
-      "matching one pattern character per edge traversal, giving O(m) pattern matching " +
-      "independent of n, generally faster for search-heavy workloads. The tradeoff is space and " +
-      "implementation complexity: a suffix array is just a permutation of indices (O(n) words, " +
-      "tiny constant), while a suffix tree needs a node per branching point plus edge-label " +
-      "representations, typically several times more memory per input character in practice — " +
-      "which is why suffix arrays, often paired with an LCP array to recover most of the tree's " +
-      "power, are preferred in memory-constrained or large-scale text-indexing settings, even " +
-      "though both admit O(n)-time construction with the right algorithm rather than the naive " +
-      "O(n^2 log n) sort-all-suffixes approach.",
+      "Because the suffix array is sorted, every occurrence of a pattern appears as a prefix of " +
+      "some contiguous range of suffixes, so testing whether a pattern of length m occurs is a " +
+      "binary search over the n suffixes with each comparison costing up to O(m), giving " +
+      "O(m log n). An accompanying LCP (longest common prefix) array plus a range-minimum-query " +
+      "structure sharpens that to O(m + log n) by skipping the characters already known to " +
+      "match. A suffix tree instead lets you walk down from the root matching one pattern " +
+      "character per edge traversal, giving O(m) matching independent of n, which is faster for " +
+      "search-heavy workloads. The tradeoff is space and implementation complexity: a suffix " +
+      "array is nothing but a permutation of indices, O(n) words with a tiny constant, while a " +
+      "suffix tree needs a node per branching point plus edge-label representation, in practice " +
+      "several times more memory per input character. Suffix arrays paired with an LCP array " +
+      "recover most of the tree's power at a fraction of the footprint, which is why they " +
+      "dominate large-scale text indexing. Construction cost is not the deciding factor: both " +
+      "admit O(n)-time algorithms (SA-IS for suffix arrays, Ukkonen's for suffix trees), well " +
+      "under the naive O(n^2 log n) of sorting all suffixes directly.",
   },
 ];

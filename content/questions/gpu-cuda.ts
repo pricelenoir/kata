@@ -5,7 +5,7 @@ export const gpuCudaQuestions: TraceQuestion[] = [
     id: "gpu-cuda-thread-index-01",
     category: "gpu-cuda",
     difficulty: "easy",
-    title: "Computing the global thread index",
+    title: "Computing a global thread index from blockIdx and threadIdx",
     tags: ["thread-hierarchy", "indexing"],
     type: "trace",
     prompt:
@@ -21,23 +21,29 @@ export const gpuCudaQuestions: TraceQuestion[] = [
     },
     answerFormat: {
       kind: "multiple-choice",
-      choices: ["10", "266", "522", "2570"],
+      choices: ["10", "266", "522", "2562"],
       correctIndex: 2,
     },
     explanation:
       "The standard global-index formula is `blockIdx.x * blockDim.x + threadIdx.x`: it treats " +
       "the grid as a flattened 1-D array of threads, where each block contributes `blockDim.x` " +
       "consecutive slots before the next block's threads begin. With blockDim.x == 256, block 2 " +
-      "owns global indices [512, 767]; adding threadIdx.x == 10 gives 522. A common bug is " +
-      "swapping the operands to `threadIdx.x * blockDim.x + blockIdx.x`, which produces a " +
-      "completely different (and generally overlapping/incorrect) mapping — getting this formula " +
-      "backwards is one of the most common entry-level CUDA indexing mistakes.",
+      "owns global indices [512, 767]; adding threadIdx.x == 10 gives 522. The other options are " +
+      "the three indexing slips that show up most often: 10 drops the block offset entirely (every " +
+      "block then writes over block 0's range), 266 uses a block stride of 256 but the wrong block " +
+      "number, and 2562 comes from swapping the operands to `threadIdx.x * blockDim.x + " +
+      "blockIdx.x`, which maps threads onto a completely different and heavily overlapping set of " +
+      "addresses.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#thread-hierarchy",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/programming-model.html#thread-blocks-and-grids",
+    ],
   },
   {
     id: "gpu-cuda-thread-index-02",
     category: "gpu-cuda",
     difficulty: "medium",
-    title: "Missing bounds check on a non-divisible 2D grid",
+    title: "A 2-D grid launch that over-provisions threads for the image size",
     tags: ["thread-hierarchy", "indexing", "out-of-bounds"],
     type: "trace",
     prompt:
@@ -52,40 +58,42 @@ export const gpuCudaQuestions: TraceQuestion[] = [
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int idx = row * width + col;
-    img[idx] = img[idx] * 2.0f;   // no "if (row < height && col < width) return;"
+    img[idx] = img[idx] * 2.0f;   // no "if (row >= height || col >= width) return;" guard
 }`,
     },
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "The extra threads are automatically skipped by the hardware since they map past the array bounds, so the output is correct",
-        "Compile-time error: grid dimensions must evenly divide the data dimensions",
-        "The threads with col >= 1000 or row >= 1000 compute an idx that reads/writes out-of-bounds global memory — since width (1000) isn't a multiple of blockDim.x (32), this isn't just trailing overflow past the end of the buffer; some in-range-looking idx values land inside the array but at the wrong (row, col), silently corrupting neighboring rows, while others run off the end entirely and can fault",
-        "Every thread automatically clamps idx to width*height - 1, so results are correct but slower",
+        "Some out-of-range threads land on a valid but wrong (row, col) inside the buffer and corrupt unrelated pixels, while threads past the last image row index off the end of the allocation",
+        "The extra threads are skipped by the hardware, which clamps any index derived from blockIdx and threadIdx to the extent of the allocation the pointer came from, so the output image is correct",
+        "Every out-of-range access traps at runtime and surfaces through cudaGetLastError as an out-of-bounds fault, leaving the image unmodified and the kernel's other work discarded",
+        "Compile-time error: nvcc rejects a launch whose grid dimensions do not evenly divide the width and height extents that are passed to the kernel as arguments",
       ],
-      correctIndex: 2,
-      // (kept as reference note, not part of schema): idx computed from col past width doesn't
-      // just spill past the buffer end; because width isn't block-aligned, some out-of-range col
-      // values combine with row to still land inside [0, width*height) but at a wrong pixel.
+      correctIndex: 0,
     },
     explanation:
-      "CUDA performs no automatic bounds checking on global memory accesses — indexing math is " +
+      "CUDA performs no automatic bounds checking on global memory accesses: indexing math is " +
       "just pointer arithmetic. Since 1000 is not a multiple of 32, each row of 32-wide blocks " +
       "has col values from 992 to 1023, so cols 1000-1023 are logically out of range for that " +
       "row. Because idx = row*width+col is a flat linear index, an out-of-range col in one row " +
       "can produce an idx that actually falls inside the buffer but belongs to a completely " +
-      "different (row, col) pair — silently corrupting unrelated pixels rather than cleanly " +
+      "different (row, col) pair, silently corrupting unrelated pixels rather than cleanly " +
       "crashing. Threads in the last block-row (row >= 1000) push idx past the end of the " +
       "allocation entirely, which may or may not fault depending on what memory follows the " +
-      "allocation. The fix is the classic guard: `if (row >= height || col >= width) return;` " +
-      "before ever touching memory — cheap because it only costs a predicated exit for the small " +
-      "fraction of over-provisioned threads.",
+      "allocation. The fix is the classic guard, `if (row >= height || col >= width) return;` " +
+      "before ever touching memory, which is cheap since it only costs a predicated exit for " +
+      "the small fraction of over-provisioned threads.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#thread-hierarchy",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#thread-and-block-heuristics",
+      "https://docs.nvidia.com/cuda/compute-sanitizer/index.html",
+    ],
   },
   {
     id: "gpu-cuda-warp-divergence-01",
     category: "gpu-cuda",
     difficulty: "medium",
-    title: "Warp divergence on a data-dependent branch",
+    title: "A warp whose even and odd lanes take different branches",
     tags: ["warp-divergence", "simt", "predication"],
     type: "trace",
     prompt:
@@ -108,13 +116,12 @@ export const gpuCudaQuestions: TraceQuestion[] = [
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "The 16 even-lane threads run heavyA() and the 16 odd-lane threads run heavyB() truly in parallel on separate ALUs, so total time is roughly max(time(heavyA), time(heavyB)) — same as if there were no branch",
-        "The warp executes heavyA() with the odd lanes predicated off (idle), then executes heavyB() with the even lanes predicated off, so total time is roughly time(heavyA) + time(heavyB) — both paths run serially even though only half the lanes are ever doing useful work at a time",
-        "This is undefined behavior — a warp cannot contain threads that take different branches",
-        "The scheduler issues heavyA() and heavyB() on two different warps automatically to avoid divergence, so this is transparently handled with no performance cost",
+        "The 16 even lanes run heavyA() on one group of ALUs while the 16 odd lanes run heavyB() on another, so the warp takes about max(time(heavyA), time(heavyB))",
+        "The scheduler splits the two sides across two separate warps at dispatch, so the branch costs nothing beyond the compare that selects it",
+        "Undefined behavior: threads within a single warp are not permitted to take different sides of a data-dependent branch",
+        "The warp runs heavyA() with the odd lanes masked off, then heavyB() with the even lanes masked off, so it takes about time(heavyA) + time(heavyB)",
       ],
-      correctIndex: 1,
-      // duplicate key guard note removed
+      correctIndex: 3,
     },
     explanation:
       "A warp is executed in lockstep by a single instruction unit issuing one instruction stream " +
@@ -123,17 +130,24 @@ export const gpuCudaQuestions: TraceQuestion[] = [
       "disables (predicates off) the threads that didn't take that path, then executes the other " +
       "path with the complementary mask, and finally reconverges. Both heavyA() and heavyB() " +
       "therefore run to completion on the same warp scheduler slot, back to back, so the warp's " +
-      "total time is approximately the sum of both branches' costs rather than the max — exactly " +
-      "the opposite of true parallel execution. This is why warp-divergent branches on " +
+      "total time is approximately the sum of both branches' costs rather than the max, exactly " +
+      "the opposite of true parallel execution. Volta's independent thread scheduling changes how " +
+      "finely the two paths can be interleaved, but not the arithmetic: a warp still issues one " +
+      "instruction per cycle for one subset of its lanes, so both branches' work is still paid for " +
+      "in sequence. This is why warp-divergent branches on " +
       "performance-critical, hot-loop code (as opposed to occasional edge-case branches) are a " +
       "canonical CUDA anti-pattern; the fix is usually to restructure data or work assignment so " +
       "that divergence aligns with warp boundaries (e.g., branch on warp id, not thread id).",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/03-advanced/advanced-kernel-programming.html#simt-execution-model",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#branching-and-divergence",
+    ],
   },
   {
     id: "gpu-cuda-warp-divergence-02",
     category: "gpu-cuda",
     difficulty: "hard",
-    title: "Ragged loop trip counts and the divergence tail effect",
+    title: "A per-thread SpMV loop with data-dependent trip counts",
     tags: ["warp-divergence", "simt", "sparse", "tail-effect"],
     type: "trace",
     prompt:
@@ -160,38 +174,43 @@ export const gpuCudaQuestions: TraceQuestion[] = [
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "The warp's total time is proportional to the average rowLength across its 32 lanes, since each lane genuinely runs independently on its own hardware thread",
-        "The warp's total time is proportional to the MAXIMUM rowLength among its 32 lanes (here, 200 iterations) — lanes that finish their loop early (like lane 0, after 2 iterations) go idle/predicated-off but the warp as a whole cannot retire or move on until every lane's loop has exited, since the loop condition is itself a divergent branch re-evaluated every iteration",
-        "The warp's total time is proportional to the MINIMUM rowLength (here, 2 iterations), since the warp exits the loop as soon as any lane satisfies the exit condition",
-        "Each lane's loop runs on an independent instruction pointer with no relation to the other 31 lanes, so total time is unpredictable and depends purely on DRAM latency",
+        "The AVERAGE rowLength across the warp's 32 lanes: a lane that exits early releases its issue slot to the lanes still iterating",
+        "The MAXIMUM rowLength in the warp, 200 iterations here: lanes that finish early sit masked off while the warp keeps re-issuing the loop body",
+        "The MINIMUM rowLength in the warp, 2 iterations here: the warp leaves the loop as soon as the first lane's exit condition fires",
+        "Nothing to do with rowLength: the trip counts are hidden behind DRAM latency on vals and cols, which is what sets when the warp retires",
       ],
       correctIndex: 1,
-      // pruned
     },
     explanation:
       "A per-thread `for` loop with a data-dependent trip count is a divergent branch re-evaluated " +
       "every iteration: on each pass, the warp checks `i < len` for all 32 lanes, and any lane " +
       "whose loop has already exited is simply masked off (predicated inactive) rather than freed " +
-      "to do other work. The warp's program counter — shared at the hardware scheduling level — " +
-      "cannot advance past the loop until every lane's exit condition has fired, so the warp keeps " +
-      "re-issuing loop-body instructions (with an ever-shrinking active-lane mask) until the " +
-      "longest-running lane (200 iterations) finishes. This is the classic 'tail effect' in ragged " +
-      "or irregular workloads like sparse linear algebra, and it means 30 of the 32 lanes spend " +
-      "most of the loop doing zero useful work while still consuming issue slots. Standard " +
+      "to do other work. A warp issues one instruction at a time on behalf of whichever lanes are " +
+      "still active, and the loop is not done until every lane's exit condition has fired, so the " +
+      "warp keeps re-issuing loop-body instructions (with an ever-shrinking active-lane mask) " +
+      "until the longest-running lane (200 iterations) finishes. That tail is what makes ragged " +
+      "or irregular workloads like sparse linear algebra so awkward on a GPU: by the final " +
+      "iterations only the longest row's lane is doing useful work, while the warp still burns a " +
+      "full issue slot on every pass. Standard " +
       "mitigations reassign work so each warp handles rows of similar length (row sorting/binning " +
       "by nonzero count), or switch to a vector/warp-per-row scheme (e.g., CSR-vector) that spreads " +
       "a single row's work across a whole warp instead of one lane.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#branching-and-divergence",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/03-advanced/advanced-kernel-programming.html#simt-execution-model",
+    ],
   },
   {
     id: "gpu-cuda-coalescing-01",
     category: "gpu-cuda",
     difficulty: "medium",
-    title: "Coalesced vs strided global memory access",
+    title: "Contiguous versus strided global memory access across a warp",
     tags: ["memory-coalescing", "global-memory", "bandwidth"],
     type: "trace",
     prompt:
-      "Both kernels below are launched with the same total thread count over the same size " +
-      "`float` array. Which is the more accurate performance prediction?",
+      "Both kernels below are launched with the same total thread count and move the same number " +
+      "of useful `float`s; Kernel B's arrays are 32 times larger so its strided indices stay in " +
+      "bounds. Which is the more accurate performance prediction?",
     snippet: {
       language: "cpp",
       filename: "kernel.cu",
@@ -210,37 +229,41 @@ __global__ void copyStrided(float* out, const float* in, int stride) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Both kernels achieve identical throughput — the GPU's cache hides any access-pattern difference",
-        "Kernel A is dramatically faster: consecutive threads in a warp access consecutive 4-byte addresses, which the memory controller coalesces into a small number of wide transactions (e.g., one 128-byte transaction per warp), whereas Kernel B's stride-32 access scatters each warp's 32 requests across 32 different cache lines/sectors, requiring up to 32 separate transactions to service the same warp",
-        "Kernel B is faster because striding lets the 32 threads read from 32 independent memory banks in parallel with zero contention",
-        "Kernel A is slower because writing to fully consecutive addresses causes write-after-write hazards that must be serialized",
+        "Kernel A is dramatically faster: a warp's addresses coalesce into a couple of wide transactions, while Kernel B's need up to 32",
+        "Both reach the same throughput: L1 and L2 absorb the access-pattern difference once the arrays are resident in cache",
+        "Kernel B is faster: the stride spreads a warp's 32 requests over 32 independent memory partitions that are serviced simultaneously",
+        "Kernel A is slower: 32 lanes storing into one 128-byte line create write-after-write hazards the store unit has to serialize",
       ],
-      correctIndex: 1,
-      // pruned
+      correctIndex: 0,
     },
     explanation:
       "The GPU's memory controller services a warp's load/store as a small number of memory " +
       "transactions covering fixed-size, aligned segments (historically 128-byte lines split into " +
       "32-byte sectors on modern architectures). When 32 consecutive threads request 32 " +
       "consecutive 4-byte floats, the whole warp's request fits in one or two of those aligned " +
-      "segments — full coalescing, near-peak achieved bandwidth. When the same 32 threads request " +
+      "segments: full coalescing, near-peak achieved bandwidth. When the same 32 threads request " +
       "addresses 32 floats (128 bytes) apart, each thread's 4-byte word typically lands in its own " +
       "distinct segment, so the controller must issue up to 32 separate transactions to satisfy one " +
       "warp's instruction, wasting the vast majority of each transaction's fetched bytes on data no " +
-      "thread asked for. This is precisely why array-of-structs vs struct-of-arrays layout and " +
-      "loop/index restructuring are first-order performance concerns in CUDA: the access pattern, " +
-      "not just the total bytes moved, determines achieved bandwidth relative to the hardware's " +
+      "thread asked for. Array-of-structs vs struct-of-arrays layout and loop/index restructuring " +
+      "are first-order performance concerns in CUDA for this reason: the access pattern, rather " +
+      "than the total bytes moved, determines achieved bandwidth relative to the hardware's " +
       "peak.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#coalesced-access-to-global-memory",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#strided-accesses",
+      "https://developer.nvidia.com/blog/how-access-global-memory-efficiently-cuda-c-kernels/",
+    ],
   },
   {
     id: "gpu-cuda-coalescing-02",
     category: "gpu-cuda",
     difficulty: "hard",
-    title: "Array-of-structs vs struct-of-arrays coalescing",
+    title: "Array-of-structs versus struct-of-arrays for a single-field update",
     tags: ["memory-coalescing", "aos-soa", "global-memory"],
     type: "trace",
     prompt:
-      "Both kernels compute the same thing — doubling every particle's x-coordinate — over the " +
+      "Both kernels compute the same thing, doubling every particle's x-coordinate, over the " +
       "same number of particles, launched with one thread per particle. Which layout achieves " +
       "meaningfully higher effective memory bandwidth, and why?",
     snippet: {
@@ -262,33 +285,38 @@ __global__ void scaleSoA(float* px, int n) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "scaleAoS is faster, since keeping x, y, z together improves spatial locality within each thread",
-        "They perform identically, since the total number of bytes touched (4 bytes of 'x' per particle) is the same either way",
-        "scaleSoA is substantially faster: with AoS, consecutive threads' `x` fields are 12 bytes apart (stride = sizeof(Particle)), so a warp's 32 accesses to `.x` are scattered across many more cache-line segments than necessary, wasting bandwidth fetching unused `y`/`z` bytes for every segment touched; with SoA, `px[i]` for consecutive i is fully contiguous, so a warp's access coalesces into the minimal number of transactions",
-        "scaleAoS is faster because struct member access compiles to a single vectorized load per thread regardless of layout",
+        "scaleAoS is faster: holding x, y, and z on one line gives each thread better spatial locality for the field it actually touches",
+        "They perform identically: both kernels move 4 useful bytes per particle, and achieved bandwidth tracks the useful bytes moved",
+        "scaleSoA is substantially faster: AoS puts consecutive threads' x fields 12 bytes apart, so a warp spans 384 bytes where SoA spans 128",
+        "scaleAoS is faster: `p[i].x` compiles to one 12-byte vector load per thread, which costs a warp no more than a 4-byte load would",
       ],
       correctIndex: 2,
-      // pruned
     },
     explanation:
       "Coalescing depends on the *byte stride between consecutive threads' addresses*, not on " +
       "total useful bytes moved. In the AoS layout, thread i's `.x` sits at byte offset " +
-      "i*sizeof(Particle) = i*12, so 32 consecutive threads' `.x` fields span 32*12 = 384 bytes — " +
+      "i*sizeof(Particle) = i*12, so 32 consecutive threads' `.x` fields span 32*12 = 384 bytes, " +
       "spread across many more 32-byte sectors than the 128 bytes strictly needed for 32 floats, " +
       "and each sector fetched also carries `y`/`z` bytes no thread in this kernel even reads, " +
       "wasting roughly two-thirds of the fetched bandwidth. In the SoA layout, `px[i]` for 32 " +
       "consecutive threads is a single contiguous 128-byte run, which coalesces into the minimal " +
-      "transaction count with no wasted bytes. This is why performance-sensitive CUDA code (and " +
-      "GPU-friendly C++ in general — Structure-of-Arrays libraries, `thrust`, columnar layouts) " +
-      "strongly prefers SoA whenever a kernel operates on one field at a time across many elements, " +
-      "even though AoS can be more convenient for CPU code where cache lines are line-granular but " +
-      "access is scalar/sequential per object rather than warp-parallel per field.",
+      "transaction count with no wasted bytes. Performance-sensitive CUDA code (and " +
+      "GPU-friendly C++ in general, including Structure-of-Arrays libraries, `thrust`, and " +
+      "columnar layouts) strongly prefers SoA whenever a kernel operates on one field at a time " +
+      "across many elements, even though AoS can be more convenient for CPU code where cache lines " +
+      "are line-granular but access is scalar/sequential per object rather than warp-parallel per " +
+      "field.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#coalesced-access-to-global-memory",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#coalesced-global-memory-access",
+      "https://developer.nvidia.com/blog/how-access-global-memory-efficiently-cuda-c-kernels/",
+    ],
   },
   {
     id: "gpu-cuda-bank-conflict-01",
     category: "gpu-cuda",
     difficulty: "hard",
-    title: "Shared-memory tile transpose bank conflicts",
+    title: "A 32x32 shared-memory tile read with swapped indices",
     tags: ["shared-memory", "bank-conflicts", "transpose"],
     type: "trace",
     prompt:
@@ -316,33 +344,37 @@ __global__ void transpose(float* out, const float* in, int width) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "No conflict: each thread reads a different array element, and different elements never conflict regardless of address",
-        "A 32-way bank conflict: with tile[32][32] of floats, row stride is 32 floats = 128 bytes, i.e. exactly 32 banks, so tile[threadIdx.x][threadIdx.y] for fixed threadIdx.y and varying threadIdx.x steps by one full row (32 words) each time — every lane in the warp lands on the SAME bank (differing only in which row, i.e. a different address within that bank), forcing the memory unit to serialize all 32 accesses into 32 separate cycles instead of one",
-        "A broadcast: since all 32 threads read from the same bank, the hardware automatically serves them all in one cycle as a broadcast, identical in cost to no conflict at all",
-        "This causes a compile error, since shared memory arrays cannot be indexed with swapped subscripts",
+        "No conflict: the 32 lanes read 32 distinct elements of the tile, and distinct elements are always spread across distinct banks",
+        "A broadcast: the lanes all resolve to one bank, and the broadcast path returns the data to every lane in a single cycle",
+        "A 2-way conflict: the even and odd halves of the warp collide pairwise, so the read costs roughly twice a conflict-free access",
+        "A 32-way conflict: every lane lands on the same bank at a different address, so the read serializes into 32 accesses",
       ],
-      correctIndex: 1,
-      // pruned
+      correctIndex: 3,
     },
     explanation:
       "Shared memory is organized into 32 banks, each servicing one 4-byte-wide access per cycle; " +
       "a bank conflict occurs when two or more threads in the same warp access *different* " +
       "addresses that happen to map to the *same* bank (accessing the exact same address is a " +
-      "conflict-free broadcast, not a conflict — that's a different case). Here tile[32][32] means " +
+      "conflict-free broadcast, not a conflict; that's a different case). Here tile[32][32] means " +
       "each row is 32 floats = 128 bytes = exactly 32 banks' worth, so incrementing the row index " +
       "by 1 lands on the identical bank (just a different address within it). For fixed " +
       "threadIdx.y, varying threadIdx.x across the warp sweeps the row index of tile[threadIdx.x]" +
-      "[threadIdx.y] — so all 32 lanes hit the same bank, distinct addresses, which is the worst " +
+      "[threadIdx.y], so all 32 lanes hit the same bank at distinct addresses, which is the worst " +
       "case: full 32-way serialization. The canonical fix is to pad the tile's row length by one " +
-      "extra element, `__shared__ float tile[32][33]`, which shifts the row stride to 33 words — " +
-      "no longer a multiple of 32 banks — so consecutive rows land on different banks and the " +
+      "extra element, `__shared__ float tile[32][33]`, which shifts the row stride to 33 words, " +
+      "no longer a multiple of 32 banks, so consecutive rows land on different banks and the " +
       "conflict disappears entirely, at the cost of a few wasted padding bytes.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#shared-memory-and-memory-banks",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#shared-memory-bank-conflicts",
+      "https://developer.nvidia.com/blog/efficient-matrix-transpose-cuda-cc/",
+    ],
   },
   {
     id: "gpu-cuda-bank-conflict-02",
     category: "gpu-cuda",
     difficulty: "hard",
-    title: "Ranking shared-memory access patterns by bank conflict",
+    title: "Ranking three shared-memory access patterns across one warp",
     tags: ["shared-memory", "bank-conflicts"],
     type: "trace",
     prompt:
@@ -366,34 +398,39 @@ float c = sdata[threadIdx.x * 2];`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Pattern 1 == Pattern 2 == Pattern 3 — shared memory always services a warp in one cycle regardless of index math",
-        "Pattern 1 (one word per bank, no conflict) and Pattern 2 (every lane reads the identical address, a hardware broadcast) both complete in one transaction; Pattern 3 is a 2-way bank conflict, since sdata[threadIdx.x*2] maps to bank (threadIdx.x*2) mod 32 — each bank is hit by exactly two distinct lanes (e.g., threadIdx.x=0 and threadIdx.x=16 both map to bank 0, at different addresses) — roughly 2x slower than Patterns 1/2",
-        "Pattern 2 is the slowest because reading the same address from all 32 threads forces full serialization — one thread at a time",
-        "Pattern 3 is the fastest because multiplying the index by 2 spreads accesses across twice as many banks",
+        "All three tie: shared memory services a warp-wide access in a single transaction no matter what index expression the lanes compute",
+        "Patterns 1 and 2 tie at one transaction each; Pattern 3 is a 2-way conflict, with lanes 0 and 16 sharing bank 0 and so on, so it takes roughly twice as long",
+        "Pattern 1, then Pattern 3, then Pattern 2: 32 lanes asking for one address have to be serviced one lane at a time, which is the worst case here",
+        "Pattern 3, then Pattern 1, then Pattern 2: doubling the index spreads the warp over twice as many banks, and Pattern 2 collapses the whole warp onto one",
       ],
       correctIndex: 1,
-      // pruned
     },
     explanation:
       "Pattern 1 is the textbook conflict-free case: threadIdx.x directly selects bank " +
       "threadIdx.x mod 32, a bijection across the warp, so all 32 requests hit distinct banks and " +
       "complete in a single memory transaction. Pattern 2 is a broadcast: the hardware specifically " +
       "detects when every active lane requests the exact same address and services it as a single " +
-      "read replicated to all lanes, also one transaction — same address is never a conflict, only " +
-      "*different* addresses mapping to the *same* bank are. Pattern 3 computes bank = (threadIdx.x" +
-      "*2) mod 32; since multiplying by 2 is not coprime with 32, the mapping threadIdx.x -> bank " +
-      "is 2-to-1 (lanes 0 and 16 both target bank 0 at different addresses, 1 and 17 both target " +
-      "bank 1, etc.), so the memory unit must issue the access in two serialized sub-passes, " +
-      "roughly halving throughput relative to Patterns 1/2. This generalizes: an access stride of " +
-      "`s` against 32 banks produces an `n`-way conflict where n = 32 / gcd(32, s), which is why " +
-      "power-of-two strides that share factors with the bank count are a classic shared-memory " +
-      "performance trap.",
+      "read replicated to all lanes, also one transaction. The same address is never a conflict; " +
+      "only *different* addresses mapping to the *same* bank are. Pattern 3 computes bank = " +
+      "(threadIdx.x*2) mod 32; since multiplying by 2 is not coprime with 32, the mapping " +
+      "threadIdx.x -> bank is 2-to-1 (lanes 0 and 16 both target bank 0 at different addresses, 1 " +
+      "and 17 both target bank 1, etc.), so the memory unit must issue the access in two serialized " +
+      "sub-passes, roughly halving throughput relative to Patterns 1 and 2. This generalizes: an " +
+      "access stride of `s` against 32 banks produces an `n`-way conflict where n = gcd(32, s) " +
+      "(for s=1, gcd(32,1)=1, no conflict; for s=2, gcd(32,2)=2, a 2-way conflict, matching Pattern " +
+      "3 above), which is why power-of-two strides that share factors with the bank count are a " +
+      "classic shared-memory performance trap.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#shared-memory-and-memory-banks",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#shared-memory-access-patterns",
+      "https://developer.nvidia.com/blog/using-shared-memory-cuda-cc/",
+    ],
   },
   {
     id: "gpu-cuda-occupancy-01",
     category: "gpu-cuda",
     difficulty: "hard",
-    title: "Higher register usage per thread reducing occupancy",
+    title: "Unrolling a memory-bound loop at 32 versus 96 registers per thread",
     tags: ["occupancy", "registers", "latency-hiding"],
     type: "trace",
     prompt:
@@ -405,36 +442,40 @@ float c = sdata[threadIdx.x * 2];`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Version B is always faster: doing more work per instruction is strictly better regardless of any other resource constraint",
-        "Version B is likely SLOWER overall despite each thread being individually more efficient: 65,536/32 = 2048 threads/SM fit under Version A (full occupancy, 64 resident warps), but 65,536/96 ≈ 682 threads/SM (21 warps) fit under Version B — with far fewer resident warps, the SM's warp scheduler has fewer independent warps to switch to when a warp stalls on a long-latency memory operation, so latency-hiding degrades and the SM spends more time idle waiting on memory rather than issuing useful instructions",
-        "Register usage per thread has no effect on how many threads can be resident on an SM — only shared memory usage does",
-        "Version B is faster because using more registers avoids spilling to local memory, which is the only thing that affects occupancy",
+        "Version B is likely slower: only about 21 warps fit per SM at 96 registers versus 64 at 32, leaving the scheduler far fewer warps to switch to on a stall",
+        "Version B is faster: fewer instructions retired per element is what matters, and a memory-latency-bound kernel is bounded by instruction count in the same way a compute-bound one is",
+        "Version B is faster: the extra registers keep values out of local memory, and spill traffic is the only way register usage can affect a kernel's runtime",
+        "Neither version wins: resident threads per SM are fixed at the architectural 2048 limit, and register usage changes only how much spilling each thread does",
       ],
-      correctIndex: 1,
-      // pruned
+      correctIndex: 0,
     },
     explanation:
       "Occupancy is bounded by whichever per-SM resource runs out first among registers, shared " +
       "memory, and the architectural max-threads/max-blocks-per-SM limits. Register count is " +
       "allocated per-thread but drawn from one shared per-SM pool, so raising per-thread register " +
       "usage directly shrinks the number of threads (and therefore warps) that can be co-resident. " +
-      "For a latency-bound kernel — one where threads frequently stall on hundreds-of-cycles global " +
-      "memory accesses — the GPU's primary tool for hiding that latency is having enough *other* " +
+      "For a latency-bound kernel (one where threads frequently stall on hundreds-of-cycles global " +
+      "memory accesses), the GPU's primary tool for hiding that latency is having enough *other* " +
       "resident warps ready to issue instructions while a stalled warp waits; this is fundamentally " +
       "different from a CPU's out-of-order execution or deep speculation. Dropping from 64 to 21 " +
       "resident warps sharply reduces the scheduler's pool of latency-hiding work, so the SM is " +
       "more likely to sit idle with no eligible warp to issue, even though Version B's individual " +
-      "threads do less looping overhead. This is precisely why CUDA occupancy tuning (`--" +
-      "maxrregcount`, `__launch_bounds__`, the Occupancy Calculator/Nsight Compute) treats " +
+      "threads do less looping overhead. CUDA occupancy tuning (`--" +
+      "maxrregcount`, `__launch_bounds__`, the Occupancy Calculator/Nsight Compute) therefore treats " +
       "aggressive unrolling and register pressure as a tradeoff to be measured, not an unconditional " +
-      "win — the right answer is workload-dependent (compute-bound kernels often *do* benefit from " +
+      "win. The right answer is workload-dependent (compute-bound kernels often *do* benefit from " +
       "fewer, register-heavy warps).",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#register-pressure",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#occupancy",
+      "https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html",
+    ],
   },
   {
     id: "gpu-cuda-occupancy-02",
     category: "gpu-cuda",
-    difficulty: "hard",
-    title: "Shared memory capping resident blocks per SM",
+    difficulty: "medium",
+    title: "Block residency for a 256-thread kernel with a 40 KB shared tile",
     tags: ["occupancy", "shared-memory"],
     type: "trace",
     prompt:
@@ -454,40 +495,45 @@ float c = sdata[threadIdx.x * 2];`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "8 blocks resident — limited by 2048 max threads / 256 threads-per-block",
-        "32 blocks resident — the SM's max-blocks-per-SM limit always wins regardless of memory usage",
-        "2 blocks resident — limited by shared memory: floor(96 KB / 40 KB) = 2 blocks, which caps resident threads at 2*256=512 (well under both the 2048 thread limit and the 32 block limit), leaving the SM significantly under-occupied even though threads and blocks alone would allow far more",
-        "0 blocks — 40 KB per block exceeds a hard per-block shared memory limit and the kernel fails to launch",
+        "8 blocks resident, limited by the 2048-thread cap divided by 256 threads per block",
+        "32 blocks resident: the max-blocks-per-SM limit outranks the other per-SM budgets",
+        "0 blocks: 40 KB exceeds the hard per-block shared memory limit, so the launch fails",
+        "2 blocks resident, limited by shared memory: 40 KB per block against a 96 KB per-SM pool",
       ],
-      correctIndex: 2,
-      // pruned
+      correctIndex: 3,
     },
     explanation:
       "Occupancy is determined by the *most restrictive* of several independent per-SM budgets: " +
-      "max resident threads, max resident blocks, register file size, and shared memory size — " +
-      "whichever runs out first caps the number of resident blocks. Here, the thread-count limit " +
+      "max resident threads, max resident blocks, register file size, and shared memory size. " +
+      "Whichever runs out first caps the number of resident blocks. Here, the thread-count limit " +
       "would allow 2048/256 = 8 blocks, and the block-count limit would allow up to 32, but shared " +
       "memory only has 96 KB total to distribute, and each block statically claims 40 KB, so only " +
       "floor(96/40) = 2 blocks can fit (a third block's 40 KB would need 120 KB total, exceeding " +
-      "the 96 KB budget). That caps the SM at 2*256 = 512 resident threads out of a possible 2048 — " +
-      "25% theoretical occupancy — leaving three-quarters of the SM's latency-hiding capacity " +
+      "the 96 KB budget). That caps the SM at 2*256 = 512 resident threads out of a possible 2048, " +
+      "25% theoretical occupancy, leaving three-quarters of the SM's latency-hiding capacity " +
       "unused purely due to the shared-memory footprint, independent of how many registers the " +
-      "kernel needs. This is exactly why profiling tools report *achieved* vs *theoretical* " +
-      "occupancy per limiting resource, and why reducing a kernel's shared-memory tile size (or " +
-      "using `__launch_bounds__`/dynamic shared memory tuning) is a standard occupancy lever " +
-      "distinct from register pressure.",
+      "kernel needs. Profiling tools therefore report *achieved* vs *theoretical* occupancy along " +
+      "with the limiting resource, and shrinking a kernel's shared-memory tile (or tuning it via " +
+      "dynamic shared memory) is a standard occupancy lever entirely distinct from register " +
+      "pressure. One caveat on the numbers: on architectures where L1 and shared memory share a " +
+      "carveout, the 96 KB figure is the configured shared-memory portion, not a fixed constant.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#calculating-occupancy",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#kernel-launch-and-occupancy",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html#features-and-technical-specifications",
+    ],
   },
   {
     id: "gpu-cuda-constant-memory-01",
     category: "gpu-cuda",
     difficulty: "medium",
-    title: "Constant memory broadcast vs divergent constant reads",
+    title: "Reading one constant-memory address versus 32 different ones per warp",
     tags: ["constant-memory", "broadcast", "memory-hierarchy"],
     type: "trace",
     prompt:
       "`__constant__ float coeffs[256];` is populated once via `cudaMemcpyToSymbol` before launch. " +
       "Kernel A has every thread in a warp read `coeffs[0]` (the same address). Kernel B has each " +
-      "thread read `coeffs[threadIdx.x]` (32 different addresses). What's the performance " +
+      "thread read `coeffs[threadIdx.x % 256]` (32 different addresses). What's the performance " +
       "difference, assuming both are otherwise identical and the constant cache is warm?",
     snippet: {
       language: "cpp",
@@ -509,18 +555,17 @@ __global__ void useDifferentCoeff(float* out, const float* in) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Identical performance — constant memory always services a full warp in a single cycle regardless of the access pattern",
-        "Kernel A is fast: the constant cache is optimized for the broadcast case where every thread in a warp reads the SAME address, serving all 32 lanes in one (or very few) cycles. Kernel B, where threads read differing addresses, cannot broadcast — the constant cache path serializes into multiple requests, one per unique address, making it markedly slower than Kernel A despite reading from the same memory space",
-        "Kernel B is faster because reading different addresses lets the 32 threads use 32 independent constant cache ports in parallel",
-        "Both kernels are equally slow because constant memory always requires a round trip to global (device) memory, cache or not",
+        "Identical performance: constant memory always services a full warp in a single cycle regardless of the access pattern",
+        "Kernel B is faster: reading different addresses lets the 32 threads use 32 independent constant cache ports in parallel",
+        "Kernel A is markedly faster: one address broadcasts to all 32 lanes in a single access, while 32 distinct addresses serialize",
+        "Both kernels are equally slow: constant memory always requires a round trip to global (device) memory, cache or not",
       ],
-      correctIndex: 1,
-      // pruned
+      correctIndex: 2,
     },
     explanation:
       "Constant memory sits in device DRAM but is backed by a small, dedicated per-SM constant " +
       "cache tuned specifically for the case where every thread in a warp requests the identical " +
-      "address — a scenario extremely common for kernel parameters, physical constants, or a small " +
+      "address, a scenario extremely common for kernel parameters, physical constants, or a small " +
       "shared coefficient table. In that broadcast case, the hardware reads the value once and " +
       "fans it out to all 32 lanes, at throughput comparable to a register read. The moment threads " +
       "in a warp diverge to different addresses, that broadcast fast path no longer applies: the " +
@@ -530,62 +575,70 @@ __global__ void useDifferentCoeff(float* out, const float* in) {
       "coalescing (where *different-but-adjacent* addresses are the fast case): constant memory " +
       "wants *identical* addresses across a warp to be fast, which is why it's suited for " +
       "broadcast-style read-only data and not for per-thread lookup tables.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#constant-memory",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#constant-memory",
+    ],
   },
   {
     id: "gpu-cuda-memory-hierarchy-01",
     category: "gpu-cuda",
-    difficulty: "medium",
-    title: "Re-reading global memory in a loop vs caching in a register",
+    difficulty: "hard",
+    title: "A loop that reloads base[0] on every iteration while storing through out",
     tags: ["memory-hierarchy", "global-memory", "registers", "latency"],
     type: "trace",
     prompt:
       "Global memory access latency is on the order of several hundred cycles; a register read is " +
       "effectively free (~1 cycle, no separate instruction-level cost beyond the operation itself). " +
-      "This kernel re-reads `base[0]` from global memory on every one of 1000 loop iterations " +
-      "instead of loading it once. What is the most accurate prediction?",
+      "Every iteration of this loop stores one element of `out` and re-reads the same `base[0]` " +
+      "from global memory. What is the most accurate prediction?",
     snippet: {
       language: "cpp",
       filename: "kernel.cu",
-      code: `__global__ void wasteful(float* base, float* out, int n) {
+      code: `__global__ void scaleRows(float* out, const float* in, float* base) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-    float acc = 0.0f;
     for (int k = 0; k < 1000; ++k) {
-        acc += out[i] * base[0];   // base[0] re-read from global memory every iteration
+        out[i * 1000 + k] = in[i * 1000 + k] * base[0];   // base[0] read again each pass
     }
-    out[i] = acc;
 }`,
     },
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "No meaningful difference — the compiler is guaranteed to hoist the redundant load out of the loop into a register regardless of aliasing concerns",
-        "The kernel is likely to run substantially slower than a hand-hoisted version (`float b0 = base[0];` before the loop, then using `b0` in the loop): unless the compiler can prove `base` doesn't alias `out` (enabling it to safely hoist/keep the value cached), every iteration reissues a global memory transaction hundreds of cycles deep; even with the L1/L2 cache absorbing repeat hits after the first access, a cached global load is still meaningfully more expensive than a register/local value with zero possibility of a cache miss",
-        "This is undefined behavior because `base[0]` is being read concurrently by multiple threads without synchronization",
-        "The kernel runs faster than the hoisted version, since re-reading avoids keeping an extra live value in the register file",
+        "No meaningful difference: a load whose address never changes is loop-invariant, so nvcc hoists it into a register no matter what else the loop does",
+        "Undefined behavior: every thread in the grid reads `base[0]` concurrently with no synchronization ordering those reads",
+        "Marginally faster than hoisting: not holding `base[0]` in a live register frees a register slot and raises occupancy",
+        "Likely much slower than hoisting `base[0]` into a local before the loop: the store through `out` may alias `base`, forcing a reload every pass",
       ],
-      correctIndex: 1,
-      // pruned
+      correctIndex: 3,
     },
     explanation:
       "Registers, shared memory, and global memory sit at very different points on the GPU memory " +
       "hierarchy's latency/bandwidth spectrum: a register operand costs essentially nothing extra, " +
-      "shared memory is on the order of tens of cycles, and global memory (even cache-hot) is " +
-      "typically the most expensive of the three to touch repeatedly, both in raw latency and in " +
-      "consuming load/store unit issue slots and cache bandwidth shared by the whole warp/SM. The " +
-      "compiler can only hoist the repeated `base[0]` read out of the loop if it can prove no " +
-      "intervening write to `out` could alias `base` — pointer aliasing between `out` and `base` is " +
-      "exactly the kind of ambiguity `restrict`-qualified pointers (or `__restrict__` in CUDA) exist " +
-      "to eliminate, letting the compiler safely keep the value live in a register across the whole " +
-      "loop. Without that guarantee, a conservative compiler may reissue the global load every " +
-      "iteration; explicitly hoisting frequently-reused values into a local variable (which the " +
-      "compiler keeps in a register) is a standard, high-value CUDA optimization for exactly this " +
-      "reason.",
+      "shared memory is on the order of tens of cycles, and global memory (even cache-hot) is the " +
+      "most expensive of the three to touch repeatedly, both in raw latency and in the load/store " +
+      "unit issue slots and cache bandwidth it consumes on behalf of the whole warp. A load counts " +
+      "as loop-invariant only if nothing in the loop can write the location it reads. Here each " +
+      "iteration stores to `out[i * 1000 + k]`, and `out` and `base` are ordinary pointers the " +
+      "compiler must assume may overlap, so it cannot prove the store leaves `base[0]` untouched " +
+      "and reissues the load on the next pass: one load becomes a thousand. Marking the parameters " +
+      "`__restrict__` (`float* __restrict__ out, const float* __restrict__ in, const float* " +
+      "__restrict__ base`) promises they do not alias and lets the compiler keep the value live in " +
+      "a register for the whole loop. Hoisting by hand with `float b = base[0];` before the loop " +
+      "asserts the same property more directly and is the more portable habit for any value reused " +
+      "across many iterations. `nvcc -Xptxas -v` and Nsight Compute's source view both make the " +
+      "repeated global load visible in the generated SASS.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#restrict-pointers",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#device-memory-spaces",
+      "https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html",
+    ],
   },
   {
     id: "gpu-cuda-syncthreads-01",
     category: "gpu-cuda",
-    difficulty: "hard",
-    title: "__syncthreads() inside a divergent branch",
+    difficulty: "medium",
+    title: "__syncthreads() called inside one side of a branch",
     tags: ["syncthreads", "barrier", "deadlock", "undefined-behavior"],
     type: "trace",
     prompt:
@@ -607,39 +660,44 @@ __global__ void useDifferentCoeff(float* out, const float* in) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Well-defined: __syncthreads() only synchronizes the threads that actually call it, so the first 128 threads synchronize with each other and the other 128 proceed independently",
-        "Undefined behavior — potential deadlock or hang: __syncthreads() is a barrier over the WHOLE thread block, and the CUDA programming model requires that if any thread in a block reaches a given __syncthreads() call, all threads in the block must reach it (the same call, executed the same number of times); since threads 128-255 never call it at all, the threads that do call it may block forever waiting for threads that will never arrive",
-        "Compile-time error: __syncthreads() cannot appear inside an if-statement",
-        "The kernel silently skips the __syncthreads() call for all threads if any thread doesn't reach it, so no synchronization happens for anyone but no hang occurs either",
+        "Well-defined: __syncthreads() synchronizes only the threads that actually reach it, so threads 0-127 rendezvous while the rest run on",
+        "Compile-time error: nvcc rejects a __syncthreads() call whose reachability depends on a data-dependent branch condition",
+        "Undefined behavior, with a hang among the likely outcomes: the barrier is block-wide and threads 128-255 never arrive at it",
+        "The barrier is silently dropped for the whole block once one thread misses it, so nothing synchronizes but nothing hangs either",
       ],
-      correctIndex: 1,
-      // pruned
+      correctIndex: 2,
     },
     explanation:
       "__syncthreads() is a block-wide barrier: every thread in the block must arrive at the exact " +
-      "same __syncthreads() call site before any of them are permitted to proceed past it — this is " +
+      "same __syncthreads() call site before any of them are permitted to proceed past it. This is " +
       "explicit in the CUDA C++ Programming Guide, which warns that __syncthreads() used inside " +
       "conditional code is only well-defined if the condition evaluates identically across the " +
       "entire block. Here threads 0-127 reach the barrier while threads 128-255 never call " +
       "__syncthreads() at all on this control-flow path, so the arriving threads wait for " +
-      "arrivals that will never come — in practice this frequently manifests as the kernel hanging " +
-      "(GPU appears to make no forward progress, watchdog timeout on a display GPU, or an " +
-      "indefinite stall on a headless compute GPU) though the formal classification is undefined " +
-      "behavior, not a guaranteed hang. The fix is to restructure so that either all threads in the " +
+      "arrivals that may never come. Observed behavior varies by architecture and by what the " +
+      "non-arriving threads do next: the kernel can hang outright (a watchdog timeout on a display " +
+      "GPU, an indefinite stall on a headless compute GPU), or the missing threads can simply exit " +
+      "the kernel and let the barrier release with only part of the block, which produces " +
+      "plausible-looking results in testing and breaks later. The formal classification is " +
+      "undefined behavior, not a guaranteed hang. The fix is to restructure so that either all threads in the " +
       "block reach a shared __syncthreads() (e.g., move the barrier outside the branch, doing the " +
       "conditional work before and after it), or use warp-level primitives like __syncwarp() with " +
       "an explicit mask when only synchronizing within a warp is actually needed.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#thread-block-synchronization-functions",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#thread-block-synchronization",
+    ],
   },
   {
     id: "gpu-cuda-syncthreads-02",
     category: "gpu-cuda",
     difficulty: "medium",
-    title: "Shared-memory race without a barrier",
+    title: "A shared-memory stencil with no barrier between write and read",
     tags: ["syncthreads", "shared-memory", "race-condition"],
     type: "trace",
     prompt:
       "Each thread writes its own value into shared memory, then immediately reads its right " +
-      "neighbor's slot — with no synchronization between the write and the read. What does this " +
+      "neighbor's slot, with no synchronization between the write and the read. What does this " +
       "kernel produce?",
     snippet: {
       language: "cpp",
@@ -657,42 +715,47 @@ __global__ void useDifferentCoeff(float* out, const float* in) {
       kind: "multiple-choice",
       choices: [
         "Deterministically correct: threads within a block always execute in lockstep across the whole block, so every write completes before any read",
-        "A data race producing nondeterministic results: nothing guarantees thread tid+1 has executed its `smem[tid+1] = ...` write before thread tid executes its read of smem[tid+1] — different warps in the block (and even threads within the same warp on architectures with independent thread scheduling) can interleave arbitrarily without a barrier, so `neighbor` may be the freshly written value or leftover/garbage data from shared memory's previous use",
-        "Compile-time error: shared memory cannot be both written and read within the same kernel without an explicit __syncthreads()",
-        "This is safe specifically because tid and (tid+1) % blockDim.x are always in the same warp",
+        "A data race with nondeterministic results: nothing orders thread tid+1's write to smem[tid+1] before thread tid's read of that slot",
+        "Correct as compiled: nvcc inserts an implicit __syncthreads() wherever a shared array is read after being written in the same kernel",
+        "Safe as written: tid and (tid + 1) % blockDim.x always land in the same warp, and a warp issues its instructions in lockstep",
       ],
       correctIndex: 1,
-      // pruned
     },
     explanation:
       "Threads within a CUDA block are not guaranteed to execute in any particular relative order " +
-      "beyond what's imposed by explicit synchronization — different warps within a block are " +
+      "beyond what's imposed by explicit synchronization. Different warps within a block are " +
       "scheduled independently by the SM's warp schedulers, and there is no implicit guarantee that " +
       "warp k's instruction stream is 'ahead of' or 'behind' warp k+1's at any given moment (and " +
       "since threadIdx.x=255's neighbor wraps to threadIdx.x=0, this example spans multiple warps). " +
       "Without a `__syncthreads()` between the shared-memory write and the read of a *different* " +
-      "thread's slot, this is a genuine race: the read may observe the freshly written value, a " +
-      "stale value from shared memory's prior contents (shared memory is not zero-initialized " +
-      "between kernel launches or reused across different __shared__ declarations in the same " +
-      "kernel), or — on some interleavings — the correct value, nondeterministically varying run to " +
-      "run. The fix is a single `__syncthreads()` immediately after the write and before the " +
+      "thread's slot, this is a genuine race: the read may observe the freshly written value or " +
+      "whatever the slot held beforehand (shared memory is not zero-initialized, and its contents " +
+      "are whatever the previous block to occupy that SM left behind), varying nondeterministically " +
+      "from run to run and from GPU to GPU. " +
+      "The fix is a single `__syncthreads()` immediately after the write and before the " +
       "cross-thread read, which is precisely the barrier pattern every shared-memory stencil, " +
       "reduction, and tiling kernel relies on.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#thread-block-synchronization-functions",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cuda-cpp-memory-model.html#data-races",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#shared-memory",
+    ],
   },
   {
     id: "gpu-cuda-atomics-01",
     category: "gpu-cuda",
     difficulty: "medium",
-    title: "Histogram without atomics vs atomicAdd",
+    title: "Histogram binning with hist[bin]++ versus atomicAdd",
     tags: ["atomics", "race-condition", "histogram"],
     type: "trace",
     prompt:
-      "Thousands of threads each increment a bin in a small shared histogram based on their " +
-      "input value; many threads target the same bin concurrently. Compare the two kernels below.",
+      "Thousands of threads each increment one of 16 bins in a histogram held in global memory, " +
+      "chosen by their input value; many threads land on the same bin at once. Compare the two " +
+      "kernels below.",
     snippet: {
       language: "cpp",
       filename: "kernel.cu",
-      code: `// Kernel A — no atomics
+      code: `// Kernel A: no atomics
 __global__ void histNaive(int* hist, const int* data, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
@@ -701,7 +764,7 @@ __global__ void histNaive(int* hist, const int* data, int n) {
     }
 }
 
-// Kernel B — atomics
+// Kernel B: atomics
 __global__ void histAtomic(int* hist, const int* data, int n) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < n) {
@@ -713,34 +776,38 @@ __global__ void histAtomic(int* hist, const int* data, int n) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Both kernels produce identical, correct histograms — `hist[bin]++` compiles to a single indivisible hardware instruction, so no race is possible",
-        "Kernel A has a genuine race condition and will typically undercount several bins: `hist[bin]++` is a read, an increment, and a write as three separate steps, and when two threads perform this concurrently on the same bin, one thread's increment can be silently lost (both read the same old value, both write old+1, one update is overwritten). Kernel B is correct because atomicAdd performs the read-modify-write as a single indivisible hardware-guaranteed operation, serializing concurrent updates to the same address without losing any",
-        "Kernel A deadlocks because two threads cannot write to the same array simultaneously",
-        "Kernel B is incorrect because atomicAdd cannot be used on shared arrays, only on single scalar global variables",
+        "Both kernels produce identical, correct histograms: `hist[bin]++` lowers to a single indivisible read-modify-write instruction on the GPU",
+        "Kernel A is correct but slower: the compiler inserts a lock around `hist[bin]++` once it sees the address can be shared between threads",
+        "Kernel A races and typically undercounts several bins: `hist[bin]++` is a non-atomic load, increment, and store. Kernel B is correct",
+        "Kernel B is incorrect: atomicAdd only orders updates within a block, so increments from different blocks can still clobber one another",
       ],
-      correctIndex: 1,
-      // pruned
+      correctIndex: 2,
     },
     explanation:
-      "`hist[bin]++` is not a single hardware operation — it lowers to a load of `hist[bin]`, an " +
+      "`hist[bin]++` is not a single hardware operation: it lowers to a load of `hist[bin]`, an " +
       "increment in a register, and a store back to `hist[bin]`. When two (or more) threads from " +
       "potentially different warps or blocks execute this concurrently against the same bin with no " +
       "synchronization, both can load the same pre-increment value before either has written back, " +
-      "so both compute old+1 and one thread's store simply clobbers the other's — a lost update, " +
+      "so both compute old+1 and one thread's store simply clobbers the other's, a lost update, " +
       "the textbook read-modify-write race. `atomicAdd` guarantees the entire read-modify-write is " +
       "performed as one indivisible operation with respect to all other atomic operations on that " +
       "address, so concurrent atomicAdds to the same bin serialize correctly and no increment is " +
       "lost, at the cost of that serialization being a real (if hardware-accelerated) throughput " +
-      "bottleneck under heavy contention on a small number of addresses. This is the direct " +
-      "GPU analogue of a data race on an un-synchronized shared counter on a CPU — the fix (atomics) " +
-      "is the same idea, just backed by dedicated atomic units in the memory subsystem rather than a " +
+      "bottleneck under heavy contention on a small number of addresses. This is the direct GPU " +
+      "analogue of a data race on an unsynchronized shared counter on a CPU; the fix (atomics) is " +
+      "the same idea, just backed by dedicated atomic units in the memory subsystem rather than a " +
       "lock.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#atomic-functions",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#atomics",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cuda-cpp-memory-model.html#data-races",
+    ],
   },
   {
     id: "gpu-cuda-atomics-02",
     category: "gpu-cuda",
     difficulty: "hard",
-    title: "Atomic contention on a single address vs hierarchical reduction",
+    title: "One global atomicAdd per element versus one per block",
     tags: ["atomics", "contention", "performance", "reduction"],
     type: "trace",
     prompt:
@@ -770,35 +837,43 @@ __global__ void sumHierarchical(float* result, const float* data, int n) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Both are equally fast — atomicAdd on global memory and atomicAdd on shared memory have identical latency and contention characteristics",
-        "Kernel A is faster because it has no __syncthreads() overhead at all",
-        "Kernel B is substantially faster at scale: Kernel A funnels every one of n threads' atomicAdd into the SAME global memory address, which the hardware must serialize entirely — contention on one address scales as O(n). Kernel B still contends within each block's shared-memory atomic (fast, on-chip, lower latency than global memory), but only issues ONE atomicAdd to the contended global address per block, cutting global-address contention from O(n) down to O(n / blockDim.x)",
-        "Kernel B is slower because using __shared__ memory always adds more overhead than it can possibly save",
+        "Both are equally fast: an atomicAdd to shared memory and one to global memory have the same latency and behave identically under same-address contention",
+        "Kernel A is faster: it skips both barriers, and global atomics are resolved by dedicated units at the L2 slices rather than being serialized",
+        "Kernel B is slower: its shared-memory atomic still funnels every thread of the block onto one address, so it relocates the serialization on-chip and adds two barriers on top",
+        "Kernel B is substantially faster at scale: it drops the traffic on the one contended global address from one atomic per element to one per block, absorbing the rest on-chip",
       ],
-      correctIndex: 2,
-      // pruned
+      correctIndex: 3,
     },
     explanation:
       "Atomic operations targeting the *same* memory address must be serialized by the hardware to " +
-      "guarantee correctness, regardless of which memory space that address lives in — this is an " +
+      "guarantee correctness, regardless of which memory space that address lives in. This is an " +
       "inherent property of atomicity, not an implementation quirk. Kernel A has every thread in " +
       "the entire grid contend for one global address, so total atomic-serialization cost scales " +
       "linearly with n (the full element count), turning what should be a bandwidth-bound reduction " +
       "into a serialization-bound bottleneck. Kernel B performs the same reduction in two tiers: " +
       "threads within a block still contend on a shared-memory atomic (`partial`), but shared " +
-      "memory atomics are on-chip and considerably lower-latency than global memory atomics, and — " +
-      "crucially — only one thread per block (thread 0) then issues an atomicAdd into the globally " +
+      "memory atomics are on-chip and considerably lower-latency than global memory atomics, and, " +
+      "crucially, only one thread per block (thread 0) then issues an atomicAdd into the globally " +
       "contended `result` address, dropping the number of global-address atomic operations from n " +
-      "down to n / blockDim.x (the number of blocks). This block-then-grid hierarchical reduction " +
+      "down to n / blockDim.x (the number of blocks). Kernel B's shared-memory atomic does still " +
+      "serialize within the block, which is why the fully tuned version replaces it with a " +
+      "warp-shuffle reduction and one shared atomic per warp; even as written, though, on-chip " +
+      "serialization at a few cycles per conflicting lane is far cheaper than the same number of " +
+      "round trips to a single address in the L2. This block-then-grid hierarchical reduction " +
       "pattern (often extended with a further warp-shuffle-based reduction within each block before " +
       "the shared-memory atomic) is the standard technique for scaling reductions on GPUs with " +
       "heavy contention, and generalizes to any 'many writers, one hot address' pattern.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#atomic-functions",
+      "https://developer.nvidia.com/blog/faster-parallel-reductions-kepler/",
+      "https://developer.download.nvidia.com/assets/cuda/files/reduction.pdf",
+    ],
   },
   {
     id: "gpu-cuda-warp-shuffle-01",
     category: "gpu-cuda",
     difficulty: "hard",
-    title: "Warp shuffle reduction vs shared-memory reduction",
+    title: "Warp-wide sum via a shared-memory tree versus __shfl_down_sync",
     tags: ["warp-shuffle", "reduction", "shfl_sync"],
     type: "trace",
     prompt:
@@ -826,35 +901,44 @@ for (int offset = 16; offset > 0; offset >>= 1) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Both are equally fast — __shfl_down_sync is just shared memory under a different name",
-        "Version A is faster because it uses more total instructions, and more instructions always means better latency hiding",
-        "Version B is typically faster: __shfl_down_sync exchanges register values directly between threads in the same warp over a dedicated intra-warp interconnect, with no shared memory traffic, no bank-conflict potential, and — since a single warp is inherently lockstep at the hardware level for a straight-line shuffle sequence like this — no need for repeated __syncthreads() barriers the way the shared-memory version requires after every reduction step",
-        "Version B is not legal CUDA — __shfl_down_sync can only be called from host code, never from within a kernel",
+        "Version B is typically faster: the shuffle moves values between lanes in registers, with no shared-memory traffic, no bank-conflict exposure, and no barrier between steps",
+        "Both land in the same place: __shfl_down_sync is lowered to the same shared-memory staging that Version A writes out by hand, so the two compile to near-identical SASS",
+        "Version A is typically faster: a shuffle costs several times a shared-memory access, and __syncthreads() is nearly free once only one warp of the block is still active",
+        "Version B is incorrect for a warp-wide sum: lanes near the top of the warp shuffle from source lanes past lane 31, which return garbage that propagates into lane 0's total",
       ],
-      correctIndex: 2,
+      correctIndex: 0,
     },
     explanation:
       "Warp shuffle instructions let threads within the same warp read each other's registers " +
       "directly through a dedicated crossbar-style intra-warp exchange network, without ever " +
       "staging the data through shared memory. That eliminates the shared-memory store, the " +
-      "bank-conflict potential of the tree-reduction access pattern, and — critically — the " +
+      "bank-conflict potential of the tree-reduction access pattern, and, critically, the " +
       "repeated __syncthreads() barriers the shared-memory version needs after every halving step " +
       "(since __syncthreads() is a full block-wide barrier, using it just to synchronize 32 threads " +
-      "within one warp is overkill). __shfl_down_sync still takes an explicit mask argument " +
+      "within one warp is overkill). The upper lanes' shuffles are harmless rather than wrong: when " +
+      "the source lane computed by `lane + offset` falls outside the warp, __shfl_down_sync returns " +
+      "the calling lane's own value, so the upper lanes just fold their own value in again and end " +
+      "up with partial sums nobody reads, while lane 0 still holds the true total of all 32 " +
+      "values. __shfl_down_sync takes an explicit mask argument " +
       "(0xFFFFFFFF here, meaning 'all 32 lanes participate') because, since Volta's independent " +
       "thread scheduling, the hardware no longer assumes an entire warp is implicitly still " +
-      "together at every instruction — the mask tells the shuffle exactly which lanes are " +
-      "expected to participate, and it is undefined behavior to omit a participating active lane " +
-      "from the mask. For warp-scoped reductions this shuffle-based pattern is the standard, " +
+      "together at every instruction. The mask names the lanes that must reach this instruction " +
+      "together; a value read from a lane that is not in the mask, or that has already exited, is " +
+      "undefined. For warp-scoped reductions this shuffle-based pattern is the standard, " +
       "faster building block; a full block-wide reduction typically still needs one shared-memory " +
       "combine step across warps, often implemented as a warp-shuffle reduction per warp followed " +
       "by a small shared-memory reduction across the (few) per-warp partial results.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#warp-shuffle-functions",
+      "https://developer.nvidia.com/blog/using-cuda-warp-level-primitives/",
+      "https://developer.nvidia.com/blog/faster-parallel-reductions-kepler/",
+    ],
   },
   {
     id: "gpu-cuda-unified-memory-01",
     category: "gpu-cuda",
     difficulty: "hard",
-    title: "Page fault migration on first GPU touch of managed memory",
+    title: "First GPU access to a managed allocation the host just initialized",
     tags: ["unified-memory", "page-fault", "cudaMallocManaged"],
     type: "trace",
     prompt:
@@ -874,23 +958,25 @@ cudaDeviceSynchronize();`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Nothing special — cudaMallocManaged memory is always physically resident on both host and device simultaneously, so the kernel reads it at full device-memory bandwidth immediately",
-        "The GPU thread accessing a given page triggers a page fault, since that page currently lives in host DRAM; the CUDA driver's page-migration engine handles the fault by transferring that page over PCIe/NVLink to device memory before the access can complete, stalling that access — repeated across however many pages the kernel touches — which is typically slower than an explicit bulk cudaMemcpy or cudaMemPrefetchAsync issued ahead of the launch, since faults are handled page-by-page and can serialize on the migration engine",
-        "The kernel launch fails with an error, because managed memory cannot be written by the host before being read by the device",
-        "The compiler automatically inserts a cudaMemcpy before the kernel launch, making prefetching irrelevant",
+        "Nothing special: a managed allocation is physically resident on host and device at the same time, so the kernel reads it at full device-memory bandwidth from the first instruction",
+        "On Pascal and later, the first GPU touch of each page faults, and the migration engine pulls that page across the interconnect before the access completes",
+        "The launch returns an error: a managed range written by the host is owned by the host until it is released with cudaMemPrefetchAsync or an explicit cudaMemAdvise hint",
+        "Nothing special: the runtime tracks which managed pages the host dirtied and issues one bulk migration at launch time, so an explicit prefetch would change nothing",
       ],
       correctIndex: 1,
-      // pruned
     },
     explanation:
       "Unified (managed) memory presents a single pointer valid on both host and device, but " +
       "under the hood a page can only be resident in one place at a time (on architectures without " +
       "full hardware cache coherence across the interconnect); the CUDA runtime tracks ownership " +
-      "and migrates pages on demand. After the host-side initialization loop, every page of " +
-      "`data` is resident in host memory. When the kernel's threads then access `data`, each " +
-      "first touch of a given page by the GPU triggers a page fault handled by the GPU's page " +
+      "and migrates pages on demand. This on-demand, page-fault-driven migration is a Pascal-and-" +
+      "later (compute capability 6.0+) capability; earlier architectures supported cudaMallocManaged " +
+      "with a coarser model that migrated the whole allocation at stream synchronization points " +
+      "rather than faulting in individual pages. After the host-side initialization loop, every " +
+      "page of `data` is resident in host memory. When the kernel's threads then access `data`, " +
+      "each first touch of a given page by the GPU triggers a page fault handled by the GPU's page " +
       "migration engine, which pulls that page from host DRAM to device memory over PCIe/NVLink " +
-      "before the faulting memory access can be satisfied — the requesting warp stalls until the " +
+      "before the faulting memory access can be satisfied; the requesting warp stalls until the " +
       "migration completes. Because this happens fault-by-fault (at page granularity) rather than " +
       "as one large batched transfer, it typically has higher overhead than either an explicit " +
       "`cudaMemcpy` (a single bulk DMA transfer issued upfront) or a `cudaMemPrefetchAsync(data, " +
@@ -900,12 +986,17 @@ cudaDeviceSynchronize();`,
       "manual copy management, and oversubscription of GPU memory becomes possible via automatic " +
       "eviction), which is why prefetching is recommended whenever the access pattern is known " +
       "ahead of time.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/unified-memory.html",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/unified-memory.html#data-prefetching",
+      "https://developer.nvidia.com/blog/unified-memory-cuda-beginners/",
+    ],
   },
   {
     id: "gpu-cuda-kernel-launch-overhead-01",
     category: "gpu-cuda",
     difficulty: "easy",
-    title: "Kernel launch overhead dominating many tiny launches",
+    title: "Ten thousand 10-element launches versus one fused launch",
     tags: ["kernel-launch", "overhead", "kernel-fusion"],
     type: "trace",
     prompt:
@@ -916,16 +1007,15 @@ cudaDeviceSynchronize();`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Version A is faster because launching many small kernels lets the GPU pipeline and overlap them automatically",
-        "They perform identically — total element count and total FLOPs are the same either way",
-        "Version B is typically dramatically faster: each kernel launch carries a fixed CPU-side and driver-side overhead (queuing the launch, driver validation, signaling the GPU) on the order of several microseconds, independent of how much work the kernel actually does; with 10,000 launches each doing only ~10 elements' worth of (sub-microsecond) compute, Version A's total time is dominated by launch overhead rather than by the GPU actually computing anything, whereas Version B pays that fixed overhead exactly once",
-        "Version A is faster because smaller kernels always have higher occupancy than one large kernel",
+        "Version B is typically far faster: every launch carries a fixed driver- and queue-side cost of a few microseconds, paid once here instead of 10,000 times",
+        "They perform identically: the element count and the FLOP count are the same either way, and launches on a single stream are pipelined deeply enough to hide their own setup",
+        "Version A is faster: a 10-element kernel fits inside one SM's registers and shared memory, so it avoids the scheduling cost of spreading a large grid over every SM",
+        "Version A is faster: back-to-back launches on the same stream overlap, so launch k+1's setup runs on the CPU while launch k executes on the GPU",
       ],
-      correctIndex: 2,
-      // pruned
+      correctIndex: 0,
     },
     explanation:
-      "Every kernel launch — regardless of how little work it does — incurs a largely fixed cost: " +
+      "Every kernel launch, regardless of how little work it does, incurs a largely fixed cost: " +
       "the host-side driver call, command buffer construction, and the queuing/dispatch handshake " +
       "with the GPU, typically on the order of a handful of microseconds even in the best case " +
       "(more with a synchronizing launch or an underpopulated queue). When a kernel's actual " +
@@ -934,21 +1024,27 @@ cudaDeviceSynchronize();`,
       "tens of milliseconds of pure overhead with almost no compute to show for it. A single fused " +
       "launch processing all 100,000 elements (e.g., via a grid-stride loop, or simply launching " +
       "enough threads to cover the whole problem) pays that fixed cost once and lets the GPU spend " +
-      "essentially all of its time on genuine compute. This is exactly the motivation behind kernel " +
-      "fusion (combining multiple small kernels into one) and CUDA Graphs (which let you record a " +
-      "sequence of launches once and replay the whole graph with a single, much cheaper submission), " +
-      "both standard techniques for workloads — common in ML inference, iterative solvers — " +
+      "essentially all of its time on genuine compute. That fixed cost is the motivation behind " +
+      "kernel fusion (combining multiple small kernels into one) and CUDA Graphs (which let you " +
+      "record a sequence of launches once and replay the whole graph with a single, much cheaper " +
+      "submission), " +
+      "both standard techniques for workloads common in ML inference and iterative solvers that are " +
       "dominated by many small, dependent kernel launches.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cuda-graphs.html",
+      "https://developer.nvidia.com/blog/cuda-graphs/",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#execution-configuration-optimizations",
+    ],
   },
   {
     id: "gpu-cuda-grid-stride-loop-01",
     category: "gpu-cuda",
     difficulty: "medium",
-    title: "Grid-stride loop for problem sizes larger than the launched grid",
+    title: "A grid-stride loop launched with far fewer threads than elements",
     tags: ["grid-stride-loop", "scalability", "portability"],
     type: "trace",
     prompt:
-      "This kernel is launched with only 1024 total threads (`grid-stride<<<4, 256>>>`) to process " +
+      "This kernel is launched with only 1024 total threads (`gridStride<<<4, 256>>>`) to process " +
       "an array of 10,000,000 elements. What does it compute, and why is this pattern preferred " +
       "over trying to launch exactly one thread per element?",
     snippet: {
@@ -965,18 +1061,17 @@ cudaDeviceSynchronize();`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "It only processes the first 1024 elements; the rest of the array is left untouched since only 1024 threads were launched",
-        "It correctly processes all 10,000,000 elements: each of the 1024 launched threads handles a strided subset of indices (idx, idx+stride, idx+2*stride, ...) spaced `stride = gridDim.x * blockDim.x` apart, looping until it walks off the end of the array — this decouples the launch configuration from the problem size, letting a modest, hardware-appropriate number of threads (enough to saturate the GPU) handle an arbitrarily large N, and it degrades gracefully to a single pass per thread when the grid IS large enough to cover N in one shot",
-        "This is a compile error — a kernel cannot loop internally over data indices",
-        "It processes all elements but only the last 1024 are computed correctly, since earlier iterations get overwritten",
+        "It touches only the first 1024 elements: a thread can write only the index it derives from blockIdx and threadIdx, and the loop simply recomputes that same index",
+        "It covers all 10,000,000 elements but races: the strided ranges of different threads overlap, so a subset of outputs is written by two threads at once",
+        "It covers all 10,000,000 elements, but only the final 1024 results survive, since each thread's later iterations overwrite the output slots its earlier ones wrote",
+        "It correctly processes all 10,000,000 elements: each thread walks idx, idx+stride, idx+2*stride, ..., so launch shape and problem size decouple",
       ],
-      correctIndex: 1,
-      // pruned
+      correctIndex: 3,
     },
     explanation:
       "The grid-stride loop pattern has each thread process every `stride`-th element starting " +
       "from its own global index, where stride equals the total number of threads actually " +
-      "launched (gridDim.x * blockDim.x) — so thread 0 handles elements 0, 1024, 2048, ...; thread " +
+      "launched (gridDim.x * blockDim.x), so thread 0 handles elements 0, 1024, 2048, ...; thread " +
       "1 handles 1, 1025, 2049, ...; and so on, fully covering all n elements regardless of how n " +
       "relates to the launched thread count. This is preferable to sizing the launch to exactly n " +
       "threads (`ceil(n / blockDim.x)` blocks) for several reasons: it lets the launch configuration " +
@@ -985,20 +1080,24 @@ cudaDeviceSynchronize();`,
       "setup/register-allocation cost over multiple elements rather than creating and tearing down " +
       "millions of mostly-idle threads for a huge N, and it trivially handles the case where N " +
       "exceeds the hardware's maximum grid dimensions. It's a standard, portable idiom recommended " +
-      "in NVIDIA's own performance guidance for exactly this reason — the same kernel code scales " +
+      "in NVIDIA's own performance guidance for exactly this reason: the same kernel code scales " +
       "correctly whether N is 100 or 10 billion.",
+    references: [
+      "https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#thread-and-block-heuristics",
+    ],
   },
   {
     id: "gpu-cuda-reduction-01",
     category: "gpu-cuda",
     difficulty: "hard",
-    title: "Naive interleaved-addressing reduction",
+    title: "An interleaved-addressing reduction keyed on threadIdx.x % (2*s)",
     tags: ["reduction", "shared-memory", "warp-divergence", "bank-conflicts"],
     type: "trace",
     prompt:
       "This is the classic 'naive' shared-memory reduction taught in early CUDA tutorials. " +
-      "blockDim.x == 256. What are its two distinct performance problems, beyond just being " +
-      "'not optimal'?",
+      "blockDim.x == 256, and `s` is a runtime loop variable. What are its two distinct " +
+      "performance problems, beyond just being 'not optimal'?",
     snippet: {
       language: "cpp",
       filename: "kernel.cu",
@@ -1017,38 +1116,46 @@ for (int s = 1; s < blockDim.x; s *= 2) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "It's actually optimal — this is the fastest possible reduction pattern",
-        "It has one problem, warp divergence, but no bank-conflict issue",
-        "Two compounding problems: (1) the modulo test `threadIdx.x % (2*s) == 0` means active threads are scattered non-contiguously within each warp (e.g., at s=1 only even threadIdx.x are active), so warps diverge and serialize the active/inactive paths instead of cleanly retiring idle warps; (2) the access pattern `sdata[threadIdx.x] += sdata[threadIdx.x + s]` with a growing stride s causes shared-memory bank conflicts at several stages of the reduction (whenever s shares a common factor with the 32 banks), neither of which would occur with a sequential-addressing formulation",
-        "It's correct and has no meaningful performance issue at all beyond needing __syncthreads() calls, which are unavoidable in any reduction",
+        "Two compounding costs: the `threadIdx.x % (2*s) == 0` predicate scatters the active lanes through every warp, and the modulo lowers to a multi-instruction integer sequence all 256 threads run each pass",
+        "One cost only: whole warps go idle as `s` grows, but the warps that remain active run fully packed, and the modulo folds into a single bitwise AND on a power-of-two divisor",
+        "Two compounding costs: the active lanes are scattered through every warp, and `sdata[threadIdx.x] += sdata[threadIdx.x + s]` puts all of a warp's active lanes on one shared-memory bank at every stage",
+        "Neither the predicate nor the addressing is the problem: the real cost is the log2(blockDim.x) rounds of __syncthreads(), which no tree-shaped reduction can avoid",
       ],
-      correctIndex: 2,
-      // pruned
+      correctIndex: 0,
     },
     explanation:
-      "This textbook 'interleaved addressing' reduction has two independent, compounding costs. " +
-      "First, the condition `threadIdx.x % (2*s) == 0` selects active threads that are not " +
-      "contiguous within a warp — at s=1 it's every even lane, at s=2 every 4th lane, and so on — " +
-      "so each warp still contains a mix of active and inactive lanes for most of the reduction, " +
-      "meaning the warp scheduler cannot simply retire whole idle warps early; the warp still has " +
-      "to execute the (masked) instruction stream even though a shrinking fraction of its lanes are " +
-      "doing useful work, similar in spirit to ordinary warp divergence. Second, the address " +
-      "`sdata[threadIdx.x]` for the active, non-contiguous lanes combined with the growing stride s " +
-      "produces shared-memory access patterns that, at several stages, map multiple active lanes " +
-      "onto the same bank at different addresses — a genuine bank conflict distinct from the " +
-      "divergence issue. Both problems are fixed simultaneously by switching to 'sequential " +
-      "addressing' (see the companion reduction question), which keeps the active-thread set " +
-      "contiguous starting from threadIdx.x == 0 at every stage.",
+      "This 'interleaved addressing' reduction (Mark Harris's Reduction #1 in NVIDIA's " +
+      "'Optimizing Parallel Reduction in CUDA') has two independent costs. First, " +
+      "`threadIdx.x % (2*s) == 0` selects active lanes that are spread through every warp (at s=1 " +
+      "every even lane, at s=2 every fourth lane, and so on), so through the early stages every " +
+      "warp issues the loop body with most of its lanes predicated away and gets nothing back for " +
+      "the issue slot; by the late stages the warps that still have work are down to a single " +
+      "active lane apiece. Second, that modulo is genuinely expensive on this " +
+      "hardware. `s` is a runtime value, so the compiler cannot rewrite `x % (2*s)` as `x & (2*s - " +
+      "1)`; integer division and remainder are emulated on NVIDIA GPUs and cost roughly twenty " +
+      "instructions, paid by every thread on every one of the eight passes. What this version does " +
+      "NOT have is a bank conflict: the active lanes of a warp sit at indices that are multiples of " +
+      "2*s, so they map to distinct banks (bank = index mod 32) and the access stays " +
+      "conflict-free. Bank conflicts appear in the next revision of this kernel, the one that " +
+      "replaces the modulo with `int index = 2 * s * threadIdx.x;` to make the active lanes " +
+      "contiguous: that fixes divergence but marches consecutive lanes through shared memory with " +
+      "stride 2*s, which collides gcd(32, 2*s) ways. Sequential addressing (see the companion " +
+      "reduction question) is what finally clears both.",
+    references: [
+      "https://developer.download.nvidia.com/assets/cuda/files/reduction.pdf",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#division-and-modulo-operations",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#branching-and-divergence",
+    ],
   },
   {
     id: "gpu-cuda-reduction-02",
     category: "gpu-cuda",
     difficulty: "hard",
-    title: "Sequential-addressing reduction fix",
+    title: "A shared-memory reduction predicated on threadIdx.x < s",
     tags: ["reduction", "shared-memory", "warp-divergence"],
     type: "trace",
     prompt:
-      "This is the standard fix for the naive interleaved-addressing reduction above — same total " +
+      "This is the standard fix for the naive interleaved-addressing reduction above, same total " +
       "work, same result, but restructured indexing. blockDim.x == 256. Why is this version " +
       "faster, specifically with respect to warp divergence?",
     snippet: {
@@ -1069,13 +1176,12 @@ for (int s = blockDim.x / 2; s > 0; s >>= 1) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "It isn't actually any faster — the number of __syncthreads() calls and total additions performed are identical to the naive version",
-        "It's faster because `threadIdx.x < s` is always contiguous starting from lane 0: for any given s, the active threads are exactly threadIdx.x in [0, s), so entire warps are either fully active or fully inactive (once s drops below 32, only the first warp does any work at all, and every other warp is uniformly idle and can fall through with minimal cost) — this eliminates the within-warp divergence the modulo-based version suffered from, though it still pays the same number of barrier/synchronization rounds",
-        "It's faster purely because it uses right-shift (>>=) instead of multiplication, which is a cheaper CPU instruction",
-        "It's faster because it eliminates the need for __syncthreads() entirely",
+        "It isn't actually faster: it performs the same additions and the same number of __syncthreads() rounds as the modulo version, and both leave the same lanes idle",
+        "`threadIdx.x < s` keeps the active lanes a contiguous prefix from lane 0, so at most one warp is ever split between active and idle lanes",
+        "It is faster only in the loop control: `s >>= 1` replaces a multiply, saving one integer instruction per lane per stage while the memory behavior is unchanged",
+        "It is faster because the idle lanes now fall in separate warps, letting the scheduler retire those warps early and hand their register and issue slots to other blocks",
       ],
       correctIndex: 1,
-      // pruned
     },
     explanation:
       "Sequential addressing replaces the scattered `threadIdx.x % (2*s) == 0` condition with " +
@@ -1083,23 +1189,31 @@ for (int s = blockDim.x / 2; s > 0; s >>= 1) {
       "reduction. Because that active set always starts at lane 0 and is contiguous, it aligns " +
       "cleanly with warp boundaries: for s >= 32, whole warps are either entirely active or " +
       "entirely inactive (no per-lane masking within a warp), and once s drops below 32 only a " +
-      "single warp does any real work while the rest trivially fall through the (false) condition — " +
-      "there is no warp that contains a genuine mix of active and predicated-off lanes doing " +
-      "different things the way the modulo version had at every stage. The access pattern " +
-      "`sdata[threadIdx.x] + sdata[threadIdx.x+s]` with contiguous threadIdx.x also has " +
-      "substantially better shared-memory bank behavior than the strided modulo version, though the " +
-      "canonical further optimizations (unrolling the last warp to skip __syncthreads() once only " +
+      "single warp does any real work while the rest trivially fall through the (false) condition. " +
+      "Only that one boundary warp ever holds a mix of active and predicated-off lanes, where the " +
+      "modulo version split every warp at every stage. It also drops the per-thread modulo, which " +
+      "is emulated in software on NVIDIA hardware, in favor of a single comparison. What does not " +
+      "improve is the barrier count: the idle warps are not retired early, since a block's warps " +
+      "stay resident until the whole block exits and every warp must still reach each " +
+      "`__syncthreads()`. Bank behavior is fine in both versions here, with lanes 0..s-1 reading " +
+      "consecutive words; the canonical further optimizations (unrolling the last warp to skip " +
+      "__syncthreads() once only " +
       "one warp remains active, and replacing the final stages with warp-shuffle instructions " +
-      "entirely) go further still. This progression — naive interleaved, to sequential addressing, " +
-      "to warp-shuffle-based — is the standard worked example (from Mark Harris's well-known " +
+      "entirely) go further still. This progression, naive interleaved to sequential addressing to " +
+      "warp-shuffle-based, is the standard worked example (from Mark Harris's well-known " +
       "'Optimizing Parallel Reduction in CUDA' NVIDIA talk) of iteratively removing divergence and " +
       "synchronization overhead from a canonical parallel primitive.",
+    references: [
+      "https://developer.download.nvidia.com/assets/cuda/files/reduction.pdf",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#branching-and-divergence",
+      "https://developer.nvidia.com/blog/faster-parallel-reductions-kepler/",
+    ],
   },
   {
     id: "gpu-cuda-pinned-memory-01",
     category: "gpu-cuda",
     difficulty: "medium",
-    title: "Pinned host memory vs pageable host memory transfer speed",
+    title: "cudaMemcpy from pageable host memory versus cudaMallocHost memory",
     tags: ["pinned-memory", "page-locked", "dma", "pcie"],
     type: "trace",
     prompt:
@@ -1122,36 +1236,40 @@ cudaMemcpy(dev, hostPinned, bytes, cudaMemcpyHostToDevice);`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "No difference — cudaMemcpy always achieves the same bandwidth regardless of host allocation type",
-        "Version B is typically meaningfully faster: pageable host memory can be relocated or swapped out by the OS virtual memory manager at any time, so the DMA engine cannot safely target it directly — the driver must first stage a copy through an internal pinned buffer before the actual device transfer, adding an extra memcpy's worth of overhead. Pinned memory is guaranteed to stay at a fixed physical address, so the DMA engine can transfer it directly, and it's also a prerequisite for true asynchronous transfers (cudaMemcpyAsync) that overlap with compute. The downside: allocating too much pinned memory reduces the pool of pageable memory available to the OS for other processes/swapping, which can degrade overall system performance",
-        "Version A is faster because pageable memory benefits from OS-level read-ahead caching that pinned memory disables",
-        "Pinned memory is only relevant for device-to-device transfers, not host-to-device",
+        "No difference for a synchronous cudaMemcpy: the driver page-locks the source range for the duration of the copy either way, so both hit the same DMA path",
+        "Version A is faster: pageable pages sit in the OS page cache and benefit from read-ahead and prefetching, which page-locking an allocation turns off",
+        "Version B is typically faster: the DMA engine reads page-locked memory directly, while a pageable source is staged through a driver buffer. The cost: pinned pages never swap out",
+        "Version B is faster only for cudaMemcpyAsync: a synchronous copy from pageable memory already reaches full bandwidth, and the real risk of pinning is fragmenting device memory",
       ],
-      correctIndex: 1,
-      // pruned
+      correctIndex: 2,
     },
     explanation:
       "A DMA engine transfers data by physical address and needs the source/destination region to " +
       "stay put for the transfer's duration. Pageable memory (ordinary malloc/new) can be moved or " +
       "swapped by the OS's virtual memory subsystem at any time, so cudaMemcpy from pageable memory " +
-      "cannot hand it directly to the DMA engine — the CUDA driver instead copies it first into an " +
+      "cannot hand it directly to the DMA engine. The CUDA driver instead copies it first into an " +
       "internal pinned staging buffer, then DMAs from there, effectively doubling the host-side " +
       "memory traffic for that transfer. cudaMallocHost (or cudaHostRegister on existing memory) " +
       "page-locks the allocation, guaranteeing a fixed physical address, so the DMA engine can " +
-      "transfer it directly — typically yielding meaningfully higher achieved bandwidth, and it's " +
+      "transfer it directly, typically yielding meaningfully higher achieved bandwidth, and it's " +
       "also a hard requirement for genuinely asynchronous cudaMemcpyAsync calls to overlap with " +
       "kernel execution or other transfers (an async copy from pageable memory silently falls back " +
       "to synchronous behavior). The tradeoff is that pinned pages cannot be paged out by the OS, " +
       "so over-allocating pinned memory shrinks the pool available for other processes' virtual " +
-      "memory management and can cause system-wide memory pressure or degraded multitasking — " +
-      "pinned memory should be reserved for actual transfer staging buffers, not used as a " +
+      "memory management and can cause system-wide memory pressure or degraded multitasking. " +
+      "Pinned memory should be reserved for actual transfer staging buffers, not used as a " +
       "general-purpose host allocator.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#pinned-memory",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/understanding-memory.html#page-locked-host-memory",
+      "https://developer.nvidia.com/blog/how-optimize-data-transfers-cuda-cc/",
+    ],
   },
   {
     id: "gpu-cuda-streams-01",
     category: "gpu-cuda",
-    difficulty: "hard",
-    title: "Overlap across CUDA streams vs in-order execution within a stream",
+    difficulty: "medium",
+    title: "Copy-and-kernel pairs issued on one stream versus two",
     tags: ["streams", "overlap", "async", "events"],
     type: "trace",
     prompt:
@@ -1175,35 +1293,39 @@ kernelB<<<blocks, threads, 0, stream2>>>(d_b);`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Both sequences behave identically — CUDA automatically parallelizes independent operations regardless of which stream they're issued on",
-        "In Sequence A, all four operations execute strictly in issue order on the single (default) stream, with no overlap between any of them, since operations within one stream are always ordered relative to each other; in Sequence B, because stream1 and stream2 are independent, kernelA's compute (stream1) can execute concurrently with d_b's H2D copy (stream2) — the copy engine and the compute (SM) engine are separate hardware resources that can run truly in parallel, so the copy for kernelB's input can be prefetched while kernelA is still running",
-        "Sequence B is actually slower because using multiple streams forces additional synchronization between them",
-        "Neither sequence can overlap copy and compute, because a GPU has only one engine that handles both memory transfers and kernel execution",
+        "Both sequences behave the same: the driver inspects the arguments, sees that d_b's copy is independent of kernelA, and overlaps them whichever stream they were issued on",
+        "Sequence B is slower: operations in different streams have to be reconciled against each other at the next synchronization point, and that costs more than the overlap wins back",
+        "Neither can overlap a copy with a kernel: the copy engine drives its transfers through the SMs, so a running kernel and an in-flight transfer are mutually exclusive on one device",
+        "Sequence A runs all four in issue order, since one stream is an ordered queue; in Sequence B kernelA can hold the SMs while stream2's copy runs on the copy engine",
       ],
-      correctIndex: 1,
-      // pruned
+      correctIndex: 3,
     },
     explanation:
       "A CUDA stream is an ordered queue: operations issued into the same stream are guaranteed to " +
       "execute in the order they were issued, with each waiting for the previous one to complete " +
-      "(this is what 'stream' ordering means), which is exactly why Sequence A cannot overlap any " +
+      "(this is what 'stream' ordering means), so Sequence A cannot overlap any " +
       "of its four operations even though, e.g., copying d_b in principle has nothing to do with " +
       "kernelA. Operations issued into different streams have no such ordering constraint relative " +
       "to each other, so the hardware scheduler is free to run them concurrently if the underlying " +
-      "engines are available — modern GPUs expose separate copy engines (often one for H2D and one " +
+      "engines are available. Modern GPUs expose separate copy engines (often one for H2D and one " +
       "for D2H) and compute (SM) resources, so a memory transfer on stream2 genuinely can proceed on " +
       "the copy engine at the same time kernelA runs on the SMs from stream1's queue. This requires " +
       "pinned host memory (async copies from pageable memory silently serialize, as in the pinned " +
       "memory question above) and enough independent work to actually fill both engines. This " +
-      "stream-based overlap of transfer and compute — pipelining a large problem into chunks, each " +
-      "on its own stream, so chunk k's compute overlaps chunk k+1's transfer — is the standard " +
-      "technique for hiding PCIe transfer latency behind useful GPU work.",
+      "stream-based overlap of transfer and compute, pipelining a large problem into chunks each on " +
+      "its own stream so chunk k's compute overlaps chunk k+1's transfer, is the standard technique " +
+      "for hiding PCIe transfer latency behind useful GPU work.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/asynchronous-execution.html#cuda-streams",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#asynchronous-transfers-and-overlapping-transfers-with-computation",
+      "https://developer.nvidia.com/blog/how-overlap-data-transfers-cuda-cc/",
+    ],
   },
   {
     id: "gpu-cuda-simt-vs-simd-01",
     category: "gpu-cuda",
     difficulty: "medium",
-    title: "SIMT execution model vs classic SIMD",
+    title: "The SIMT execution model compared with classic SIMD",
     tags: ["simt", "simd", "execution-model"],
     type: "trace",
     prompt:
@@ -1213,18 +1335,17 @@ kernelB<<<blocks, threads, 0, stream2>>>(d_b);`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "There is no real distinction — SIMT is purely a marketing term for SIMD",
-        "In SIMT, each thread is programmed as if it has its own independent instruction pointer, register state, and call stack, and can branch independently in source code — the hardware then handles divergent per-thread control flow itself via predication and reconvergence (as in the warp-divergence questions above), transparently to the programmer. In classic SIMD, there is a single instruction stream operating on a vector of data lanes with no notion of a lane taking an independent branch at all — any lane-dependent behavior must be expressed explicitly via manual masking/blending in the vector code itself, visible in the source",
-        "SIMD supports divergent control flow between lanes natively in hardware, while SIMT does not support divergence at all and requires all threads to always take the same path",
-        "SIMT and SIMD differ only in vector width — SIMT is simply SIMD with a 32-wide vector register instead of 4/8/16-wide",
+        "SIMT gives each thread its own logical program counter, registers, and stack, so it may branch on its own data with divergence handled in hardware; SIMD needs hand-written masks and blends",
+        "There is no real distinction: SIMT is a marketing name for masked vector execution, since a divergent warp ends up running both sides of the branch under masks anyway",
+        "It is the reverse of how it is usually told: SIMD hardware tracks a predicate per lane natively, while a warp must take one path and the programmer has to sort data so the lanes agree",
+        "The distinction is width and register file layout: a warp is a 32-wide vector unit against a CPU's 4- to 16-wide one, and everything else about the two execution models lines up",
       ],
-      correctIndex: 1,
-      // pruned
+      correctIndex: 0,
     },
     explanation:
       "The programming-model distinction is real, even though the underlying execution on a warp " +
       "is, at the hardware level, close to SIMD-like lockstep issue. In SIMT (Single Instruction, " +
-      "Multiple Threads), the programmer writes ordinary scalar-looking code per thread — each " +
+      "Multiple Threads), the programmer writes ordinary scalar-looking code per thread: each " +
       "thread has its own logical program counter, registers, and local/call-stack state, and is " +
       "free to branch based on its own thread-specific data (as in every kernel in this set with an " +
       "`if (threadIdx.x ...)`). The hardware is responsible for detecting when threads within a warp " +
@@ -1233,17 +1354,21 @@ kernelB<<<blocks, threads, 0, stream2>>>(d_b);`,
       "independent thread scheduling), entirely transparent to the source code. In classic SIMD " +
       "(e.g., x86 SSE/AVX, ARM NEON), there is exactly one instruction stream applied uniformly to " +
       "all lanes of a vector register, and the vector ISA has no native concept of 'this lane " +
-      "branches differently' — any lane-conditional behavior has to be hand-encoded by the " +
+      "branches differently'. Any lane-conditional behavior has to be hand-encoded by the " +
       "programmer or compiler as explicit compare/mask/blend/select instructions operating on the " +
       "whole vector. SIMT's key innovation is moving that masking/divergence-handling burden from " +
       "the programmer into the hardware/compiler, at the cost of the performance penalty divergent " +
       "warps pay when threads do disagree.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/03-advanced/advanced-kernel-programming.html#simt-execution-model",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/01-introduction/programming-model.html#warps-and-simt",
+    ],
   },
   {
     id: "gpu-cuda-shared-mem-race-01",
     category: "gpu-cuda",
     difficulty: "hard",
-    title: "Cross-warp shared-memory producer/consumer without a barrier",
+    title: "A cross-warp flag-and-payload spin-wait in shared memory",
     tags: ["shared-memory", "race-condition", "warp-scheduling"],
     type: "trace",
     prompt:
@@ -1271,17 +1396,16 @@ __global__ void crossWarp() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "This is guaranteed safe: warps within a block always execute in ascending warp-index order, so warp 0 always finishes before warp 1 begins",
-        "This is a genuine, hardware-level race with no correctness guarantee: the CUDA programming model makes no guarantee about the relative execution order or interleaving of different warps within a block absent explicit synchronization — warp 1 may run before, after, or interleaved with warp 0 in any order the SM's warp scheduler chooses, so thread 32's spin-wait on `flag` is not even guaranteed to observe thread 0's write in a timely or ordered fashion without a proper memory fence, and even if it does see flag==1, nothing guarantees `payload`'s write becomes visible to thread 32 before the flag's write does, absent a fence enforcing that ordering",
-        "This will deadlock, because thread 32 cannot spin-wait on shared memory written by a different warp",
-        "This is safe as long as both threads are within the same thread block, regardless of which warp they're in, since all shared memory writes within a block are automatically sequentially consistent",
+        "Safe: warps of a block are issued in ascending warp-index order, so warp 0's stores have all landed before warp 1 executes its first instruction",
+        "A genuine race: nothing orders warps within a block, and even once thread 32 sees flag == 1, the write to payload need not be visible to it",
+        "It deadlocks on every architecture: thread 32's spin holds the SM's issue slots for warp 1, and warp 0 can never be scheduled to write the flag",
+        "Safe within a block: shared-memory writes are sequentially consistent to every thread of the block, and only cross-block visibility needs __threadfence()",
       ],
       correctIndex: 1,
-      // pruned
     },
     explanation:
       "CUDA's execution model explicitly does not guarantee any relative ordering or interleaving " +
-      "between different warps of the same block — the SM's warp scheduler is free to run resident " +
+      "between different warps of the same block. The SM's warp scheduler is free to run resident " +
       "warps in whatever order and interleaving it chooses (including time-slicing them at " +
       "instruction granularity), and there is no notion of warp 0 having scheduling priority over " +
       "warp 1 merely because of its lower index. A hand-rolled 'flag' spin-wait pattern like this " +
@@ -1289,18 +1413,26 @@ __global__ void crossWarp() {
       "since flag could still hold stale shared-memory contents that happen to already look nonzero) " +
       "before thread 0 has written anything at all; second, even once thread 0's write to `flag` " +
       "is observed, nothing in this code enforces that the earlier write to `payload` is visible " +
-      "to thread 32 by that point — the compiler and hardware are free to reorder or delay the " +
+      "to thread 32 by that point. The compiler and hardware are free to reorder or delay the " +
       "`payload` write relative to the `flag` write absent an explicit fence like " +
-      "`__threadfence_block()` between them. The correct, supported way to synchronize *all* " +
+      "`__threadfence_block()` between them. There is a third hazard on the reader's side: `flag` " +
+      "is a plain `__shared__ int`, so the compiler is entitled to load it once and keep it in a " +
+      "register, turning the spin into an infinite loop that never reloads the variable at all. " +
+      "The correct, supported way to synchronize *all* " +
       "threads in a block is `__syncthreads()`; genuinely producer/consumer patterns across warps " +
       "that can't use a full block barrier need explicit fences (`__threadfence_block()`) combined " +
       "with atomics on the flag, not a plain spin on a plain shared variable.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#memory-fence-functions",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cuda-cpp-memory-model.html#data-races",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/03-advanced/advanced-kernel-programming.html#hardware-multithreading",
+    ],
   },
   {
     id: "gpu-cuda-pcie-bottleneck-01",
     category: "gpu-cuda",
     difficulty: "easy",
-    title: "PCIe transfer time dominating a tiny kernel",
+    title: "Two 1 KB host-device transfers around a 256-element add kernel",
     tags: ["pcie", "transfer-overhead", "data-residency"],
     type: "trace",
     prompt:
@@ -1312,18 +1444,18 @@ __global__ void crossWarp() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "The kernel's compute time dominates — 256 floating point additions is enough work to saturate the GPU's compute throughput",
-        "The PCIe host-device transfer overhead dominates: each cudaMemcpy has a largely fixed latency floor (typically several microseconds) regardless of how little data is moved, which for a 1 KB transfer is far larger than the actual transfer-bandwidth-limited time and utterly dwarfs the kernel's sub-microsecond compute; for an iterative algorithm, repeatedly round-tripping data to the host every iteration means this fixed overhead is paid every single iteration — keeping the data resident on the GPU across iterations (allocating once, launching multiple kernels back-to-back, only copying results back at the very end) avoids re-paying that cost each time",
-        "Kernel launch overhead and PCIe transfer overhead are the same cost and can be ignored as equal contributors",
-        "The result is undefined because 256 elements is not a multiple of the warp size 32... it is (256 = 8*32), so this option is simply wrong on its premise",
+        "The kernel's compute dominates: 256 floating-point additions plus the write of the result array back to device memory outweigh a host-device transfer this small",
+        "The two cudaMemcpy calls dominate: each pays a fixed latency floor of a few microseconds whatever its size, so an iterative version should keep data device-resident",
+        "Launch overhead dominates and the transfers are free: a payload this small rides along in the launch's command buffer rather than being DMA'd separately",
+        "Nothing dominates: at roughly 16 GB/s, PCIe moves 1 KB in well under a microsecond, so the total sits close to the kernel's own few hundred nanoseconds",
       ],
       correctIndex: 1,
-      // pruned
     },
     explanation:
-      "PCIe (or NVLink) host-device transfers, like kernel launches, have a largely fixed latency " +
-      "floor per transfer — driver overhead, transfer setup, and the interconnect's round-trip " +
-      "latency — that dominates for small payloads; achieving anything close to PCIe's rated peak " +
+      "PCIe (or NVLink) host-device transfers, like kernel launches, have a largely fixed " +
+      "per-transfer latency floor made up of driver overhead, transfer setup, and the " +
+      "interconnect's round trip, and that floor dominates for small payloads; anything close to " +
+      "PCIe's rated peak " +
       "bandwidth requires transfers on the order of many megabytes, not kilobytes. A 1 KB transfer " +
       "spends nearly all of its time paying that fixed overhead rather than actually being " +
       "bandwidth-limited, and with the kernel itself doing only a few hundred nanoseconds of real " +
@@ -1332,16 +1464,20 @@ __global__ void crossWarp() {
       "porting a small, frequently-called computation to the GPU can make it *slower* overall " +
       "purely due to transfer overhead, even though the GPU computes the kernel itself far faster " +
       "than a CPU would. The standard fix for an iterative algorithm is to keep the working data " +
-      "resident in device memory across iterations — allocate once, launch each iteration's kernel " +
+      "resident in device memory across iterations: allocate once, launch each iteration's kernel " +
       "back-to-back operating on the already-resident device buffers, and copy results back to the " +
-      "host only when actually needed (e.g., once at the end, or periodically for logging) — turning " +
+      "host only when actually needed (e.g., once at the end, or periodically for logging), turning " +
       "many small fixed-overhead transfers into at most a couple of large ones.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#data-transfer-between-host-and-device",
+      "https://developer.nvidia.com/blog/how-optimize-data-transfers-cuda-cc/",
+    ],
   },
   {
     id: "gpu-cuda-register-spill-01",
     category: "gpu-cuda",
     difficulty: "hard",
-    title: "Register spilling to local memory",
+    title: "An unrolled kernel with 256 simultaneously live per-thread values",
     tags: ["registers", "local-memory", "spilling", "latency"],
     type: "trace",
     prompt:
@@ -1353,47 +1489,54 @@ __global__ void crossWarp() {
       language: "cpp",
       filename: "kernel.cu",
       code: `__global__ void __launch_bounds__(128, 1) heavyUnroll(float* out, const float* in) {
-    float acc[64];   // 64 simultaneously-live locals, heavily used throughout
+    float acc[256];   // 256 simultaneously-live locals, heavily used throughout
     #pragma unroll
-    for (int i = 0; i < 64; ++i) acc[i] = in[threadIdx.x * 64 + i];
-    // ... extensive per-element compute reusing all 64 values repeatedly ...
+    for (int i = 0; i < 256; ++i) acc[i] = in[threadIdx.x * 256 + i];
+    // ... extensive per-element compute reusing all 256 values repeatedly ...
 }`,
     },
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "The compiler always simply refuses to compile the kernel if it needs too many registers",
-        "The excess variables 'spill' to what CUDA calls local memory — despite the name, this is NOT on-chip storage; it is a per-thread private region carved out of the same off-chip DRAM as global memory (cached through L1/L2 like global memory accesses), so spilled variables incur latency far closer to a global memory access than to a register access, and a kernel with heavy spilling can slow down significantly even though it 'has more variables to work with'",
-        "The excess variables are automatically promoted to shared memory instead, which is nearly as fast as registers",
-        "The excess variables silently alias onto already-used registers, causing incorrect results but no performance change",
+        "ptxas refuses the kernel: exceeding the per-thread register budget under an explicit __launch_bounds__ is a compile-time error rather than something the compiler works around",
+        "The overflow is placed in shared memory, carved silently out of the block's shared-memory allocation, which runs at close to register speed but eats into occupancy",
+        "The values all stay in registers and the cost is purely occupancy: the SM simply drops to one resident warp so that one thread can own the whole register file",
+        "The excess values spill to local memory, which despite the name is per-thread off-chip DRAM cached through L1/L2, so a spilled access costs closer to a global load than a register read",
       ],
-      correctIndex: 1,
-      // pruned
+      correctIndex: 3,
     },
     explanation:
       "'Local memory' is one of the more misleading terms in the CUDA memory model: it sounds like " +
       "it should be fast, on-chip, thread-private storage, but architecturally it is simply a " +
-      "private, per-thread-indexed region of the same off-chip DRAM backing global memory — it goes " +
+      "private, per-thread-indexed region of the same off-chip DRAM backing global memory. It goes " +
       "through the same L1/L2 cache hierarchy as global memory accesses, and a cache miss on a " +
       "spilled local variable pays essentially the same few-hundred-cycle latency as a global memory " +
       "miss. When the compiler's register allocator cannot fit all of a kernel's live values into " +
       "the per-thread register budget (bounded by the architectural max, or a tighter cap imposed by " +
       "`__launch_bounds__`/`--maxrregcount` to preserve occupancy), it spills the excess values to " +
-      "local memory, inserting the necessary loads/stores transparently — the source code doesn't " +
+      "local memory, inserting the necessary loads/stores transparently. The source code doesn't " +
       "change, but the generated SASS now contains many more (and much higher latency) memory " +
       "operations than a variable that stayed in a register would need. A kernel that keeps too much " +
-      "simultaneously live (like 64 heavily-reused accumulators here) is a classic way to trigger " +
+      "simultaneously live (like the 256 heavily-reused accumulators here) is a classic way to trigger " +
       "this: it can end up slower than a version with less unrolling or fewer live values, precisely " +
       "because 'more work per instruction' is undone by every one of those values effectively " +
-      "becoming a global-memory-latency access. `nvcc --ptxas-options=-v` reports spill loads/stores " +
+      "becoming a global-memory-latency access. A per-thread array like `acc` has a second way to " +
+      "land in local memory regardless of size: if it is ever indexed by a value the compiler " +
+      "cannot resolve at compile time, it cannot live in registers at all, since registers are not " +
+      "addressable. `nvcc --ptxas-options=-v` reports spill loads/stores " +
       "per kernel, and Nsight Compute flags high local memory traffic, both standard ways to catch " +
       "this in practice.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#local-memory",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#local-memory",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#launch-bounds",
+    ],
   },
   {
     id: "gpu-cuda-multi-gpu-nccl-01",
     category: "gpu-cuda",
     difficulty: "medium",
-    title: "Peer-to-peer GPU transfer vs routing through host memory",
+    title: "cudaMemcpyPeerAsync versus staging through a pinned host buffer",
     tags: ["multi-gpu", "nvlink", "peer-access", "nccl"],
     type: "trace",
     prompt:
@@ -1405,43 +1548,47 @@ __global__ void crossWarp() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "No difference — both approaches move the same number of bytes over the same physical PCIe/NVLink topology regardless of the API used",
-        "Version A is typically substantially faster: with peer access enabled (and ideally an NVLink interconnect between the two GPUs, which offers far higher bandwidth than PCIe), data moves directly from GPU 0's memory to GPU 1's memory in a single transfer, potentially without even routing through the host's root complex. Version B requires two full transfers (device-to-host, then host-to-device) each paying its own latency/bandwidth cost and consuming host-side PCIe bandwidth and staging buffer capacity twice, roughly doubling the data movement for the same logical transfer",
-        "Version B is faster because host memory has higher bandwidth than any GPU-to-GPU interconnect",
-        "Peer access provides no bandwidth benefit over host staging — it exists purely to simplify application code",
+        "No difference: the same bytes cross the same physical links either way, and cudaMemcpyPeerAsync is a convenience wrapper the driver expands into the two host-staged copies",
+        "Version B is usually faster: host DRAM bandwidth exceeds that of any GPU-to-GPU link, and the staging buffer lets the two hops pipeline against each other",
+        "Version A is typically much faster: with peer access, especially over NVLink, the payload crosses once directly between the two devices' memories, where Version B moves it twice",
+        "Peer access buys latency, not bandwidth: both paths are still limited by the same PCIe link, so NCCL reaches for it only when messages are small enough to be latency-bound",
       ],
-      correctIndex: 1,
-      // pruned
+      correctIndex: 2,
     },
     explanation:
       "When peer-to-peer access is enabled between two GPUs on the same node (and supported by the " +
-      "topology — same PCIe switch/root complex, or connected via NVLink), the GPUs' memory " +
+      "topology, e.g. same PCIe switch/root complex, or connected via NVLink), the GPUs' memory " +
       "controllers can address each other's device memory directly, so `cudaMemcpyPeerAsync` (or a " +
       "plain `cudaMemcpy` with peer access enabled) can move data GPU-to-GPU in a single transfer, " +
-      "at the bandwidth of whichever interconnect actually carries it — NVLink offers considerably " +
-      "higher bandwidth than PCIe, which is precisely why multi-GPU training/inference workloads on " +
+      "at the bandwidth of whichever interconnect actually carries it. NVLink offers considerably " +
+      "higher bandwidth than PCIe, which is the main reason multi-GPU training and inference on " +
       "NVLink-connected systems (as opposed to plain PCIe-only ones) scale so much better across " +
       "GPUs. Without peer access, the driver has no choice but to stage the transfer through host " +
       "memory: a device-to-host copy off GPU 0 followed by a separate host-to-device copy onto GPU " +
       "1, which moves the same logical payload twice across the host's PCIe links and adds the " +
       "latency and bandwidth cost of both hops plus the staging buffer overhead, roughly doubling " +
-      "the effective transfer cost for the same data. This is exactly why NCCL (NVIDIA's collective " +
+      "the effective transfer cost for the same data. NCCL (NVIDIA's collective " +
       "communication library, used for multi-GPU all-reduce, broadcast, etc. in distributed " +
       "training) actively probes and prefers direct peer/NVLink paths over host-staged transfers, " +
       "falling back to host-mediated copies only when direct peer access genuinely isn't available " +
       "(e.g., GPUs on different, unconnected PCIe root complexes, or across nodes where network " +
       "transport like InfiniBand with GPUDirect RDMA becomes the relevant direct-path analogue).",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/03-advanced/multi-gpu-systems.html#peer-to-peer-memory-transfers",
+      "https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__PEER.html",
+      "https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/index.html",
+    ],
   },
   {
     id: "gpu-cuda-independent-thread-scheduling-01",
     category: "gpu-cuda",
     difficulty: "hard",
-    title: "Warp-synchronous code and Volta+ independent thread scheduling",
+    title: "An intra-warp shared-memory handoff across a divergent branch",
     tags: ["independent-thread-scheduling", "warp-sync", "syncwarp", "volta"],
     type: "trace",
     prompt:
-      "This kernel relies on the old 'warp-synchronous programming' assumption — common in " +
-      "pre-Volta CUDA code — that all 32 threads of a warp are always implicitly lockstep, so no " +
+      "This kernel relies on the old 'warp-synchronous programming' assumption, common in " +
+      "pre-Volta CUDA code, that all 32 threads of a warp are always implicitly lockstep, so no " +
       "explicit synchronization is needed for one lane to see another lane's shared-memory write " +
       "within the same warp. What happens when this kernel runs on a Volta-or-later GPU?",
     snippet: {
@@ -1453,7 +1600,7 @@ __global__ void warpSyncAssumption() {
     int lane = threadIdx.x % 32;
     if (lane < 16) {
         buf[lane] = compute(lane);
-        // old assumption: no __syncwarp() needed — "the warp is always in lockstep"
+        // old assumption: no __syncwarp() needed, "the warp is always in lockstep"
     } else {
         int v = buf[lane - 16];   // read what the "other half" of the warp wrote
         use(v);
@@ -1463,22 +1610,21 @@ __global__ void warpSyncAssumption() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "This is guaranteed correct on every architecture, since a warp is always executed in strict lockstep by definition, regardless of CUDA compute capability",
-        "This is unreliable on Volta and later: prior to Volta, divergent branches were handled with a hardware reconvergence stack that, in practice, often executed one side of a branch fully before the other, which could accidentally make warp-synchronous code 'work' without explicit synchronization. Starting with Volta's independent thread scheduling, each thread has its own program counter and call stack, and the hardware is explicitly permitted to interleave the execution of divergent branches within a warp at finer granularity — so the else-branch's read of buf[lane-16] is no longer guaranteed to happen after the if-branch's write, and this code needs an explicit __syncwarp() (or restructuring) to be correct",
-        "This causes a compile-time error on Volta and later, since the compiler statically detects the missing __syncwarp()",
-        "Independent thread scheduling only affects performance, never correctness — this code was always safe and remains safe on every architecture",
+        "Correct on every architecture: a warp executes in strict lockstep by definition, so the if-branch's write to buf always lands before the else-branch's read of it",
+        "Unreliable on Volta and later: independent thread scheduling can interleave a warp's divergent paths, so the read is no longer ordered after the write without a __syncwarp()",
+        "Rejected at compile time on Volta and later: nvcc diagnoses a divergent shared-memory dependency inside a warp and demands an explicit lane mask argument on the read",
+        "Correct on Volta and later, though not before: giving each thread its own program counter is what makes one lane's shared-memory write visible to another without a barrier",
       ],
       correctIndex: 1,
-      // pruned
     },
     explanation:
       "Pre-Volta GPUs implemented warp divergence using a single shared program counter plus a " +
       "hardware reconvergence stack: on a divergent branch, the warp executed one path to " +
-      "completion (or to the next divergence point), then the other, then reconverged — a rigid but " +
-      "predictable enough pattern that some real-world code came to informally rely on one branch's " +
-      "side effects (like a shared-memory write) being fully visible before the other branch ran, " +
-      "without ever calling an explicit intra-warp synchronization primitive. This was always " +
-      "technically an unsupported assumption ('implicit warp-synchronous programming', which " +
+      "completion (or to the next divergence point), then the other, then reconverged. This was a " +
+      "rigid but predictable enough pattern that some real-world code came to informally rely on " +
+      "one branch's side effects (like a shared-memory write) being fully visible before the other " +
+      "branch ran, without ever calling an explicit intra-warp synchronization primitive. This was " +
+      "always technically an unsupported assumption ('implicit warp-synchronous programming', which " +
       "NVIDIA's own documentation warned against), but it often happened to work. Starting with " +
       "Volta, the architecture introduced independent thread scheduling: each thread gets its own " +
       "program counter and call stack, and the hardware is explicitly free to interleave execution " +
@@ -1487,12 +1633,18 @@ __global__ void warpSyncAssumption() {
       "producer-consumer patterns and mutual-exclusion primitives within a warp. That means code " +
       "which never used an explicit barrier can now genuinely observe the else-branch executing " +
       "before, during, or interleaved with the if-branch's write, producing stale or garbage reads " +
-      "of `buf` that would not have occurred on older hardware. The fix is `__syncwarp()` (with an " +
-      "appropriate active-lane mask) between the divergent write and the later read that depends on " +
-      "it, which is precisely why NVIDIA added `__syncwarp()` and the `_sync` suffix (`__shfl_sync`, " +
+      "of `buf` that would not have occurred on older hardware. The fix is to restructure so that " +
+      "all 32 lanes reach one common `__syncwarp()` between the write and the read: do the write in " +
+      "the if-branch, call `__syncwarp()` outside the branch where every lane arrives at it, then " +
+      "read. A `__syncwarp()` placed inside one side of the branch only synchronizes the lanes on " +
+      "that path, which is no help here. NVIDIA added `__syncwarp()` and the `_sync` suffix (`__shfl_sync`, " +
       "`__ballot_sync`, etc.) to the warp-level primitive family starting with Volta's CUDA 9 " +
-      "toolkit — making the required synchronization explicit rather than an unstated hardware " +
+      "toolkit, making the required synchronization explicit rather than an unstated hardware " +
       "coincidence.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/03-advanced/advanced-kernel-programming.html#independent-thread-scheduling",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#warp-synchronization-function",
+      "https://developer.nvidia.com/blog/using-cuda-warp-level-primitives/",
+    ],
   },
 ];
-// result in sdata[0]
