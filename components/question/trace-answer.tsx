@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CheckIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { InlineText } from "@/components/question/inline-code";
@@ -28,6 +29,7 @@ function MultipleChoiceAnswer({
   onAnswered: TraceAnswerProps["onAnswered"];
 }) {
   const [selected, setSelected] = useState<number | null>(null);
+  const locked = selected !== null;
 
   function pick(idx: number) {
     if (selected !== null) return;
@@ -37,16 +39,29 @@ function MultipleChoiceAnswer({
 
   return (
     <div className="space-y-2">
+      {/* Announced to screen readers immediately on answer — the color-coded
+       * choice states below aren't otherwise exposed to assistive tech, and
+       * the choice buttons become natively disabled (removed from the tab
+       * order) once locked. */}
+      <p role="status" aria-live="polite" className="sr-only">
+        {locked &&
+          (selected === format.correctIndex
+            ? "Correct!"
+            : `Incorrect. The correct answer is ${String.fromCharCode(65 + format.correctIndex)}: ${format.choices[format.correctIndex]}`)}
+      </p>
+
       {format.choices.map((choice, idx) => {
-        const locked = selected !== null;
         const isCorrect = idx === format.correctIndex;
         const isPicked = idx === selected;
 
         let stateClass = "border-border/60 hover:border-border hover:bg-muted/50";
+        let letterClass = "text-muted-foreground";
         if (locked && isCorrect) {
-          stateClass = "border-emerald-500/60 bg-emerald-500/10 text-emerald-300";
+          stateClass = "!border-emerald-500 !bg-emerald-500/20 text-emerald-200";
+          letterClass = "text-emerald-200";
         } else if (locked && isPicked && !isCorrect) {
-          stateClass = "border-red-500/60 bg-red-500/10 text-red-300";
+          stateClass = "!border-red-500 !bg-red-500/20 text-red-200";
+          letterClass = "text-red-200";
         } else if (locked) {
           stateClass = "border-border/40 opacity-50";
         }
@@ -60,10 +75,28 @@ function MultipleChoiceAnswer({
             disabled={locked}
             className={`h-auto w-full justify-start whitespace-normal rounded-lg border px-4 py-3 text-left text-sm font-normal disabled:opacity-100 ${stateClass}`}
           >
-            <span className="mr-2 font-mono text-xs text-muted-foreground">
+            <span className={`mr-2 font-mono text-xs ${letterClass}`}>
               {String.fromCharCode(65 + idx)}
             </span>
-            {choice}
+            <span className="flex-1">{choice}</span>
+            {locked && isCorrect && (
+              <CheckIcon
+                aria-hidden="true"
+                className="ml-2 size-4 shrink-0 text-emerald-300"
+              />
+            )}
+            {locked && isPicked && !isCorrect && (
+              <XIcon
+                aria-hidden="true"
+                className="ml-2 size-4 shrink-0 text-red-300"
+              />
+            )}
+            {locked && isCorrect && (
+              <span className="sr-only"> — correct answer</span>
+            )}
+            {locked && isPicked && !isCorrect && (
+              <span className="sr-only"> — your answer, incorrect</span>
+            )}
           </Button>
         );
       })}

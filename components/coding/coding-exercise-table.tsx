@@ -88,8 +88,14 @@ export function CodingExerciseTable({
           value={category}
           onValueChange={(v) => handleCategoryChange(v as Category | "all")}
         >
-          <SelectTrigger size="sm" className="font-mono text-xs">
-            <SelectValue placeholder="Category" />
+          <SelectTrigger size="sm" className="w-32 font-mono text-xs">
+            <SelectValue placeholder="Category">
+              {(value: Category | "all" | null) =>
+                !value || value === "all"
+                  ? "All"
+                  : CATEGORY_META[value].shortLabel
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All categories</SelectItem>
@@ -105,8 +111,14 @@ export function CodingExerciseTable({
           value={language}
           onValueChange={(v) => handleLanguageChange(v as Language | "all")}
         >
-          <SelectTrigger size="sm" className="font-mono text-xs">
-            <SelectValue placeholder="Language" />
+          <SelectTrigger size="sm" className="w-32 font-mono text-xs">
+            <SelectValue placeholder="Language">
+              {(value: Language | "all" | null) =>
+                !value || value === "all"
+                  ? "All languages"
+                  : LANGUAGE_META[value].label
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All languages</SelectItem>
@@ -165,10 +177,11 @@ export function CodingExerciseTable({
                 key={exercise.id}
                 className="cursor-pointer border-border/60"
               >
-                <TableCell className="p-0">
+                <TableCell className="max-w-56 min-w-28 p-0">
                   <Link
                     href={`/coding/${exercise.id}`}
-                    className="block px-2 py-2.5 text-sm text-foreground"
+                    title={exercise.title}
+                    className="block truncate px-2 py-2.5 text-sm text-foreground"
                   >
                     {exercise.title}
                   </Link>

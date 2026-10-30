@@ -2,6 +2,10 @@
 /node_modules
 /.pnp
 .pnp.*
+
+# env files
+.env
+.env*.local
 .yarn/*
 !.yarn/patches
 !.yarn/plugins

@@ -4,6 +4,7 @@ import { SiteHeader } from "@/components/layout/site-header";
 import { CategoryProgressBar } from "@/components/progress/category-progress-bar";
 import { MissedQuestionsList } from "@/components/progress/missed-questions-list";
 import { ResetProgressDialog } from "@/components/progress/reset-progress-dialog";
+import { WeakestCategoryCallout } from "@/components/progress/weakest-category-callout";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProgress } from "@/lib/progress-store";
 import { CATEGORIES, CATEGORY_META } from "@/types/category";
@@ -21,7 +22,8 @@ export default function ProgressPage() {
               Progress
             </h1>
             <p className="text-sm text-muted-foreground">
-              Your answer history is stored locally in this browser.
+              Answer history syncs to your account when signed in, or stays
+              local to this browser otherwise.
             </p>
           </div>
           <ResetProgressDialog />
@@ -36,6 +38,10 @@ export default function ProgressPage() {
             longest={state.streak.longest}
           />
         )}
+
+        <div className="mt-6">
+          <WeakestCategoryCallout />
+        </div>
 
         <section className="mt-10 space-y-5">
           <h2 className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
