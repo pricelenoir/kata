@@ -1,8 +1,12 @@
+import "server-only";
 import { ALL_QUESTIONS, QUESTIONS_BY_CATEGORY } from "@/content/questions";
 import { seededShuffle } from "@/lib/shuffle";
-import type { Category } from "@/types/category";
-import type { Question } from "@/types/question";
-import type { QuestionAttempt } from "@/types/progress";
+import { CATEGORIES, type Category } from "@/types/category";
+import {
+  toQuestionSummary,
+  type Question,
+  type QuestionSummary,
+} from "@/types/question";
 
 export function getQuestionsByCategory(category: Category): Question[] {
   return QUESTIONS_BY_CATEGORY[category];
@@ -12,6 +16,19 @@ export function getQuestionsByCategory(category: Category): Question[] {
  * but the flat browse table shouldn't read as "all cpp, then all os, …". */
 export function getAllQuestions(): Question[] {
   return seededShuffle(ALL_QUESTIONS, 1337);
+}
+
+/** Same order as getAllQuestions(), slimmed down for client components. */
+export function getAllQuestionSummaries(): QuestionSummary[] {
+  return getAllQuestions().map(toQuestionSummary);
+}
+
+/** Just the ids, per category — all the progress store needs to compute
+ * answered/total stats without the question bank itself. */
+export function getQuestionIdsByCategory(): Record<Category, string[]> {
+  return Object.fromEntries(
+    CATEGORIES.map((c) => [c, QUESTIONS_BY_CATEGORY[c].map((q) => q.id)]),
+  ) as Record<Category, string[]>;
 }
 
 export function getQuestionById(id: string): Question | undefined {
@@ -36,34 +53,4 @@ export function getQuestionIndex(category: Category, id: string): number {
 
 export function getTotalQuestionCount(): number {
   return ALL_QUESTIONS.length;
-}
-
-export interface RecommendedQuestion {
-  question: Question;
-  /** "retry" when it was previously answered wrong, "unanswered" when it's
-   * never been attempted. Retries take priority — a known gap is more
-   * valuable to close than fresh material. */
-  reason: "retry" | "unanswered";
-}
-
-/** Walks `questions` in the given order (typically the same interleaved
- * order the browse table renders, so "first" matches what a user actually
- * sees) and returns the single question most worth doing next: the first
- * incorrectly-answered one, or otherwise the first never-attempted one.
- * Returns undefined once every question has been answered correctly. */
-export function getRecommendedQuestion(
-  questions: Question[],
-  attempts: Record<string, QuestionAttempt>,
-): RecommendedQuestion | undefined {
-  for (const question of questions) {
-    if (attempts[question.id]?.status === "incorrect") {
-      return { question, reason: "retry" };
-    }
-  }
-  for (const question of questions) {
-    if (!attempts[question.id]) {
-      return { question, reason: "unanswered" };
-    }
-  }
-  return undefined;
 }

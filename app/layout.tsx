@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ProgressProvider } from "@/lib/progress-store";
+import { getQuestionIdsByCategory } from "@/lib/questions";
 import "./globals.css";
 
 const fontSans = Inter({
@@ -15,7 +17,7 @@ const fontMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "kata",
+  title: { default: "kata", template: "%s · kata" },
   description:
     "Predict the output. Trace like the compiler would. C++, OS, concurrency, and networking drills.",
 };
@@ -31,7 +33,11 @@ export default function RootLayout({
       className={`dark ${fontSans.variable} ${fontMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <TooltipProvider>{children}</TooltipProvider>
+        <TooltipProvider>
+          <ProgressProvider questionIds={getQuestionIdsByCategory()}>
+            {children}
+          </ProgressProvider>
+        </TooltipProvider>
         <Analytics />
       </body>
     </html>

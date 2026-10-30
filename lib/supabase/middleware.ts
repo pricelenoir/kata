@@ -31,9 +31,12 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  // Must call getUser() (not getSession()) — it revalidates the token
-  // against Supabase instead of trusting whatever's in the cookie.
-  await supabase.auth.getUser();
+  // getClaims() (not getSession()) — it verifies the JWT signature instead
+  // of trusting whatever's in the cookie, and refreshes an expired session.
+  // With asymmetric signing keys it verifies locally against the cached
+  // JWKS, so unlike getUser() it isn't an Auth server round trip on every
+  // page request (projects still on a legacy shared secret fall back to one).
+  await supabase.auth.getClaims();
 
   return response;
 }

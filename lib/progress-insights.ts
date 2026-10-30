@@ -1,4 +1,4 @@
-import type { Stats } from "@/lib/progress-store";
+import type { Stats } from "@/lib/progress-logic";
 import type { Category } from "@/types/category";
 
 export interface CategoryStatsEntry {

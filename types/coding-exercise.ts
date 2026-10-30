@@ -38,3 +38,10 @@ export interface CodingExercise {
   testCases: TestCase[];
   timeLimitMs: number;
 }
+
+/** What the browse table gets — never the tests, which include hidden ones
+ * that must not reach the browser. */
+export type CodingExerciseSummary = Pick<
+  CodingExercise,
+  "id" | "title" | "category" | "difficulty" | "language" | "tags"
+>;

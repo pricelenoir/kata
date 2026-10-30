@@ -1,31 +1,54 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
 
+// One module-level auth subscription shared by every caller, instead of a
+// getUser() round trip + onAuthStateChange listener per mounted component.
+// Started lazily by the first subscriber and kept for the page's lifetime.
+
 /** undefined = auth state not yet known, null = signed out. */
-export function useSupabaseUser(): User | null | undefined {
-  const [user, setUser] = useState<User | null | undefined>(() =>
-    hasSupabaseConfig() ? undefined : null,
-  );
+type AuthSnapshot = User | null | undefined;
 
-  useEffect(() => {
-    if (!hasSupabaseConfig()) return;
+const INITIAL: AuthSnapshot = hasSupabaseConfig() ? undefined : null;
 
-    const supabase = createClient();
+let currentUser: AuthSnapshot = INITIAL;
+let started = false;
+const listeners = new Set<() => void>();
 
-    supabase.auth.getUser().then(({ data }) => setUser(data.user));
+function setUser(user: User | null): void {
+  currentUser = user;
+  listeners.forEach((l) => l());
+}
 
-    const { data: subscription } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setUser(session?.user ?? null);
-      },
-    );
+function start(): void {
+  if (started || !hasSupabaseConfig()) return;
+  started = true;
+  const supabase = createClient();
+  // getUser() revalidates against Supabase rather than trusting the local
+  // session, so it's the authoritative answer once it resolves.
+  supabase.auth.getUser().then(({ data }) => setUser(data.user));
+  supabase.auth.onAuthStateChange((_event, session) => {
+    setUser(session?.user ?? null);
+  });
+}
 
-    return () => subscription.subscription.unsubscribe();
-  }, []);
+function subscribe(onChange: () => void): () => void {
+  listeners.add(onChange);
+  start();
+  return () => listeners.delete(onChange);
+}
 
-  return user;
+function getSnapshot(): AuthSnapshot {
+  return currentUser;
+}
+
+function getServerSnapshot(): AuthSnapshot {
+  return INITIAL;
+}
+
+export function useSupabaseUser(): AuthSnapshot {
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }

@@ -1,3 +1,4 @@
+import "server-only";
 import type { Category } from "@/types/category";
 import type { Question } from "@/types/question";
 import { cppQuestions } from "./cpp";

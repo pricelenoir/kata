@@ -24,7 +24,7 @@ import { TablePagination } from "@/components/shared/table-pagination";
 import { DIFFICULTIES, DIFFICULTY_CLASS } from "@/lib/difficulty";
 import { CATEGORIES, CATEGORY_META } from "@/types/category";
 import { LANGUAGES, LANGUAGE_META } from "@/types/coding-exercise";
-import type { CodingExercise } from "@/types/coding-exercise";
+import type { CodingExerciseSummary } from "@/types/coding-exercise";
 import type { Difficulty } from "@/types/question";
 import type { Category } from "@/types/category";
 import type { Language } from "@/types/coding-exercise";
@@ -34,7 +34,7 @@ const PAGE_SIZE = 20;
 export function CodingExerciseTable({
   exercises,
 }: {
-  exercises: CodingExercise[];
+  exercises: CodingExerciseSummary[];
 }) {
   const [category, setCategory] = useState<Category | "all">("all");
   const [language, setLanguage] = useState<Language | "all">("all");

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { SiteHeader } from "@/components/layout/site-header";
 import { CodeBlock } from "@/components/question/code-block";
@@ -7,22 +8,50 @@ import { QuestionInteractive } from "@/components/question/question-interactive"
 import { QuestionNav } from "@/components/question/question-nav";
 import { Badge } from "@/components/ui/badge";
 import { CATEGORIES, CATEGORY_META, type Category } from "@/types/category";
-import { getQuestionById } from "@/lib/questions";
+import { getAllQuestions, getQuestionById } from "@/lib/questions";
 import { DIFFICULTY_CLASS } from "@/lib/difficulty";
 import { tokenizeCode } from "@/lib/code-highlight";
 import type { FillInBlankQuestion } from "@/types/question";
 
-export default async function QuestionPage({
+type Params = Promise<{ category: string; questionId: string }>;
+
+// Every question is known at build time, so all of them are prerendered
+// (syntax highlighting included) and anything else is a static 404.
+export const dynamicParams = false;
+
+export function generateStaticParams() {
+  return getAllQuestions().map((q) => ({
+    category: q.category,
+    questionId: q.id,
+  }));
+}
+
+function resolveQuestion(raw: string, questionId: string) {
+  if (!CATEGORIES.includes(raw as Category)) return undefined;
+  const question = getQuestionById(questionId);
+  if (!question || question.category !== raw) return undefined;
+  return question;
+}
+
+export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ category: string; questionId: string }>;
-}) {
-  const { category: raw, questionId } = await params;
-  if (!CATEGORIES.includes(raw as Category)) notFound();
-  const category = raw as Category;
+  params: Params;
+}): Promise<Metadata> {
+  const { category, questionId } = await params;
+  const question = resolveQuestion(category, questionId);
+  if (!question) return {};
+  return {
+    title: question.title,
+    description: `${CATEGORY_META[question.category].label} · ${question.difficulty} — ${question.prompt.replace(/`/g, "").slice(0, 150)}`,
+  };
+}
 
-  const question = getQuestionById(questionId);
-  if (!question || question.category !== category) notFound();
+export default async function QuestionPage({ params }: { params: Params }) {
+  const { category: raw, questionId } = await params;
+  const question = resolveQuestion(raw, questionId);
+  if (!question) notFound();
+  const category = question.category;
 
   const meta = CATEGORY_META[category];
 

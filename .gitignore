@@ -2,15 +2,16 @@
 /node_modules
 /.pnp
 .pnp.*
-
-# env files
-.env
-.env*.local
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
+
+# env files (examples are committed, real values never are)
+.env*
+!.env.example
+!.env.local.example
 
 # testing
 /coverage
@@ -21,6 +22,7 @@
 
 # production
 /build
+/judge/dist/
 
 # misc
 .DS_Store
@@ -32,9 +34,6 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
-
 # vercel
 .vercel
 
@@ -44,3 +43,8 @@ next-env.d.ts
 
 # claude
 .claude
+
+# local planning notes (kept out of commits)
+/.plans/
+/ROADMAP.md
+/QUESTION_REVIEW_TODO.md

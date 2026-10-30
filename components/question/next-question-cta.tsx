@@ -5,13 +5,17 @@ import { ArrowRightIcon, PartyPopperIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getRecommendedQuestion } from "@/lib/questions";
 import { DIFFICULTY_CLASS } from "@/lib/difficulty";
 import { useProgress } from "@/lib/progress-store";
+import { getRecommendedQuestion } from "@/lib/recommendation";
 import { CATEGORY_META } from "@/types/category";
-import type { Question } from "@/types/question";
+import type { QuestionSummary } from "@/types/question";
 
-export function NextQuestionCta({ questions }: { questions: Question[] }) {
+export function NextQuestionCta({
+  questions,
+}: {
+  questions: QuestionSummary[];
+}) {
   const { state, hydrated } = useProgress();
 
   if (!hydrated) {

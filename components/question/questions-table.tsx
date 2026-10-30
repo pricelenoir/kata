@@ -26,7 +26,7 @@ import { useProgress } from "@/lib/progress-store";
 import { DIFFICULTIES, DIFFICULTY_CLASS } from "@/lib/difficulty";
 import { CATEGORIES, CATEGORY_META } from "@/types/category";
 import type { Category } from "@/types/category";
-import type { Difficulty, Question } from "@/types/question";
+import type { Difficulty, QuestionSummary } from "@/types/question";
 
 const PAGE_SIZE = 20;
 
@@ -43,7 +43,7 @@ export function QuestionsTable({
   questions,
   initialCategory = "all",
 }: {
-  questions: Question[];
+  questions: QuestionSummary[];
   initialCategory?: Category | "all";
 }) {
   const [category, setCategory] = useState<Category | "all">(initialCategory);
