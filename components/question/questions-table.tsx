@@ -2,20 +2,20 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronRightIcon, CheckIcon, SearchIcon, XIcon } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { ChevronRightIcon, CheckIcon, XIcon } from "lucide-react";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  DIFFICULTY_LABEL,
+  DifficultyCell,
+  SearchField,
+  Segmented,
+  TopicCell,
+  TopicSelect,
+} from "@/components/shared/list-controls";
 import { TablePagination } from "@/components/shared/table-pagination";
 import { useProgress } from "@/lib/progress-store";
-import { DIFFICULTIES, DIFFICULTY_TEXT } from "@/lib/difficulty";
+import { DIFFICULTIES } from "@/lib/difficulty";
 import { cn } from "@/lib/utils";
-import { CATEGORIES, CATEGORY_META, type Category } from "@/types/category";
+import type { Category } from "@/types/category";
 import type { Difficulty, QuestionSummary } from "@/types/question";
 
 const PAGE_SIZE = 20;
@@ -28,13 +28,6 @@ const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: "incorrect", label: "Missed" },
   { value: "correct", label: "Correct" },
 ];
-
-const DIFFICULTY_LABEL: Record<Difficulty | "all", string> = {
-  all: "Any",
-  easy: "Easy",
-  medium: "Medium",
-  hard: "Hard",
-};
 
 export function QuestionsTable({
   questions,
@@ -87,51 +80,14 @@ export function QuestionsTable({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={category} onValueChange={(v) => reset(setCategory)(v as Category | "all")}>
-          <SelectTrigger size="sm" className="w-44 text-sm">
-            <SelectValue>
-              {(value: Category | "all" | null) =>
-                !value || value === "all" ? "All topics" : CATEGORY_META[value].label
-              }
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All topics</SelectItem>
-            {CATEGORIES.map((id) => (
-              <SelectItem key={id} value={id}>
-                <span className={cn("size-2 rounded-full", CATEGORY_META[id].dotClassName)} />
-                {CATEGORY_META[id].label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <div role="group" aria-label="Difficulty" className="surface flex items-center gap-0.5 rounded-lg p-0.5">
-          {(["all", ...DIFFICULTIES] as const).map((d) => (
-            <button
-              key={d}
-              type="button"
-              aria-pressed={difficulty === d}
-              onClick={() => reset(setDifficulty)(d)}
-              className={cn(
-                "h-7 rounded-md px-2.5 text-sm transition-colors",
-                difficulty === d ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {DIFFICULTY_LABEL[d]}
-            </button>
-          ))}
-        </div>
-
-        <div className="relative ml-auto w-full sm:w-72">
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => reset(setSearch)(e.target.value)}
-            placeholder="Search questions"
-            className="h-8 pl-8 text-sm"
-          />
-        </div>
+        <TopicSelect value={category} onChange={reset(setCategory)} />
+        <Segmented
+          label="Difficulty"
+          value={difficulty}
+          onChange={reset(setDifficulty)}
+          options={(["all", ...DIFFICULTIES] as const).map((d) => ({ value: d, label: DIFFICULTY_LABEL[d] }))}
+        />
+        <SearchField value={search} onChange={reset(setSearch)} placeholder="Search questions" />
       </div>
 
       <div className="surface overflow-hidden rounded-xl">
@@ -160,7 +116,6 @@ export function QuestionsTable({
         <ul className="divide-y divide-border/70">
           {pageItems.map((q) => {
             const s = statusOf(q.id);
-            const meta = CATEGORY_META[q.category];
             return (
               <li key={q.id}>
                 <Link
@@ -169,11 +124,8 @@ export function QuestionsTable({
                 >
                   <StatusIcon status={s} />
                   <span className="min-w-0 truncate text-sm text-foreground">{q.title}</span>
-                  <span className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
-                    <span className={cn("size-2 shrink-0 rounded-full", meta.dotClassName)} />
-                    <span className="truncate">{meta.label.length > 20 ? meta.shortLabel : meta.label}</span>
-                  </span>
-                  <span className={cn("text-sm", DIFFICULTY_TEXT[q.difficulty])}>{DIFFICULTY_LABEL[q.difficulty]}</span>
+                  <TopicCell category={q.category} className="hidden sm:flex" />
+                  <DifficultyCell difficulty={q.difficulty} />
                   <ChevronRightIcon className="hidden size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 sm:block" />
                 </Link>
               </li>

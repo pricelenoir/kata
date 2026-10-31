@@ -3,13 +3,20 @@ import { PageHeader } from "@/components/layout/page-header";
 import { SiteHeader } from "@/components/layout/site-header";
 import { CodingExerciseTable } from "@/components/coding/coding-exercise-table";
 import { getAllCodingExerciseSummaries } from "@/lib/coding-exercises";
+import { CATEGORIES, type Category } from "@/types/category";
 
 export const metadata: Metadata = {
   title: "Coding",
 };
 
-export default function CodingExercisesPage() {
+export default async function CodingExercisesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ category?: string }>;
+}) {
   const exercises = getAllCodingExerciseSummaries();
+  const { category } = await searchParams;
+  const initialCategory = CATEGORIES.includes(category as Category) ? (category as Category) : "all";
 
   return (
     <div className="flex flex-1 flex-col animate-in fade-in-0 duration-300">
@@ -20,7 +27,7 @@ export default function CodingExercisesPage() {
           description="Implement real systems primitives in C++ or Rust and run them against hidden tests in a sandbox."
         />
 
-        <CodingExerciseTable exercises={exercises} />
+        <CodingExerciseTable exercises={exercises} initialCategory={initialCategory} />
       </main>
     </div>
   );

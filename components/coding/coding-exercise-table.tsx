@@ -2,243 +2,107 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { ChevronRightIcon } from "lucide-react";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  DIFFICULTY_LABEL,
+  DifficultyCell,
+  SearchField,
+  Segmented,
+  TopicCell,
+  TopicSelect,
+} from "@/components/shared/list-controls";
 import { TablePagination } from "@/components/shared/table-pagination";
-import { DIFFICULTIES, DIFFICULTY_CLASS } from "@/lib/difficulty";
-import { CATEGORIES, CATEGORY_META } from "@/types/category";
-import { LANGUAGES, LANGUAGE_META } from "@/types/coding-exercise";
-import type { CodingExerciseSummary } from "@/types/coding-exercise";
-import type { Difficulty } from "@/types/question";
+import { DIFFICULTIES } from "@/lib/difficulty";
 import type { Category } from "@/types/category";
-import type { Language } from "@/types/coding-exercise";
+import { LANGUAGES, LANGUAGE_META, type CodingExerciseSummary, type Language } from "@/types/coding-exercise";
+import type { Difficulty } from "@/types/question";
 
 const PAGE_SIZE = 20;
 
 export function CodingExerciseTable({
   exercises,
+  initialCategory = "all",
 }: {
   exercises: CodingExerciseSummary[];
+  initialCategory?: Category | "all";
 }) {
-  const [category, setCategory] = useState<Category | "all">("all");
+  const [category, setCategory] = useState<Category | "all">(initialCategory);
   const [language, setLanguage] = useState<Language | "all">("all");
   const [difficulty, setDifficulty] = useState<Difficulty | "all">("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
 
   const filtered = useMemo(() => {
-    const searchQuery = search.trim().toLowerCase();
+    const q = search.trim().toLowerCase();
     return exercises.filter((e) => {
       if (category !== "all" && e.category !== category) return false;
       if (language !== "all" && !e.languages.includes(language)) return false;
       if (difficulty !== "all" && e.difficulty !== difficulty) return false;
-      if (searchQuery) {
-        const haystack = [e.title, ...(e.tags ?? [])].join(" ").toLowerCase();
-        if (!haystack.includes(searchQuery)) return false;
-      }
+      if (q && ![e.title, ...(e.tags ?? [])].join(" ").toLowerCase().includes(q)) return false;
       return true;
     });
   }, [exercises, category, language, difficulty, search]);
 
-  const pageItems = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return filtered.slice(start, start + PAGE_SIZE);
-  }, [filtered, page]);
+  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  function handleCategoryChange(value: Category | "all") {
-    setCategory(value);
+  const reset = <T,>(set: (v: T) => void) => (v: T) => {
+    set(v);
     setPage(1);
-  }
-
-  function handleLanguageChange(value: Language | "all") {
-    setLanguage(value);
-    setPage(1);
-  }
-
-  function handleDifficultyChange(value: Difficulty | "all") {
-    setDifficulty(value);
-    setPage(1);
-  }
-
-  function handleSearchChange(value: string) {
-    setSearch(value);
-    setPage(1);
-  }
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Select
-          value={category}
-          onValueChange={(v) => handleCategoryChange(v as Category | "all")}
-        >
-          <SelectTrigger size="sm" className="w-32 text-sm">
-            <SelectValue placeholder="Category">
-              {(value: Category | "all" | null) =>
-                !value || value === "all"
-                  ? "All"
-                  : CATEGORY_META[value].shortLabel
-              }
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All categories</SelectItem>
-            {CATEGORIES.map((id) => (
-              <SelectItem key={id} value={id}>
-                {CATEGORY_META[id].label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select
-          value={language}
-          onValueChange={(v) => handleLanguageChange(v as Language | "all")}
-        >
-          <SelectTrigger size="sm" className="w-32 text-sm">
-            <SelectValue placeholder="Language">
-              {(value: Language | "all" | null) =>
-                !value || value === "all"
-                  ? "All languages"
-                  : LANGUAGE_META[value].label
-              }
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All languages</SelectItem>
-            {LANGUAGES.map((id) => (
-              <SelectItem key={id} value={id}>
-                {LANGUAGE_META[id].label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <div className="flex items-center gap-1">
-          {(["all", ...DIFFICULTIES] as const).map((d) => (
-            <Button
-              key={d}
-              type="button"
-              size="sm"
-              variant={difficulty === d ? "secondary" : "ghost"}
-              onClick={() => handleDifficultyChange(d)}
-              className="text-sm capitalize"
-            >
-              {d}
-            </Button>
-          ))}
-        </div>
-
-        <Input
-          value={search}
-          onChange={(e) => handleSearchChange(e.target.value)}
-          placeholder="Search…"
-          className="ml-auto h-8 w-72 text-sm"
+        <TopicSelect value={category} onChange={reset(setCategory)} />
+        <Segmented
+          label="Difficulty"
+          value={difficulty}
+          onChange={reset(setDifficulty)}
+          options={(["all", ...DIFFICULTIES] as const).map((d) => ({ value: d, label: DIFFICULTY_LABEL[d] }))}
         />
+        <Segmented
+          label="Language"
+          value={language}
+          onChange={reset(setLanguage)}
+          options={[{ value: "all" as const, label: "All languages" }, ...LANGUAGES.map((l) => ({ value: l, label: LANGUAGE_META[l].label }))]}
+        />
+        <SearchField value={search} onChange={reset(setSearch)} placeholder="Search exercises" />
       </div>
 
-      <div className="overflow-hidden rounded-xl surface">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-border/60 hover:bg-transparent">
-              <TableHead className="text-xs text-muted-foreground">
-                Title
-              </TableHead>
-              <TableHead className="text-xs text-muted-foreground">
-                Category
-              </TableHead>
-              <TableHead className="text-xs text-muted-foreground">
-                Difficulty
-              </TableHead>
-              <TableHead className="text-xs text-muted-foreground">
-                Language
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {pageItems.map((exercise) => (
-              <TableRow
-                key={exercise.id}
-                className="cursor-pointer border-border/60"
+      <div className="surface overflow-hidden rounded-xl">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3 text-sm">
+          <span className="text-foreground">
+            Exercises
+            <span className="ml-2 rounded-full bg-foreground/[0.07] px-1.5 text-xs tabular-nums text-muted-foreground">
+              {filtered.length}
+            </span>
+          </span>
+          <span className="text-xs text-muted-foreground">C++ and Rust</span>
+        </div>
+        <ul className="divide-y divide-border/70">
+          {pageItems.map((e) => (
+            <li key={e.id}>
+              <Link
+                href={`/coding/${e.id}`}
+                className="group grid grid-cols-[1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-foreground/[0.03] sm:grid-cols-[1fr_8rem_11rem_5rem_1rem]"
               >
-                <TableCell className="max-w-56 min-w-28 p-0">
-                  <Link
-                    href={`/coding/${exercise.id}`}
-                    title={exercise.title}
-                    className="block truncate px-2 py-2.5 text-sm text-foreground"
-                  >
-                    {exercise.title}
-                  </Link>
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    variant="outline"
-                    className={`text-xs ${CATEGORY_META[exercise.category].badgeClassName}`}
-                  >
-                    {CATEGORY_META[exercise.category].shortLabel}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    variant="outline"
-                    className={`text-xs ${DIFFICULTY_CLASS[exercise.difficulty]}`}
-                  >
-                    {exercise.difficulty}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    {exercise.languages.map((id) => (
-                      <Badge
-                        key={id}
-                        variant="outline"
-                        className={`text-xs ${LANGUAGE_META[id].badgeClassName}`}
-                      >
-                        {LANGUAGE_META[id].label}
-                      </Badge>
-                    ))}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-            {pageItems.length === 0 && (
-              <TableRow className="border-border/60 hover:bg-transparent">
-                <TableCell
-                  colSpan={4}
-                  className="py-10 text-center text-sm text-muted-foreground"
-                >
-                  {exercises.length === 0
-                    ? "No coding exercises yet — check back soon."
-                    : "No exercises match these filters."}
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+                <span className="min-w-0 truncate text-sm text-foreground">{e.title}</span>
+                <span className="hidden text-sm text-muted-foreground sm:block">
+                  {e.languages.map((l) => LANGUAGE_META[l].label).join(", ")}
+                </span>
+                <TopicCell category={e.category} className="hidden sm:flex" />
+                <DifficultyCell difficulty={e.difficulty} />
+                <ChevronRightIcon className="hidden size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 sm:block" />
+              </Link>
+            </li>
+          ))}
+          {pageItems.length === 0 && (
+            <li className="px-4 py-14 text-center text-sm text-muted-foreground">No exercises match these filters.</li>
+          )}
+        </ul>
       </div>
 
-      <TablePagination
-        page={page}
-        pageSize={PAGE_SIZE}
-        totalCount={filtered.length}
-        onPageChange={setPage}
-      />
+      <TablePagination page={page} pageSize={PAGE_SIZE} totalCount={filtered.length} onPageChange={setPage} />
     </div>
   );
 }

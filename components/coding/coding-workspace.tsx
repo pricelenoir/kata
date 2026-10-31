@@ -199,7 +199,7 @@ export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate
           <ul className="divide-y divide-border/60 overflow-hidden rounded-xl surface">
             {history.map((row) => (
               <li key={row.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                <button type="button" onClick={() => show(row)} className="min-w-0 truncate text-left hover:text-sky-400">
+                <button type="button" onClick={() => show(row)} className="min-w-0 truncate text-left hover:text-brand-sky">
                   <span className="font-mono text-xs text-muted-foreground">
                     {new Date(row.created_at).toLocaleTimeString()} · {row.kind} · {LANGUAGE_META[row.language].label}
                   </span>{" "}

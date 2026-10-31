@@ -40,7 +40,7 @@ export default function AccountPage() {
 
         {user === null && (
           <p className="text-sm text-muted-foreground">
-            <Link href="/login?next=/account" className="text-sky-400 hover:text-sky-300">
+            <Link href="/login?next=/account" className="text-brand-sky hover:underline underline-offset-4">
               Log in
             </Link>{" "}
             to manage your account.

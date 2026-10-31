@@ -4,7 +4,7 @@ import { SiteHeader } from "@/components/layout/site-header";
 import { CodeBlock } from "@/components/question/code-block";
 import { InlineText } from "@/components/question/inline-code";
 import { CodingWorkspaceLoader } from "@/components/coding/coding-workspace-loader";
-import { CategoryTag, DifficultyTag } from "@/components/ui/tag";
+import { DetailHeader } from "@/components/layout/detail-header";
 import { LANGUAGES, LANGUAGE_META, type CodingExercise, type Language } from "@/types/coding-exercise";
 import { getAllCodingExercises, getCodingExerciseById } from "@/lib/coding-exercises";
 import { starterCode } from "@/judge/src/harness";
@@ -49,26 +49,13 @@ export default async function CodingExercisePage({ params }: { params: Params })
       <SiteHeader />
       <main className="mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 gap-10 px-4 py-10 sm:px-6 lg:grid-cols-2">
         <article className="min-w-0 space-y-6">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <CategoryTag category={exercise.category} />
-              <DifficultyTag difficulty={exercise.difficulty} />
-              {exercise.tags?.map((tag) => (
-                <span key={tag} className="text-xs text-muted-foreground">
-                  {tag}
-                </span>
-              ))}
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{exercise.title}</h1>
-          </div>
-
-          <div className="space-y-3 text-[15px] leading-relaxed text-muted-foreground">
-            {exercise.prompt.split(/\n\s*\n/).map((paragraph, i) => (
-              <p key={i}>
-                <InlineText text={paragraph} />
-              </p>
-            ))}
-          </div>
+          <DetailHeader
+            section={{ label: "Coding", href: "/coding" }}
+            category={exercise.category}
+            difficulty={exercise.difficulty}
+            title={exercise.title}
+            prompt={exercise.prompt}
+          />
 
           {exercise.constraints && (
             <section className="space-y-2">
