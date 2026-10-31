@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/layout/page-header";
 import { SiteHeader } from "@/components/layout/site-header";
 import { QuestionsBrowser } from "@/components/question/questions-browser";
+import type { StatusFilter } from "@/components/question/questions-table";
+
+const STATUSES: StatusFilter[] = ["all", "unanswered", "correct", "incorrect"];
 import { getAllQuestionSummaries } from "@/lib/questions";
 import { CATEGORIES, type Category } from "@/types/category";
 
@@ -12,10 +15,11 @@ export const metadata: Metadata = {
 export default async function QuestionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string }>;
+  searchParams: Promise<{ category?: string; status?: string }>;
 }) {
   const questions = getAllQuestionSummaries();
-  const { category: rawCategory } = await searchParams;
+  const { category: rawCategory, status: rawStatus } = await searchParams;
+  const initialStatus = STATUSES.includes(rawStatus as StatusFilter) ? (rawStatus as StatusFilter) : "all";
   const initialCategory = CATEGORIES.includes(rawCategory as Category)
     ? (rawCategory as Category)
     : "all";
@@ -32,6 +36,7 @@ export default async function QuestionsPage({
         <QuestionsBrowser
           questions={questions}
           initialCategory={initialCategory}
+          initialStatus={initialStatus}
         />
       </main>
     </div>

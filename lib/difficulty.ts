@@ -7,3 +7,10 @@ export const DIFFICULTY_CLASS: Record<Difficulty, string> = {
   medium: "bg-amber-500/10 text-amber-400 border-amber-500/30",
   hard: "bg-red-500/10 text-red-400 border-red-500/30",
 };
+
+/** Text-only difficulty color, for dense lists where a pill would be noise. */
+export const DIFFICULTY_TEXT: Record<Difficulty, string> = {
+  easy: "text-emerald-400",
+  medium: "text-amber-400",
+  hard: "text-red-400",
+};

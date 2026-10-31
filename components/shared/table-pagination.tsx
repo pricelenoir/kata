@@ -1,3 +1,4 @@
+import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function TablePagination({
@@ -16,33 +17,19 @@ export function TablePagination({
   const rangeEnd = Math.min(page * pageSize, totalCount);
 
   return (
-    <div className="flex items-center justify-between pt-1">
-      <span className="font-mono text-xs text-muted-foreground">
-        {totalCount === 0
-          ? "0 results"
-          : `${rangeStart}–${rangeEnd} of ${totalCount}`}
+    <div className="flex items-center justify-between gap-3 pt-1">
+      <span className="text-sm tabular-nums text-muted-foreground">
+        {totalCount === 0 ? "No results" : `${rangeStart}–${rangeEnd} of ${totalCount}`}
       </span>
       <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={page <= 1}
-          onClick={() => onPageChange(page - 1)}
-        >
-          &larr; Prev
-        </Button>
-        <span className="font-mono text-xs text-muted-foreground">
-          Page {page} / {totalPages}
+        <span className="hidden text-sm tabular-nums text-muted-foreground sm:inline">
+          Page {page} of {totalPages}
         </span>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={page >= totalPages}
-          onClick={() => onPageChange(page + 1)}
-        >
-          Next &rarr;
+        <Button type="button" variant="outline" size="icon-sm" aria-label="Previous page" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+          <ChevronLeftIcon />
+        </Button>
+        <Button type="button" variant="outline" size="icon-sm" aria-label="Next page" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
+          <ChevronRightIcon />
         </Button>
       </div>
     </div>

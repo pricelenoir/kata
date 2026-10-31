@@ -314,10 +314,12 @@ function useRemoteProgress(userId: string | null) {
     [current],
   );
   const loaded = Boolean(current?.loaded);
+  const activityDates = useMemo(() => current?.activityDates ?? [], [current]);
 
   return {
     state,
     loaded,
+    activityDates,
     recordAttempt,
     resetProgress,
     migrateFromLocal,
@@ -338,6 +340,10 @@ export interface ProgressApi {
   getOverallStats: () => Stats;
   getCategoryStats: (category: Category) => Stats;
   getAttempt: (questionId: string) => QuestionAttempt | undefined;
+  /** Distinct local dates (YYYY-MM-DD) with any answer, for the activity
+   * heatmap. Signed in, this is the full history; anonymous progress only
+   * keeps each question's latest answer, so it undercounts. */
+  activityDays: string[];
   /** Set when a signed-in save/load failed after a retry. */
   syncError: string | null;
   dismissSyncError: () => void;
@@ -406,6 +412,7 @@ export function ProgressProvider({
     migrateFromLocal,
     syncError,
     dismissSyncError,
+    activityDates: remoteActivity,
   } = useRemoteProgress(user ? user.id : null);
 
   const signedIn = Boolean(user);
@@ -457,6 +464,18 @@ export function ProgressProvider({
     }
   }, [signedIn, resetRemoteProgress, localResetProgress]);
 
+  const activityDays = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          signedIn
+            ? remoteActivity
+            : Object.values(localState.attempts).map((a) => toLocalDate(a.attemptedAt)),
+        ),
+      ).sort(),
+    [signedIn, remoteActivity, localState.attempts],
+  );
+
   const allQuestionIds = useMemo(
     () => CATEGORIES.flatMap((c) => questionIds[c] ?? []),
     [questionIds],
@@ -472,10 +491,11 @@ export function ProgressProvider({
       getCategoryStats: (category) =>
         computeStats(state.attempts, questionIds[category] ?? []),
       getAttempt: (questionId) => state.attempts[questionId],
+      activityDays,
       syncError: signedIn ? syncError : null,
       dismissSyncError,
     }),
-    [state, hydrated, recordAttempt, resetProgress, allQuestionIds, questionIds, signedIn, syncError, dismissSyncError],
+    [state, hydrated, recordAttempt, resetProgress, allQuestionIds, questionIds, activityDays, signedIn, syncError, dismissSyncError],
   );
 
   return <ProgressContext value={value}>{children}</ProgressContext>;

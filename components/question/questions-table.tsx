@@ -2,8 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { CategoryTag, DifficultyTag } from "@/components/ui/tag";
-import { Button } from "@/components/ui/button";
+import { ChevronRightIcon, CheckIcon, SearchIcon, XIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -12,219 +11,199 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { StatusDot } from "@/components/question/status-dot";
 import { TablePagination } from "@/components/shared/table-pagination";
 import { useProgress } from "@/lib/progress-store";
-import { DIFFICULTIES } from "@/lib/difficulty";
-import { CATEGORIES, CATEGORY_META } from "@/types/category";
-import type { Category } from "@/types/category";
+import { DIFFICULTIES, DIFFICULTY_TEXT } from "@/lib/difficulty";
+import { cn } from "@/lib/utils";
+import { CATEGORIES, CATEGORY_META, type Category } from "@/types/category";
 import type { Difficulty, QuestionSummary } from "@/types/question";
 
 const PAGE_SIZE = 20;
 
-type StatusFilter = "all" | "unanswered" | "correct" | "incorrect";
+export type StatusFilter = "all" | "unanswered" | "correct" | "incorrect";
 
-const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: "all", label: "all" },
-  { value: "unanswered", label: "unanswered" },
-  { value: "correct", label: "correct" },
-  { value: "incorrect", label: "incorrect" },
+const STATUS_TABS: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "unanswered", label: "Unanswered" },
+  { value: "incorrect", label: "Missed" },
+  { value: "correct", label: "Correct" },
 ];
+
+const DIFFICULTY_LABEL: Record<Difficulty | "all", string> = {
+  all: "Any",
+  easy: "Easy",
+  medium: "Medium",
+  hard: "Hard",
+};
 
 export function QuestionsTable({
   questions,
   initialCategory = "all",
+  initialStatus = "all",
 }: {
   questions: QuestionSummary[];
   initialCategory?: Category | "all";
+  initialStatus?: StatusFilter;
 }) {
   const [category, setCategory] = useState<Category | "all">(initialCategory);
   const [difficulty, setDifficulty] = useState<Difficulty | "all">("all");
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState<StatusFilter>("all");
+  const [status, setStatus] = useState<StatusFilter>(initialStatus);
   const [page, setPage] = useState(1);
   const { getAttempt, hydrated } = useProgress();
 
-  const filtered = useMemo(() => {
-    const searchQuery = search.trim().toLowerCase();
-    return questions.filter((q) => {
-      if (category !== "all" && q.category !== category) return false;
-      if (difficulty !== "all" && q.difficulty !== difficulty) return false;
-      if (status !== "all") {
-        const attempt = hydrated ? getAttempt(q.id) : undefined;
-        if (status === "unanswered" && attempt) return false;
-        if (status === "correct" && attempt?.status !== "correct") return false;
-        if (status === "incorrect" && attempt?.status !== "incorrect")
-          return false;
-      }
-      if (searchQuery) {
-        const haystack = [q.title, ...(q.tags ?? [])].join(" ").toLowerCase();
-        if (!haystack.includes(searchQuery)) return false;
-      }
+  const statusOf = (id: string): StatusFilter => {
+    const attempt = hydrated ? getAttempt(id) : undefined;
+    return attempt ? attempt.status : "unanswered";
+  };
+
+  // Everything except the status filter, so each tab can show its count.
+  const scoped = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return questions.filter((item) => {
+      if (category !== "all" && item.category !== category) return false;
+      if (difficulty !== "all" && item.difficulty !== difficulty) return false;
+      if (q && ![item.title, ...(item.tags ?? [])].join(" ").toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [questions, category, difficulty, status, search, hydrated, getAttempt]);
+  }, [questions, category, difficulty, search]);
 
-  const pageItems = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return filtered.slice(start, start + PAGE_SIZE);
-  }, [filtered, page]);
+  const counts = useMemo(() => {
+    const c: Record<StatusFilter, number> = { all: scoped.length, unanswered: 0, correct: 0, incorrect: 0 };
+    for (const item of scoped) c[statusOf(item.id)] += 1;
+    return c;
+    // statusOf only depends on these.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scoped, hydrated, getAttempt]);
 
-  function handleCategoryChange(value: Category | "all") {
-    setCategory(value);
+  const filtered = status === "all" ? scoped : scoped.filter((item) => statusOf(item.id) === status);
+  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const reset = <T,>(set: (v: T) => void) => (v: T) => {
+    set(v);
     setPage(1);
-  }
-
-  function handleDifficultyChange(value: Difficulty | "all") {
-    setDifficulty(value);
-    setPage(1);
-  }
-
-  function handleSearchChange(value: string) {
-    setSearch(value);
-    setPage(1);
-  }
-
-  function handleStatusChange(value: StatusFilter) {
-    setStatus(value);
-    setPage(1);
-  }
+  };
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Select
-          value={category}
-          onValueChange={(v) => handleCategoryChange(v as Category | "all")}
-        >
-          <SelectTrigger size="sm" className="w-40 text-sm">
-            <SelectValue placeholder="Category">
+        <Select value={category} onValueChange={(v) => reset(setCategory)(v as Category | "all")}>
+          <SelectTrigger size="sm" className="w-44 text-sm">
+            <SelectValue>
               {(value: Category | "all" | null) =>
-                !value || value === "all"
-                  ? "All"
-                  : CATEGORY_META[value].shortLabel
+                !value || value === "all" ? "All topics" : CATEGORY_META[value].label
               }
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All categories</SelectItem>
+            <SelectItem value="all">All topics</SelectItem>
             {CATEGORIES.map((id) => (
               <SelectItem key={id} value={id}>
+                <span className={cn("size-2 rounded-full", CATEGORY_META[id].dotClassName)} />
                 {CATEGORY_META[id].label}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
 
-        <div className="flex items-center gap-0.5 rounded-lg surface p-0.5">
+        <div role="group" aria-label="Difficulty" className="surface flex items-center gap-0.5 rounded-lg p-0.5">
           {(["all", ...DIFFICULTIES] as const).map((d) => (
-            <Button
+            <button
               key={d}
               type="button"
-              size="sm"
-              variant={difficulty === d ? "secondary" : "ghost"}
               aria-pressed={difficulty === d}
-              onClick={() => handleDifficultyChange(d)}
-              className="h-7 text-sm capitalize"
+              onClick={() => reset(setDifficulty)(d)}
+              className={cn(
+                "h-7 rounded-md px-2.5 text-sm transition-colors",
+                difficulty === d ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
             >
-              {d}
-            </Button>
+              {DIFFICULTY_LABEL[d]}
+            </button>
           ))}
         </div>
 
-        <div className="flex items-center gap-0.5 rounded-lg surface p-0.5">
-          {STATUS_FILTERS.map((s) => (
-            <Button
-              key={s.value}
+        <div className="relative ml-auto w-full sm:w-72">
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => reset(setSearch)(e.target.value)}
+            placeholder="Search questions"
+            className="h-8 pl-8 text-sm"
+          />
+        </div>
+      </div>
+
+      <div className="surface overflow-hidden rounded-xl">
+        <div role="tablist" aria-label="Status" className="flex gap-1 overflow-x-auto border-b border-border px-2">
+          {STATUS_TABS.map((t) => (
+            <button
+              key={t.value}
               type="button"
-              size="sm"
-              variant={status === s.value ? "secondary" : "ghost"}
-              aria-pressed={status === s.value}
-              onClick={() => handleStatusChange(s.value)}
-              className="h-7 text-sm capitalize"
+              role="tab"
+              aria-selected={status === t.value}
+              onClick={() => reset(setStatus)(t.value)}
+              className={cn(
+                "relative flex items-center gap-2 whitespace-nowrap px-3 py-3 text-sm transition-colors",
+                status === t.value ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
             >
-              {s.label}
-            </Button>
+              {t.label}
+              <span className="rounded-full bg-foreground/[0.07] px-1.5 text-xs tabular-nums text-muted-foreground">
+                {hydrated || t.value === "all" ? counts[t.value] : "–"}
+              </span>
+              {status === t.value && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-brand-sky" />}
+            </button>
           ))}
         </div>
 
-        <Input
-          value={search}
-          onChange={(e) => handleSearchChange(e.target.value)}
-          placeholder="Search title or tag…"
-          className="ml-auto h-8 w-full text-sm sm:w-72"
-        />
-      </div>
-
-      <div className="overflow-hidden rounded-xl surface">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-border/60 hover:bg-transparent">
-              <TableHead className="w-8 text-xs text-muted-foreground" />
-              <TableHead className="text-xs text-muted-foreground">
-                Title
-              </TableHead>
-              <TableHead className="text-xs text-muted-foreground">
-                Category
-              </TableHead>
-              <TableHead className="text-xs text-muted-foreground">
-                Difficulty
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {pageItems.map((q) => {
-              const attempt = hydrated ? getAttempt(q.id) : undefined;
-              return (
-                <TableRow key={q.id} className="cursor-pointer border-border/60">
-                  <TableCell className="pl-3">
-                    <StatusDot status={attempt?.status} />
-                  </TableCell>
-                  <TableCell className="p-0">
-                    <Link
-                      href={`/questions/${q.category}/${q.id}`}
-                      className="block px-2 py-2.5 text-sm text-foreground"
-                    >
-                      {q.title}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <CategoryTag category={q.category} short />
-                  </TableCell>
-                  <TableCell>
-                    <DifficultyTag difficulty={q.difficulty} />
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-            {pageItems.length === 0 && (
-              <TableRow className="border-border/60 hover:bg-transparent">
-                <TableCell
-                  colSpan={4}
-                  className="py-10 text-center text-sm text-muted-foreground"
+        <ul className="divide-y divide-border/70">
+          {pageItems.map((q) => {
+            const s = statusOf(q.id);
+            const meta = CATEGORY_META[q.category];
+            return (
+              <li key={q.id}>
+                <Link
+                  href={`/questions/${q.category}/${q.id}`}
+                  className="group grid grid-cols-[1.25rem_1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-foreground/[0.03] sm:grid-cols-[1.25rem_1fr_11rem_5rem_1rem]"
                 >
-                  No questions match these filters.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+                  <StatusIcon status={s} />
+                  <span className="min-w-0 truncate text-sm text-foreground">{q.title}</span>
+                  <span className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
+                    <span className={cn("size-2 shrink-0 rounded-full", meta.dotClassName)} />
+                    <span className="truncate">{meta.label.length > 20 ? meta.shortLabel : meta.label}</span>
+                  </span>
+                  <span className={cn("text-sm", DIFFICULTY_TEXT[q.difficulty])}>{DIFFICULTY_LABEL[q.difficulty]}</span>
+                  <ChevronRightIcon className="hidden size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 sm:block" />
+                </Link>
+              </li>
+            );
+          })}
+          {pageItems.length === 0 && (
+            <li className="px-4 py-14 text-center text-sm text-muted-foreground">No questions match these filters.</li>
+          )}
+        </ul>
       </div>
 
-      <TablePagination
-        page={page}
-        pageSize={PAGE_SIZE}
-        totalCount={filtered.length}
-        onPageChange={setPage}
-      />
+      <TablePagination page={page} pageSize={PAGE_SIZE} totalCount={filtered.length} onPageChange={setPage} />
     </div>
   );
+}
+
+function StatusIcon({ status }: { status: StatusFilter }) {
+  if (status === "correct") {
+    return (
+      <span title="Answered correctly" className="grid size-5 place-items-center rounded-full bg-emerald-500/15 text-emerald-400">
+        <CheckIcon className="size-3" strokeWidth={3} />
+      </span>
+    );
+  }
+  if (status === "incorrect") {
+    return (
+      <span title="Missed" className="grid size-5 place-items-center rounded-full bg-red-500/15 text-red-400">
+        <XIcon className="size-3" strokeWidth={3} />
+      </span>
+    );
+  }
+  return <span title="Not answered yet" className="mx-auto size-1.5 rounded-full bg-foreground/20" />;
 }

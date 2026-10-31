@@ -40,7 +40,7 @@ export function NextQuestionCta({
   const { question, reason } = recommended;
 
   return (
-    <div className="relative flex flex-wrap items-center justify-between gap-4 overflow-hidden rounded-xl border border-brand-sky/30 bg-brand-sky/[0.05] px-5 py-4">
+    <div className="relative flex h-full flex-wrap items-center justify-between gap-4 overflow-hidden rounded-xl border border-brand-sky/30 bg-brand-sky/[0.05] px-5 py-4">
       <div className="relative space-y-2">
         <p className="text-sm font-medium text-brand-sky">
           {reason === "retry" ? "Missed last time, try it again" : "Up next"}

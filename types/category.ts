@@ -23,6 +23,8 @@ export interface CategoryMeta {
   // `bg-${color}-500` interpolation doesn't survive production purging —
   // so each category's classes are spelled out in full here.
   badgeClassName: string;
+  /** Solid swatch for small dots and bars. */
+  dotClassName: string;
 }
 
 export const CATEGORY_META: Record<Category, CategoryMeta> = {
@@ -33,6 +35,7 @@ export const CATEGORY_META: Record<Category, CategoryMeta> = {
     description:
       "Language semantics, memory model, RAII, move semantics, STL, and modern C++ gotchas.",
     badgeClassName: "bg-sky-500/10 text-sky-400 border-sky-500/30",
+    dotClassName: "bg-sky-400",
   },
   os: {
     id: "os",
@@ -40,6 +43,7 @@ export const CATEGORY_META: Record<Category, CategoryMeta> = {
     shortLabel: "OS",
     description: "Processes, virtual memory, scheduling, syscalls, and I/O.",
     badgeClassName: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+    dotClassName: "bg-amber-400",
   },
   concurrency: {
     id: "concurrency",
@@ -48,6 +52,7 @@ export const CATEGORY_META: Record<Category, CategoryMeta> = {
     description:
       "Memory ordering, data races, lock-free structures, and cache effects.",
     badgeClassName: "bg-violet-500/10 text-violet-400 border-violet-500/30",
+    dotClassName: "bg-violet-400",
   },
   networking: {
     id: "networking",
@@ -56,6 +61,7 @@ export const CATEGORY_META: Record<Category, CategoryMeta> = {
     description:
       "TCP/IP fundamentals, socket semantics, and latency-sensitive I/O patterns.",
     badgeClassName: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+    dotClassName: "bg-emerald-400",
   },
   "computer-architecture": {
     id: "computer-architecture",
@@ -64,6 +70,7 @@ export const CATEGORY_META: Record<Category, CategoryMeta> = {
     description:
       "Pipelining, branch prediction, cache hierarchies, and memory consistency at the hardware level.",
     badgeClassName: "bg-rose-500/10 text-rose-400 border-rose-500/30",
+    dotClassName: "bg-rose-400",
   },
   "design-patterns": {
     id: "design-patterns",
@@ -72,6 +79,7 @@ export const CATEGORY_META: Record<Category, CategoryMeta> = {
     description:
       "Classic GoF patterns, modern C++ idioms, and the tradeoffs behind each one.",
     badgeClassName: "bg-indigo-500/10 text-indigo-400 border-indigo-500/30",
+    dotClassName: "bg-indigo-400",
   },
   compilers: {
     id: "compilers",
@@ -80,6 +88,7 @@ export const CATEGORY_META: Record<Category, CategoryMeta> = {
     description:
       "Parsing, optimization passes, code generation, and how the compiler transforms your code.",
     badgeClassName: "bg-teal-500/10 text-teal-400 border-teal-500/30",
+    dotClassName: "bg-teal-400",
   },
   "gpu-cuda": {
     id: "gpu-cuda",
@@ -88,6 +97,7 @@ export const CATEGORY_META: Record<Category, CategoryMeta> = {
     description:
       "Warp scheduling, memory coalescing, occupancy, and parallel kernel design.",
     badgeClassName: "bg-orange-500/10 text-orange-400 border-orange-500/30",
+    dotClassName: "bg-orange-400",
   },
   dsa: {
     id: "dsa",
@@ -96,6 +106,7 @@ export const CATEGORY_META: Record<Category, CategoryMeta> = {
     description:
       "Advanced data structures, algorithmic complexity, and problem-solving under constraints.",
     badgeClassName: "bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/30",
+    dotClassName: "bg-fuchsia-400",
   },
   rust: {
     id: "rust",
@@ -104,5 +115,6 @@ export const CATEGORY_META: Record<Category, CategoryMeta> = {
     description:
       "Ownership, borrowing, lifetimes, and the same systems-level gotchas as C++ resolved a different way.",
     badgeClassName: "bg-red-500/10 text-red-400 border-red-500/30",
+    dotClassName: "bg-red-400",
   },
 };

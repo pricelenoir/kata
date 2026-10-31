@@ -4,7 +4,7 @@ import { SiteHeader } from "@/components/layout/site-header";
 import { HeroBackdrop } from "@/components/landing/hero-backdrop";
 import { CodeBlock } from "@/components/question/code-block";
 import { Button } from "@/components/ui/button";
-import { getQuestionById, getQuestionsByCategory, getTotalQuestionCount } from "@/lib/questions";
+import { getQuestionById, getQuestionsByCategory } from "@/lib/questions";
 import { CATEGORIES, CATEGORY_META } from "@/types/category";
 
 const FEATURED_QUESTION_ID = "cpp-const-pointer-02";
@@ -31,7 +31,6 @@ const FEATURES = [
 ] as const;
 
 export default function LandingPage() {
-  const questionCount = getTotalQuestionCount();
   const featured = getQuestionById(FEATURED_QUESTION_ID);
 
   return (
