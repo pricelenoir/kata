@@ -173,29 +173,6 @@
     radial-gradient(45% 50% at 85% 20%, color-mix(in oklch, var(--color-brand-orange) 16%, transparent), transparent 70%);
 }
 
-/* Every page is faintly lit from above by the same light as the landing
- * hero, so inner pages share its atmosphere at a fraction of the volume. */
-body {
-  position: relative;
-  background-image:
-    radial-gradient(ellipse 70% 460px at 50% -20px, color-mix(in oklch, var(--color-brand-sky) 20%, transparent), transparent 72%),
-    radial-gradient(ellipse 40% 360px at 88% -10px, color-mix(in oklch, var(--color-brand-orange) 15%, transparent), transparent 72%),
-    radial-gradient(ellipse 35% 320px at 8% 0px, color-mix(in oklch, oklch(0.55 0.19 262) 18%, transparent), transparent 72%);
-  background-repeat: no-repeat;
-}
-
-/* A trace of the hero's streaked light along the top of every page. */
-body::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 420px;
-  pointer-events: none;
-  z-index: 0;
-  background: repeating-linear-gradient(90deg, oklch(1 0 0 / 3%) 0 1px, transparent 1px 6px);
-  mask-image: radial-gradient(ellipse 60% 100% at 50% 0%, black, transparent 80%);
-}
-
 /* The shared panel: slightly frosted, a hairline highlight on the top
  * edge, soft depth underneath. */
 @utility surface {

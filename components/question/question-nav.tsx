@@ -24,7 +24,7 @@ export function QuestionNav({
           {index + 1} of {total} in {CATEGORY_META[category].label}
         </span>
         <div className="h-1 flex-1 overflow-hidden rounded-full bg-foreground/[0.08]" aria-hidden>
-          <div className="h-full rounded-full bg-brand-gradient" style={{ width: `${percent}%` }} />
+          <div className="h-full rounded-full bg-brand-sky" style={{ width: `${percent}%` }} />
         </div>
       </div>
       <div className="flex items-center justify-between gap-3">

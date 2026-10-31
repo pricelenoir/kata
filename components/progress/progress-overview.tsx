@@ -60,19 +60,13 @@ function AccuracyRing({ value }: { value: number | null }) {
   return (
     <div className="relative mx-auto size-36 shrink-0">
       <svg viewBox="0 0 120 120" className="size-full -rotate-90">
-        <defs>
-          <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="var(--color-brand-sky)" />
-            <stop offset="100%" stopColor="var(--color-brand-orange)" />
-          </linearGradient>
-        </defs>
         <circle cx="60" cy="60" r={r} fill="none" stroke="currentColor" strokeWidth="9" className="text-foreground/[0.07]" />
         <circle
           cx="60"
           cy="60"
           r={r}
           fill="none"
-          stroke="url(#ring)"
+          stroke="var(--color-brand-sky)"
           strokeWidth="9"
           strokeLinecap="round"
           strokeDasharray={`${filled} ${c}`}
