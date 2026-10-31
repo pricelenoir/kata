@@ -38,7 +38,7 @@ function Stat({
     <div className="px-5 py-3.5">
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="mt-1 flex items-baseline gap-1.5">
-        <span className={cn("text-2xl font-semibold tabular-nums tracking-tight", highlight ? "text-brand-gradient" : "text-foreground")}>
+        <span className={cn("text-2xl font-semibold tabular-nums tracking-tight", highlight ? "text-brand-sky" : "text-foreground")}>
           {value}
         </span>
         {suffix && <span className="text-sm text-muted-foreground">{suffix}</span>}

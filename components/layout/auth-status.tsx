@@ -38,7 +38,7 @@ export function AuthStatus() {
       >
         <span
           aria-hidden
-          className="grid size-6 place-items-center rounded-full bg-brand-gradient text-[11px] font-semibold text-background"
+          className="grid size-6 place-items-center rounded-full bg-brand-sky text-[11px] font-semibold text-background"
         >
           {initial}
         </span>

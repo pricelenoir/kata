@@ -23,7 +23,7 @@ export function CategoryProgressBar({ meta }: { meta: CategoryMeta }) {
           style={{ width: `${attemptedPct}%` }}
         />
         <div
-          className="absolute inset-y-0 left-0 rounded-full bg-brand-gradient"
+          className="absolute inset-y-0 left-0 rounded-full bg-brand-sky"
           style={{ width: `${correctPct}%` }}
         />
       </div>

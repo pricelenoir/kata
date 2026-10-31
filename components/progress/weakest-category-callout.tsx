@@ -30,7 +30,7 @@ export function WeakestCategoryCallout() {
       : `${weakest.stats.answered}/${weakest.stats.total} answered. Your least-practiced topic so far.`;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 border-brand-gradient rounded-xl px-5 py-4">
+    <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border bg-card/40 px-5 py-4">
       <div className="flex items-start gap-3">
         <TargetIcon className="mt-0.5 size-4 shrink-0 text-brand-orange" />
         <div className="space-y-1">

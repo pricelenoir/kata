@@ -40,10 +40,9 @@ export function NextQuestionCta({
   const { question, reason } = recommended;
 
   return (
-    <div className="border-brand-gradient relative flex flex-wrap items-center justify-between gap-4 overflow-hidden rounded-xl px-5 py-4">
-      <div aria-hidden className="hero-glow pointer-events-none absolute inset-0 opacity-60" />
+    <div className="relative flex flex-wrap items-center justify-between gap-4 overflow-hidden rounded-xl border border-brand-sky/30 bg-brand-sky/[0.05] px-5 py-4">
       <div className="relative space-y-2">
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm font-medium text-brand-sky">
           {reason === "retry" ? "Missed last time, try it again" : "Up next"}
         </p>
         <p className="text-base font-medium text-foreground">{question.title}</p>
@@ -55,7 +54,7 @@ export function NextQuestionCta({
       <Button
         nativeButton={false}
         render={<Link href={`/questions/${question.category}/${question.id}`} />}
-        className="relative border-0 bg-brand-gradient font-semibold text-background hover:brightness-110"
+        className="relative border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90"
       >
         {reason === "retry" ? "Retry" : "Start"}
         <ArrowRightIcon />

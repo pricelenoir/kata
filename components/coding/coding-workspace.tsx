@@ -162,7 +162,7 @@ export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate
           type="button"
           disabled={cannotRun}
           onClick={() => send("submit")}
-          className="border-0 bg-brand-gradient font-semibold text-background hover:brightness-110 disabled:opacity-40"
+          className="border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90 disabled:opacity-40"
         >
           {busy && state.kind === "submit" ? <LoaderCircleIcon className="animate-spin" /> : <SendIcon />}
           Submit

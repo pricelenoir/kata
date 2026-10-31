@@ -47,7 +47,7 @@ export default function LandingPage() {
           <div className="relative mx-auto grid max-w-6xl grid-cols-1 items-center gap-14 px-4 pb-20 pt-16 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pb-28 lg:pt-24">
             <div className="space-y-7 animate-in fade-in-0 slide-in-from-bottom-2 duration-700">
               <p className="inline-flex items-center gap-2 rounded-full border border-border bg-background/60 px-3 py-1 text-xs text-muted-foreground backdrop-blur">
-                <span aria-hidden className="size-1.5 rounded-full bg-brand-gradient" />
+                <span aria-hidden className="size-1.5 rounded-full bg-brand-sky" />
                 {questionCount} hand-written questions across {CATEGORIES.length} topics
               </p>
               <h1 className="text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl">
@@ -174,7 +174,7 @@ export default function LandingPage() {
                 size="lg"
                 nativeButton={false}
                 render={<Link href="/questions" />}
-                className="h-11 border-0 bg-brand-gradient px-5 text-[15px] font-semibold text-background hover:brightness-110"
+                className="h-11 px-5 text-[15px] border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90"
               >
                 Start practicing
                 <ArrowRightIcon />

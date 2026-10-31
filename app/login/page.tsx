@@ -222,7 +222,7 @@ export default function LoginPage() {
               </p>
             )}
 
-            <Button type="submit" disabled={submitting} className="h-10 w-full border-0 bg-brand-gradient font-semibold text-background hover:brightness-110">
+            <Button type="submit" disabled={submitting} className="h-10 w-full border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90">
               {submitting
                 ? "Working…"
                 : mode === "sign-in"
