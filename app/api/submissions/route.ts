@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCodingExerciseById } from "@/lib/coding-exercises";
 import { createClient } from "@/lib/supabase/server";
 import { hasSupabaseConfig } from "@/lib/supabase/config";
+import { isJudgeEnabled } from "@/lib/judge-config";
 import { validateTest } from "@/judge/src/wire";
 import { LANGUAGES, type Language, type TestCase } from "@/types/coding-exercise";
 import { MAX_SOURCE_BYTES } from "@/types/submission";
@@ -17,6 +18,7 @@ function error(status: number, message: string, headers?: HeadersInit) {
 
 export async function POST(request: Request) {
   if (!hasSupabaseConfig()) return error(503, "Running code needs accounts, which aren't set up here.");
+  if (!isJudgeEnabled()) return error(503, "Running code isn't available yet.");
 
   let body: Record<string, unknown>;
   try {

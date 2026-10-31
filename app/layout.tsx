@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SiteFooter } from "@/components/layout/site-footer";
+import { SyncErrorNotice } from "@/components/progress/sync-error-notice";
 import { ProgressProvider } from "@/lib/progress-store";
 import { getQuestionIdsByCategory } from "@/lib/questions";
 import "./globals.css";
@@ -36,6 +38,8 @@ export default function RootLayout({
         <TooltipProvider>
           <ProgressProvider questionIds={getQuestionIdsByCategory()}>
             {children}
+            <SiteFooter />
+            <SyncErrorNotice />
           </ProgressProvider>
         </TooltipProvider>
         <Analytics />

@@ -10,6 +10,7 @@ import { LANGUAGES, LANGUAGE_META, type CodingExercise, type Language } from "@/
 import { DIFFICULTY_CLASS } from "@/lib/difficulty";
 import { getAllCodingExercises, getCodingExerciseById } from "@/lib/coding-exercises";
 import { starterCode } from "@/judge/src/harness";
+import { isJudgeEnabled } from "@/lib/judge-config";
 
 type Params = Promise<{ exerciseId: string }>;
 
@@ -133,6 +134,7 @@ export default async function CodingExercisePage({ params }: { params: Params })
             mode={exercise.mode}
             starter={starter}
             customInputTemplate={customInputTemplate(exercise)}
+            judgeEnabled={isJudgeEnabled()}
           />
         </div>
       </main>

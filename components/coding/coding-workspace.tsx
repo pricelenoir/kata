@@ -43,6 +43,8 @@ export interface WorkspaceProps {
   /** Prefill for the custom-input box: raw stdin for program-style
    * exercises, the JSON test shape for function/design ones. */
   customInputTemplate: string;
+  /** False until a judge worker is deployed (JUDGE_ENABLED). */
+  judgeEnabled: boolean;
 }
 
 function parseCustomInput(mode: ExerciseMode, text: string): Omit<TestCase, "expected"> | string {
@@ -54,7 +56,7 @@ function parseCustomInput(mode: ExerciseMode, text: string): Omit<TestCase, "exp
   }
 }
 
-export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate }: WorkspaceProps) {
+export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate, judgeEnabled }: WorkspaceProps) {
   const user = useSupabaseUser();
   const [language, setLanguage] = useState<Language>(() => {
     const saved = readStorage(LANGUAGE_KEY) as Language | null;
@@ -104,6 +106,7 @@ export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate
 
   const busy = state.phase === "sending" || state.phase === "waiting";
   const signedOut = user === null;
+  const cannotRun = busy || signedOut || !judgeEnabled;
 
   return (
     <div className="space-y-4">
@@ -151,15 +154,20 @@ export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="outline" disabled={busy || signedOut} onClick={() => send("run")}>
+        <Button type="button" variant="outline" disabled={cannotRun} onClick={() => send("run")}>
           {busy && state.kind === "run" ? <LoaderCircleIcon className="animate-spin" /> : <PlayIcon />}
           Run examples
         </Button>
-        <Button type="button" disabled={busy || signedOut} onClick={() => send("submit")}>
+        <Button type="button" disabled={cannotRun} onClick={() => send("submit")}>
           {busy && state.kind === "submit" ? <LoaderCircleIcon className="animate-spin" /> : <SendIcon />}
           Submit
         </Button>
-        {signedOut && (
+        {!judgeEnabled && (
+          <span className="text-sm text-muted-foreground">
+            Running code is coming soon. Your draft is saved in this browser.
+          </span>
+        )}
+        {judgeEnabled && signedOut && (
           <span className="text-sm text-muted-foreground">
             <Link href={`/login?next=/coding/${exerciseId}`} className="text-sky-400 hover:text-sky-300">
               Log in

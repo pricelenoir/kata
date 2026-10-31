@@ -102,6 +102,17 @@ function getIsHydratedServer(): boolean {
   return false;
 }
 
+/** Retries a Supabase call once after a short pause — enough to ride out a
+ * dropped connection or a deploy blip without hammering anything. */
+async function withRetry<T extends { error: { message: string } | null }>(
+  op: () => PromiseLike<T>,
+): Promise<T> {
+  const first = await op();
+  if (!first.error) return first;
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  return op();
+}
+
 function browserTimeZone(): string {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -157,6 +168,9 @@ function useRemoteProgress(userId: string | null) {
     userId: null,
     ...EMPTY_REMOTE,
   });
+  /** Last failed sync, shown to the user — optimistic updates otherwise
+   * make a failed save look like it worked until the next reload. */
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -173,6 +187,7 @@ function useRemoteProgress(userId: string | null) {
       const rows = (attemptsRes.data ?? []) as RemoteAttemptRow[];
       if (attemptsRes.error) {
         console.error("Failed to load progress:", attemptsRes.error.message);
+        setSyncError("Couldn't load your progress. Reload to try again.");
       }
       const attempts: Record<string, QuestionAttempt> = {};
       for (const row of rows) attempts[row.question_id] = rowToAttempt(row);
@@ -208,18 +223,19 @@ function useRemoteProgress(userId: string | null) {
         };
       });
 
-      createClient()
-        .from("question_attempt_events")
-        .insert({
+      void withRetry(() =>
+        createClient().from("question_attempt_events").insert({
           user_id: userId,
           question_id: questionId,
           status,
           selected_index: selectedIndex ?? null,
           attempted_at: attemptedAt,
-        })
-        .then(({ error }) => {
-          if (error) console.error("Failed to save attempt:", error.message);
-        });
+        }),
+      ).then(({ error }) => {
+        if (!error) return;
+        console.error("Failed to save attempt:", error.message);
+        setSyncError("Couldn't save your last answer. Check your connection and answer it again.");
+      });
     },
     [userId],
   );
@@ -227,11 +243,11 @@ function useRemoteProgress(userId: string | null) {
   const resetProgress = useCallback(() => {
     if (!userId) return;
     setResult({ userId, ...EMPTY_REMOTE, loaded: true });
-    createClient()
-      .rpc("reset_my_progress")
-      .then(({ error }) => {
-        if (error) console.error("Failed to reset progress:", error.message);
-      });
+    void withRetry(() => createClient().rpc("reset_my_progress")).then(({ error }) => {
+      if (!error) return;
+      console.error("Failed to reset progress:", error.message);
+      setSyncError("Couldn't reset your progress. Reload and try again.");
+    });
   }, [userId]);
 
   /** One-time on first sign-in: pushes attempts that only exist in the
@@ -260,6 +276,7 @@ function useRemoteProgress(userId: string | null) {
         );
       if (error) {
         console.error("Failed to migrate local progress:", error.message);
+        setSyncError("Couldn't move this browser's progress into your account yet. It'll retry next visit.");
         return false;
       }
 
@@ -282,6 +299,8 @@ function useRemoteProgress(userId: string | null) {
     [userId, result],
   );
 
+  const dismissSyncError = useCallback(() => setSyncError(null), []);
+
   const current = result.userId === userId ? result : null;
   const state = useMemo<ProgressState>(
     () =>
@@ -296,7 +315,15 @@ function useRemoteProgress(userId: string | null) {
   );
   const loaded = Boolean(current?.loaded);
 
-  return { state, loaded, recordAttempt, resetProgress, migrateFromLocal };
+  return {
+    state,
+    loaded,
+    recordAttempt,
+    resetProgress,
+    migrateFromLocal,
+    syncError,
+    dismissSyncError,
+  };
 }
 
 export interface ProgressApi {
@@ -311,6 +338,9 @@ export interface ProgressApi {
   getOverallStats: () => Stats;
   getCategoryStats: (category: Category) => Stats;
   getAttempt: (questionId: string) => QuestionAttempt | undefined;
+  /** Set when a signed-in save/load failed after a retry. */
+  syncError: string | null;
+  dismissSyncError: () => void;
 }
 
 const ProgressContext = createContext<ProgressApi | null>(null);
@@ -374,6 +404,8 @@ export function ProgressProvider({
     recordAttempt: recordRemoteAttempt,
     resetProgress: resetRemoteProgress,
     migrateFromLocal,
+    syncError,
+    dismissSyncError,
   } = useRemoteProgress(user ? user.id : null);
 
   const signedIn = Boolean(user);
@@ -440,8 +472,10 @@ export function ProgressProvider({
       getCategoryStats: (category) =>
         computeStats(state.attempts, questionIds[category] ?? []),
       getAttempt: (questionId) => state.attempts[questionId],
+      syncError: signedIn ? syncError : null,
+      dismissSyncError,
     }),
-    [state, hydrated, recordAttempt, resetProgress, allQuestionIds, questionIds],
+    [state, hydrated, recordAttempt, resetProgress, allQuestionIds, questionIds, signedIn, syncError, dismissSyncError],
   );
 
   return <ProgressContext value={value}>{children}</ProgressContext>;

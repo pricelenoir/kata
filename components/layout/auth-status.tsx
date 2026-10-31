@@ -30,9 +30,10 @@ export function AuthStatus() {
 
   return (
     <div className="flex items-center gap-3">
-      <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
-        {user.email}
-      </span>
+      <Link href="/account" className="transition-colors hover:text-foreground">
+        <span className="hidden font-mono text-xs sm:inline">{user.email}</span>
+        <span className="sm:hidden">Account</span>
+      </Link>
       <button
         type="button"
         onClick={handleSignOut}
