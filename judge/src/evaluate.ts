@@ -27,9 +27,17 @@ export function truncate(text: string, max = TEXT_LIMIT): string {
 
 /** Why a run failed before its output could even be compared, or null if it
  * ran to completion within limits. */
+export interface ClassifyOptions {
+  /** Whether peak RSS reflects memory actually used. Under gVisor it also
+   * counts untouched thread stack reservations, so there the sandbox's
+   * cgroup limit decides MLE instead. */
+  rssReliable: boolean;
+}
+
 export function classifyRun(
   record: RunRecord,
   limits: { timeMs: number; memoryMb: number },
+  { rssReliable }: ClassifyOptions = { rssReliable: true },
 ): { verdict: Verdict; message: string } | null {
   if (record.outputLimit) {
     return { verdict: "output_limit", message: `printed ${record.stdoutBytes + record.stderrBytes} bytes` };
@@ -45,7 +53,7 @@ export function classifyRun(
   const memoryLimitKb = limits.memoryMb * 1024;
   // The stack may grow up to the memory limit, so blowing it shows up as a
   // segfault at peak memory — a recursion bug, not a memory budget problem.
-  if (record.signal === 11 && record.rssKb >= memoryLimitKb * 0.9) {
+  if (record.signal === 11 && rssReliable && record.rssKb >= memoryLimitKb * 0.9) {
     return {
       verdict: "runtime_error",
       message: `killed by SIGSEGV — likely a stack overflow (the stack shares the ${limits.memoryMb} MB limit)`,
@@ -54,7 +62,7 @@ export function classifyRun(
   const stderr = record.stderr.toString("utf8");
   const allocationFailed = /std::bad_alloc|memory allocation of \d+ bytes failed/.test(stderr);
   // SIGKILL that kata-run didn't send is the cgroup OOM killer.
-  if (record.rssKb > memoryLimitKb || allocationFailed || record.signal === 9) {
+  if ((rssReliable && record.rssKb > memoryLimitKb) || allocationFailed || record.signal === 9) {
     return {
       verdict: "memory_limit",
       message: `peak ${Math.round(record.rssKb / 1024)} MB (limit ${limits.memoryMb} MB)`,
@@ -81,6 +89,7 @@ export function evaluateTest(
   planned: PlannedTest,
   index: number,
   record: RunRecord,
+  options: ClassifyOptions = { rssReliable: true },
 ): TestOutcome {
   const base = {
     index,
@@ -98,7 +107,7 @@ export function evaluateTest(
   };
 
   const stderr = truncate(record.stderr.toString("utf8"));
-  const failure = classifyRun(record, exercise.limits);
+  const failure = classifyRun(record, exercise.limits, options);
   if (record.exit === DRIVER_BAD_INPUT && exercise.mode !== "stdio" && exercise.mode !== "harness") {
     return { ...base, verdict: "internal_error", message: "the test driver couldn't read this test's input" };
   }

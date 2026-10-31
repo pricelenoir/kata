@@ -41,6 +41,12 @@ describe("classifyRun", () => {
     expect(classifyRun(record(overrides), limits)?.verdict ?? null).toBe(verdict);
   });
 
+  it("ignores peak RSS for MLE where it isn't reliable (gVisor)", () => {
+    const opts = { rssReliable: false };
+    expect(classifyRun(record({ rssKb: 4000 * 1024 }), limits, opts)).toBeNull();
+    expect(classifyRun(record({ signal: 9 }), limits, opts)?.verdict).toBe("memory_limit");
+  });
+
   it("explains a segfault at the memory ceiling as a likely stack overflow", () => {
     expect(classifyRun(record({ signal: 11, rssKb: 127 * 1024 }), limits)?.message).toMatch(/stack overflow/);
   });

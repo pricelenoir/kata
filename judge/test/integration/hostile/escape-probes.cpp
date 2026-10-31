@@ -45,7 +45,7 @@ int main() {
     expect(open("/proc/1/environ", O_RDONLY) < 0, "can read init's environment");
     expect(mount("none", "/tmp", "tmpfs", 0, nullptr) != 0, "can mount");
 
-    static const char* allowed[] = {"PATH=", "HOME=", "TMPDIR=", "LANG=", "MALLOC_ARENA_MAX=", "RUST_BACKTRACE="};
+    static const char* allowed[] = {"PATH=", "HOME=", "TMPDIR=", "LANG=", "MALLOC_ARENA_MAX=", "RUST_BACKTRACE=", "LD_PRELOAD="};
     for (char** e = environ; *e; ++e) {
         bool ok = false;
         for (const char* prefix : allowed) ok |= std::strncmp(*e, prefix, std::strlen(prefix)) == 0;

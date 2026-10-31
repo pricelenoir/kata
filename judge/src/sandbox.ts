@@ -50,7 +50,15 @@ export interface RunRecord {
 
 export class SandboxError extends Error {}
 
-function docker(args: string[], input?: Buffer): Promise<{ code: number; stdout: string; stderr: string }> {
+/** Why a sandbox stopped. Under gVisor, blowing the container's memory or
+ * pid limits takes down the whole sandbox (its kernel, not just the
+ * offending process), so this is how those runs get a real verdict. */
+export interface SandboxState {
+  running: boolean;
+  oomKilled: boolean;
+}
+
+function docker(args: string[], input?: Buffer): Promise<{ code: number; stdout: string; stderr: string; raw: Buffer }> {
   return new Promise((resolve, reject) => {
     const child = spawn(DOCKER, args, { stdio: ["pipe", "pipe", "pipe"] });
     const out: Buffer[] = [];
@@ -58,13 +66,15 @@ function docker(args: string[], input?: Buffer): Promise<{ code: number; stdout:
     child.stdout.on("data", (d: Buffer) => out.push(d));
     child.stderr.on("data", (d: Buffer) => err.push(d));
     child.on("error", reject);
-    child.on("close", (code) =>
+    child.on("close", (code) => {
+      const raw = Buffer.concat(out);
       resolve({
         code: code ?? -1,
-        stdout: Buffer.concat(out).toString("utf8"),
+        stdout: raw.toString("utf8"),
         stderr: Buffer.concat(err).toString("utf8"),
-      }),
-    );
+        raw,
+      });
+    });
     child.stdin.end(input);
   });
 }
@@ -133,10 +143,11 @@ export class Sandbox {
 
   static async create(config: SandboxConfig): Promise<Sandbox> {
     const name = `kata-judge-${randomUUID()}`;
+    // No --rm: if the runtime kills the sandbox we still need to inspect
+    // it (OOMKilled); destroy() always removes it afterwards.
     const args = [
       "run",
       "--detach",
-      "--rm",
       "--name",
       name,
       "--label",
@@ -188,9 +199,23 @@ export class Sandbox {
     return new Sandbox(name);
   }
 
-  async putFile(path: string, contents: Buffer, maxBytes: number): Promise<void> {
-    const res = await docker(["exec", "-i", this.name, "kata-run", "put", path, String(maxBytes)], contents);
+  async putFile(path: string, contents: Buffer, maxBytes: number, mode?: string): Promise<void> {
+    const args = ["exec", "-i", this.name, "kata-run", "put", path, String(maxBytes), ...(mode ? [mode] : [])];
+    const res = await docker(args, contents);
     if (res.code !== 0) throw new SandboxError(`writing ${path} failed: ${res.stderr.trim()}`);
+  }
+
+  /** Reads a file the sandbox produced (the compiled binary). */
+  async readFile(path: string): Promise<Buffer> {
+    const res = await docker(["exec", this.name, "cat", path]);
+    if (res.code !== 0) throw new SandboxError(`reading ${path} failed: ${res.stderr.trim()}`);
+    return res.raw;
+  }
+
+  async state(): Promise<SandboxState> {
+    const res = await docker(["inspect", "--format", "{{.State.Running}} {{.State.OOMKilled}}", this.name]);
+    const [running, oom] = res.stdout.trim().split(" ");
+    return { running: running === "true", oomKilled: oom === "true" };
   }
 
   batch(command: string[], limits: RunLimits): BatchSession {

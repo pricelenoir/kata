@@ -243,6 +243,92 @@ fn main() {
 `,
     },
   },
+  {
+    // Harness mode with real threads: what concurrency exercises look like.
+    exercise: {
+      id: "fixture-threads",
+      title: "Fixture: harness mode with threads",
+      category: "concurrency",
+      difficulty: "easy",
+      mode: "harness",
+      prompt: "A counter that many threads add to at once.",
+      limits: { timeMs: 2000, memoryMb: 128, cpus: 2 },
+      starterCode: { cpp: "", rust: "" },
+      driver: {
+        cpp: `int main() {
+    int threads = 0, iterations = 0;
+    std::cin >> threads >> iterations;
+    Counter counter;
+    std::vector<std::thread> workers;
+    for (int t = 0; t < threads; ++t) {
+        workers.emplace_back([&] {
+            for (int i = 0; i < iterations; ++i) counter.add(1);
+        });
+    }
+    for (auto& w : workers) w.join();
+    std::cout << counter.total() << "\\n";
+}
+`,
+        rust: `fn main() {
+    use std::io::Read;
+    use std::sync::Arc;
+    let mut input = String::new();
+    std::io::stdin().read_to_string(&mut input).unwrap();
+    let mut nums = input.split_whitespace().map(|x| x.parse::<usize>().unwrap());
+    let (threads, iterations) = (nums.next().unwrap(), nums.next().unwrap());
+    let counter = Arc::new(Counter::new());
+    let workers: Vec<_> = (0..threads)
+        .map(|_| {
+            let counter = Arc::clone(&counter);
+            std::thread::spawn(move || {
+                for _ in 0..iterations {
+                    counter.add(1);
+                }
+            })
+        })
+        .collect();
+    for w in workers {
+        w.join().unwrap();
+    }
+    println!("{}", counter.total());
+}
+`,
+      },
+      examples: [
+        { stdin: "1 1\n", expected: "1\n" },
+        { stdin: "8 20000\n", expected: "160000\n" },
+      ],
+    },
+    solutions: {
+      cpp: `class Counter {
+public:
+    void add(long long n) { value_.fetch_add(n, std::memory_order_relaxed); }
+    long long total() { return value_.load(); }
+
+private:
+    std::atomic<long long> value_{0};
+};
+`,
+      rust: `use std::sync::atomic::{AtomicI64, Ordering};
+
+pub struct Counter {
+    value: AtomicI64,
+}
+
+impl Counter {
+    pub fn new() -> Self {
+        Counter { value: AtomicI64::new(0) }
+    }
+    pub fn add(&self, n: i64) {
+        self.value.fetch_add(n, Ordering::Relaxed);
+    }
+    pub fn total(&self) -> i64 {
+        self.value.load(Ordering::Relaxed)
+    }
+}
+`,
+    },
+  },
 ];
 
 /** A stdio exercise for hostile programs: each probe prints "contained" when

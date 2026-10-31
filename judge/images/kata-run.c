@@ -6,7 +6,7 @@
 // process — so the measurements it reports, and the test inputs it holds,
 // stay out of reach even though both run in the same container.
 //
-//   kata-run put <path> <max-bytes>
+//   kata-run put <path> <max-bytes> [octal-mode]
 //       Copy stdin to <path> as the sandbox user (refuses to overwrite).
 //
 //   kata-run batch [options] -- <command> [args...]
@@ -335,13 +335,14 @@ static void run_one(int index, int infd, const struct options *o) {
 }
 
 static int cmd_put(int argc, char **argv) {
-  if (argc != 4) {
-    fprintf(stderr, "usage: kata-run put <path> <max-bytes>\n");
+  if (argc != 4 && argc != 5) {
+    fprintf(stderr, "usage: kata-run put <path> <max-bytes> [octal-mode]\n");
     return 2;
   }
   long long max = atoll(argv[3]);
+  mode_t mode = argc == 5 ? (mode_t)strtol(argv[4], NULL, 8) & 0755 : 0644;
   drop_privileges();
-  int fd = open(argv[2], O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
+  int fd = open(argv[2], O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode);
   if (fd < 0) die("open");
   char buf[65536];
   long long total = 0;
