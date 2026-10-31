@@ -2,7 +2,7 @@
 
 A training ground for deep C++ and systems interviews.
 
-**https://kata-black.vercel.app**
+**https://kata-dev.vercel.app**
 
 - **Questions.** Read a snippet or scenario and predict what actually
   happens, the way a compiler or kernel would. Covers C++, Rust, operating
