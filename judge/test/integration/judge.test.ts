@@ -38,6 +38,12 @@ it("reports what a function's own code printed, separately from its result", asy
   expect(result.tests[0].actual).toBe(16);
 });
 
+// Thread creation is much slower under gVisor, so the thread probe gets
+// enough CPU time to finish and report for itself whether creation was
+// bounded, instead of being cut off by the time limit.
+const SLOW_PROBE = { ...PROBE, limits: { ...PROBE.limits, timeMs: 10_000 } };
+const PROBE_FOR: Record<string, typeof PROBE> = { "thread-explosion.cpp": SLOW_PROBE };
+
 const HOSTILE: [file: string, expected: Verdict[]][] = [
   ["infinite-loop.cpp", ["time_limit"]],
   ["sleep-forever.cpp", ["time_limit"]],
@@ -57,8 +63,9 @@ describe("hostile programs", () => {
   it.each(HOSTILE)("%s is contained (%j)", async (file, expected) => {
     const source = await readFile(join(__dirname, "hostile", file), "utf8");
     const started = Date.now();
+    const exercise = PROBE_FOR[file] ?? PROBE;
     const result = await judge(
-      { exercise: PROBE, language: "cpp", source, tests: [{ test: PROBE.examples[0], hidden: false }], stopOnFirstFailure: true },
+      { exercise, language: "cpp", source, tests: [{ test: exercise.examples[0], hidden: false }], stopOnFirstFailure: true },
       opts,
     );
     expect(expected, JSON.stringify(result, null, 2)).toContain(result.verdict);

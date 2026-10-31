@@ -89,14 +89,19 @@ function sandboxKilled(planned: PlannedTest, index: number, state: SandboxState)
 }
 
 /** Runs `op`; if it fails because the sandbox itself died, returns the
- * sandbox's final state instead of throwing. */
+ * sandbox's final state instead of throwing. The exec can fail a moment
+ * before Docker records the container as stopped, so the state is polled
+ * briefly before deciding it was some other failure. */
 async function unlessKilled<T>(sandbox: Sandbox, op: () => Promise<T>): Promise<{ value: T } | { killed: SandboxState }> {
   try {
     return { value: await op() };
   } catch (err) {
     if (err instanceof SandboxError) {
-      const state = await sandbox.state();
-      if (!state.running) return { killed: state };
+      for (let i = 0; i < 20; i++) {
+        const state = await sandbox.state();
+        if (!state.running) return { killed: state };
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
     }
     throw err;
   }
