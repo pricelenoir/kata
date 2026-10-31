@@ -43,10 +43,6 @@ export default function LandingPage() {
           <HeroBackdrop />
           <div className="relative mx-auto grid max-w-6xl grid-cols-1 items-center gap-14 px-4 pb-20 pt-16 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pb-28 lg:pt-24">
             <div className="space-y-7 animate-in fade-in-0 slide-in-from-bottom-2 duration-700">
-              <p className="inline-flex items-center gap-2 rounded-full border border-border bg-background/60 px-3 py-1 text-xs text-muted-foreground backdrop-blur">
-                <span aria-hidden className="size-1.5 rounded-full bg-brand-sky" />
-                {questionCount} hand-written questions across {CATEGORIES.length} topics
-              </p>
               <h1 className="text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl">
                 Train like it&apos;s
                 <br />
@@ -61,12 +57,12 @@ export default function LandingPage() {
                   size="lg"
                   nativeButton={false}
                   render={<Link href="/questions" />}
-                  className="h-11 border-0 bg-brand-gradient px-5 text-[15px] font-semibold text-background shadow-[0_8px_30px_-8px] shadow-brand-orange/50 transition-[filter,transform] hover:brightness-110 active:translate-y-px"
+                  className="h-11 border-0 bg-white px-5 text-[15px] font-semibold text-[oklch(0.17_0.01_250)] shadow-[0_0_44px_-10px] shadow-brand-sky/80 hover:bg-white/90 active:translate-y-px"
                 >
                   Start practicing
                   <ArrowRightIcon />
                 </Button>
-                <Button size="lg" variant="outline" nativeButton={false} render={<Link href="/coding" />} className="h-11 bg-background/70 px-5 text-[15px] backdrop-blur hover:bg-background/90">
+                <Button size="lg" variant="outline" nativeButton={false} render={<Link href="/coding" />} className="h-11 border-white/15 !bg-[oklch(0.16_0.008_250/0.92)] px-5 text-[15px] font-medium text-foreground backdrop-blur hover:!bg-[oklch(0.21_0.01_250/0.95)]">
                   Try a coding exercise
                 </Button>
               </div>

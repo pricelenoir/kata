@@ -29,14 +29,18 @@ interface Pkg {
   bga?: boolean;
 }
 
+// The main die sits at the center of the horizon, under the light's core;
+// smaller packages spread the board to both edges.
 const PACKAGES: Pkg[] = [
-  { x: 960, top: 600, w: 300, h: 140, buses: 12 },
-  { x: 250, top: 640, w: 170, h: 100, buses: 5, bga: true },
-  { x: 1480, top: 630, w: 170, h: 100, buses: 5, bga: true },
+  { x: 800, top: 590, w: 320, h: 150, buses: 14 },
+  { x: 150, top: 640, w: 150, h: 90, buses: 6, bga: true },
+  { x: 470, top: 625, w: 150, h: 90, buses: 6, bga: true },
+  { x: 1130, top: 625, w: 150, h: 90, buses: 6, bga: true },
+  { x: 1450, top: 640, w: 150, h: 90, buses: 6, bga: true },
 ];
 
 const SPACING = 6;
-const CHAMFER = 26;
+const CHAMFER = 22;
 
 interface Line {
   d: string;
@@ -46,61 +50,60 @@ interface Line {
 interface Board {
   lines: Line[];
   signals: { d: string; duration: number; delay: number; warm: boolean }[];
-  pins: [number, number, number][]; // x1, x2, y
   parts: [number, number, boolean][]; // x, y, vertical
   balls: [number, number][];
 }
 
 /** Parallel buses fanning out of each package's top edge: up, a 45° turn
- * toward the nearer side, a long horizontal run, and a staggered row of
- * vias. Buses nearer the package's edge turn lower so none of them cross. */
+ * toward the nearer side, a horizontal run, a second 45° turn, and a climb
+ * up into the light, ending in a staggered row of vias. Outer buses turn
+ * lower and sooner so no two buses cross. */
 function buildBoard(): Board {
-  const rand = rng(11);
-  const board: Board = { lines: [], signals: [], pins: [], parts: [], balls: [] };
+  const rand = rng(23);
+  const board: Board = { lines: [], signals: [], parts: [], balls: [] };
 
   for (const pkg of PACKAGES) {
     const left = pkg.x - pkg.w / 2;
     const half = Math.ceil(pkg.buses / 2);
     for (let b = 0; b < pkg.buses; b++) {
       const m = 4 + Math.floor(rand() * 5); // traces in this bus
-      const x0 = left + 18 + (b / Math.max(1, pkg.buses - 1)) * (pkg.w - 36 - m * SPACING);
+      const x0 = left + 16 + (b / Math.max(1, pkg.buses - 1)) * (pkg.w - 32 - m * SPACING);
       const toLeft = b < half;
       const dx = toLeft ? -1 : 1;
       const rank = toLeft ? b : pkg.buses - 1 - b; // 0 = outermost
-      const y1 = pkg.top - 24 - rank * (m * SPACING + 16) - rand() * 10;
-      const run = 120 + rand() * 360 + (half - rank) * 30;
+      const y1 = pkg.top - 20 - rank * (m * SPACING + 12) - rand() * 8;
+      const run = 40 + (half - rank) * 34 + rand() * 60;
+      const climb = 120 + rand() * 300 + (half - rank) * 20;
+      const maxO = (m - 1) * SPACING;
       const busLines: string[] = [];
+      let topY = 0;
       for (let j = 0; j < m; j++) {
         const x = x0 + j * SPACING;
-        // The trace on the outside of the turn turns highest.
+        // The trace on the outside of the first turn turns highest.
         const o = (toLeft ? j : m - 1 - j) * SPACING;
         const yTurn = y1 - o;
         const yRun = yTurn - CHAMFER;
-        const xEnd = x + dx * (CHAMFER + run + (j % 2) * 12);
-        const d = `M${x},${pkg.top} V${yTurn} L${x + dx * CHAMFER},${yRun} H${xEnd}`;
-        board.lines.push({ d, end: [xEnd, yRun] });
-        board.pins.push([x, x, pkg.top]);
+        // ...and the lowest trace runs furthest before the second turn.
+        const xTurn2 = x + dx * (CHAMFER + run + (maxO - o));
+        const xUp = xTurn2 + dx * CHAMFER;
+        const yEnd = yRun - CHAMFER - climb - (j % 2) * 10;
+        const d = `M${x},${pkg.top} V${yTurn} L${x + dx * CHAMFER},${yRun} H${xTurn2} L${xUp},${yRun - CHAMFER} V${yEnd}`;
+        board.lines.push({ d, end: [xUp, yEnd] });
         busLines.push(d);
+        topY = Math.min(topY || yEnd, yEnd);
       }
-      // A part or two sits beyond the end of some buses.
-      if (rand() < 0.6) {
-        const lastY = y1 - (m - 1) * SPACING - CHAMFER;
-        board.parts.push([x0 + dx * (CHAMFER + run + 40), lastY + rand() * 20, rand() < 0.4]);
+      if (rand() < 0.5) {
+        const px = x0 + dx * (CHAMFER * 2 + run + maxO + 30);
+        board.parts.push([px, topY - 20 - rand() * 30, rand() < 0.5]);
       }
-      // One or two traces per bus carry a signal.
       for (const j of [Math.floor(rand() * m), ...(rand() < 0.5 ? [Math.floor(rand() * m)] : [])]) {
-        board.signals.push({
-          d: busLines[j],
-          duration: 4 + rand() * 6,
-          delay: -rand() * 10,
-          warm: rand() < 0.3,
-        });
+        board.signals.push({ d: busLines[j], duration: 4 + rand() * 6, delay: -rand() * 10, warm: rand() < 0.3 });
       }
     }
     if (pkg.bga) {
       for (let r = 0; r < 4; r++) {
-        for (let c = 0; c < 8; c++) {
-          board.balls.push([left + 22 + c * ((pkg.w - 44) / 7), pkg.top + 22 + r * 18]);
+        for (let c = 0; c < 7; c++) {
+          board.balls.push([left + 20 + c * ((pkg.w - 40) / 6), pkg.top + 18 + r * 16]);
         }
       }
     }
