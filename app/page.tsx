@@ -38,7 +38,7 @@ export default function LandingPage() {
       <SiteHeader />
       <main className="flex-1">
         {/* ---- Hero ---- */}
-        <section className="relative overflow-hidden border-b border-border/70">
+        <section className="relative overflow-hidden">
           <HeroBackdrop />
           <div className="relative mx-auto grid max-w-6xl grid-cols-1 items-center gap-14 px-4 pb-20 pt-16 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pb-28 lg:pt-24">
             <div className="space-y-7 animate-in fade-in-0 slide-in-from-bottom-2 duration-700">
@@ -152,15 +152,14 @@ export default function LandingPage() {
         </section>
 
         {/* ---- Closing CTA ---- */}
-        <section className="mx-auto max-w-6xl px-4 pt-24 sm:px-6">
-          <div className="relative overflow-hidden rounded-3xl border border-border px-8 py-14 text-center sm:px-16">
-            <div aria-hidden className="hero-glow pointer-events-none absolute inset-0 opacity-80" />
-            <div className="relative mx-auto max-w-xl space-y-5">
-              <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+        <section className="mx-auto max-w-6xl px-4 pt-32 pb-8 sm:px-6">
+          <div className="mx-auto max-w-2xl text-center">
+            <div className="space-y-6">
+              <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-[2.5rem] sm:leading-[1.1]">
                 Your next interview won&apos;t be multiple choice.
               </h2>
-              <p className="text-muted-foreground">
-                But knowing why each wrong answer is wrong is how you get there. Start with one question.
+              <p className="mx-auto max-w-md text-pretty text-muted-foreground">
+                Knowing why every wrong answer is wrong is how you get ready for it. Start with one question.
               </p>
               <Button
                 size="lg"
