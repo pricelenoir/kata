@@ -100,7 +100,7 @@ export function SubmissionResult({ result }: { result: JudgeResult }) {
       )}
 
       {result.tests.length > 0 && (
-        <ul className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60">
+        <ul className="divide-y divide-border/60 overflow-hidden rounded-xl surface">
           {result.tests.map((t) => (
             <TestRow key={t.index} test={t} exampleNumber={!t.hidden && !t.custom ? ++example : 0} />
           ))}

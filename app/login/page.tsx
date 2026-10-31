@@ -151,7 +151,7 @@ export default function LoginPage() {
         )}
 
         {sentTo ? (
-          <p className="mt-6 rounded-lg border border-border/60 bg-card/50 px-4 py-3 text-sm text-muted-foreground">
+          <p className="mt-6 rounded-lg surface px-4 py-3 text-sm text-muted-foreground">
             {sentTo.kind === "confirm" ? (
               <>
                 Check <span className="text-foreground">{sentTo.email}</span> for a confirmation link. It works on
@@ -222,7 +222,7 @@ export default function LoginPage() {
               </p>
             )}
 
-            <Button type="submit" disabled={submitting} className="h-10 w-full border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90">
+            <Button type="submit" disabled={submitting} className="h-10 w-full glow-sky border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90">
               {submitting
                 ? "Working…"
                 : mode === "sign-in"

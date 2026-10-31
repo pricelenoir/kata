@@ -101,7 +101,7 @@ export default async function CodingExercisePage({ params }: { params: Params })
           </section>
 
           {exercise.mode === "harness" && (
-            <details className="group rounded-xl border border-border bg-card/40">
+            <details className="group rounded-xl surface">
               <summary className="cursor-pointer px-4 py-3 text-sm text-foreground hover:bg-muted/40">
                 How your code is tested
               </summary>

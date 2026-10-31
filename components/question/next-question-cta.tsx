@@ -24,7 +24,7 @@ export function NextQuestionCta({
 
   if (!recommended) {
     return (
-      <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-5 py-4">
+      <div className="flex items-center gap-3 rounded-lg surface px-5 py-4">
         <PartyPopperIcon className="size-5 shrink-0 text-emerald-400" />
         <p className="text-sm text-foreground">
           You&apos;ve answered every question correctly. Nice work — check{" "}
@@ -54,7 +54,7 @@ export function NextQuestionCta({
       <Button
         nativeButton={false}
         render={<Link href={`/questions/${question.category}/${question.id}`} />}
-        className="relative border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90"
+        className="relative glow-sky border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90"
       >
         {reason === "retry" ? "Retry" : "Start"}
         <ArrowRightIcon />

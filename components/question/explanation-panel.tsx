@@ -8,7 +8,7 @@ export function ExplanationPanel({
   references?: string[];
 }) {
   return (
-    <div className="relative space-y-3 overflow-hidden rounded-xl border border-border bg-card/60 py-5 pl-6 pr-5 animate-in fade-in-0 slide-in-from-top-1 duration-300">
+    <div className="relative space-y-3 overflow-hidden rounded-xl surface py-5 pl-6 pr-5 animate-in fade-in-0 slide-in-from-top-1 duration-300">
       <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-brand-sky" />
       <h3 className="text-sm font-semibold text-foreground">Why</h3>
       <p className="text-[15px] leading-relaxed text-foreground/85">

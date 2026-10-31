@@ -133,7 +133,7 @@ export default function LandingPage() {
               Browse all questions
             </Link>
           </div>
-          <ul className="mt-8 grid overflow-hidden rounded-2xl border border-border bg-card/40 sm:grid-cols-2">
+          <ul className="mt-8 grid overflow-hidden rounded-2xl surface sm:grid-cols-2">
             {CATEGORIES.map((id) => {
               const meta = CATEGORY_META[id];
               return (
@@ -171,7 +171,7 @@ export default function LandingPage() {
                 size="lg"
                 nativeButton={false}
                 render={<Link href="/questions" />}
-                className="h-11 px-5 text-[15px] border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90"
+                className="h-11 px-5 text-[15px] glow-sky border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90"
               >
                 Start practicing
                 <ArrowRightIcon />

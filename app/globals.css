@@ -173,6 +173,30 @@
     radial-gradient(45% 50% at 85% 20%, color-mix(in oklch, var(--color-brand-orange) 16%, transparent), transparent 70%);
 }
 
+/* Every page is faintly lit from above by the same light as the landing
+ * hero, so inner pages share its atmosphere at a fraction of the volume. */
+body {
+  background-image:
+    radial-gradient(ellipse 70% 340px at 50% -80px, color-mix(in oklch, var(--color-brand-sky) 13%, transparent), transparent 75%),
+    radial-gradient(ellipse 40% 260px at 88% -60px, color-mix(in oklch, var(--color-brand-orange) 8%, transparent), transparent 75%);
+  background-repeat: no-repeat;
+}
+
+/* The shared panel: slightly frosted, a hairline highlight on the top
+ * edge, soft depth underneath. */
+@utility surface {
+  background: color-mix(in oklch, var(--color-card) 62%, transparent);
+  border: 1px solid var(--color-border);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 5%),
+    0 18px 40px -24px oklch(0 0 0 / 70%);
+  backdrop-filter: blur(12px);
+}
+
+@utility glow-sky {
+  box-shadow: 0 10px 28px -12px color-mix(in oklch, var(--color-brand-sky) 70%, transparent);
+}
+
 @layer base {
   h1, h2, h3 {
     text-wrap: balance;
@@ -204,12 +228,13 @@
   inset: 0;
 }
 
-/* Oversized so every blob sits inside the blur's filter region; anything
- * outside it gets clipped into a hard seam. */
+/* Oversized so the drifting blobs never reveal an edge. No blur filter:
+ * the radial gradients are already soft, and a filter over a moving layer
+ * forces a full repaint every frame (which the browser drops while
+ * scrolling). */
 .hero-aurora {
   position: absolute;
   inset: -40%;
-  filter: blur(70px) saturate(1.15);
 }
 
 .hero-blob {
@@ -217,6 +242,7 @@
   border-radius: 9999px;
   mix-blend-mode: screen;
   will-change: transform;
+  transform: translateZ(0);
 }
 
 .hero-blob-1 {
@@ -289,7 +315,6 @@
  * light-through-blinds look and drift slowly sideways. */
 .hero-beam {
   background:
-    repeating-linear-gradient(90deg, oklch(0.12 0.02 255 / 55%) 0 1px, transparent 1px 3px, oklch(0.12 0.02 255 / 25%) 3px 4px, transparent 4px 7px),
     linear-gradient(
       to bottom,
       transparent 0%,
@@ -309,9 +334,28 @@
     linear-gradient(to bottom, transparent 0%, black 45%);
   mask-composite: intersect;
   opacity: 0.8;
-  animation:
-    hero-streak-drift 40s linear infinite,
-    hero-breathe 11s ease-in-out infinite;
+  will-change: opacity;
+  animation: hero-breathe 11s ease-in-out infinite;
+}
+
+/* Dark vertical lines over the band, on their own layer so drifting them
+ * is a cheap transform rather than a repaint. */
+.hero-streaks-mask {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  mask-image:
+    linear-gradient(to right, transparent 0%, black 18%, black 82%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, black 45%);
+  mask-composite: intersect;
+}
+
+.hero-streaks {
+  position: absolute;
+  inset: 0 -160px 0 -160px;
+  background: repeating-linear-gradient(90deg, oklch(0.12 0.02 255 / 55%) 0 1px, transparent 1px 3px, oklch(0.12 0.02 255 / 25%) 3px 4px, transparent 4px 7px);
+  will-change: transform;
+  animation: hero-streak-drift 40s linear infinite;
 }
 
 /* Keeps the headline column readable over the light. */
@@ -327,12 +371,13 @@
     radial-gradient(ellipse 30% 10% at 60% 88%, oklch(0.99 0.01 90 / 75%), transparent 70%),
     radial-gradient(ellipse 60% 22% at 60% 100%, color-mix(in oklch, var(--color-brand-orange) 50%, transparent), transparent 70%);
   mix-blend-mode: screen;
+  will-change: opacity;
   animation: hero-breathe 11s ease-in-out infinite;
 }
 
 @keyframes hero-streak-drift {
-  from { background-position: 0 0, 0 0; }
-  to { background-position: 140px 0, 0 0; }
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(140px, 0, 0); }
 }
 
 @keyframes hero-breathe {
@@ -345,17 +390,36 @@
 .hero-circuit {
   width: 100%;
   height: 100%;
-  mask-image: linear-gradient(to bottom, transparent 5%, black 55%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 45%);
 }
 
 .hero-circuit-traces {
-  stroke: oklch(1 0 0 / 7%);
-  stroke-width: 1.5;
+  stroke: oklch(1 0 0 / 9%);
+  stroke-width: 1.4;
 }
 
-.hero-circuit-traces circle {
-  fill: oklch(0.155 0.006 250);
-  stroke: oklch(1 0 0 / 12%);
+.hero-circuit-vias circle {
+  fill: oklch(0.155 0.006 250 / 60%);
+  stroke: oklch(1 0 0 / 16%);
+  stroke-width: 1.2;
+}
+
+.hero-circuit-parts rect {
+  fill: oklch(1 0 0 / 10%);
+}
+
+.hero-circuit-packages rect {
+  stroke: oklch(1 0 0 / 18%);
+  stroke-width: 1.4;
+}
+
+.hero-circuit-packages .hero-circuit-die {
+  stroke: oklch(0.98 0.012 90 / 35%);
+  fill: oklch(0.98 0.012 90 / 6%);
+}
+
+.hero-circuit-packages circle {
+  fill: oklch(1 0 0 / 12%);
 }
 
 .hero-signal {
@@ -363,13 +427,17 @@
   stroke-width: 2;
   stroke-linecap: round;
   stroke-dasharray: 36 964;
-  filter: drop-shadow(0 0 4px var(--color-brand-sky));
   animation: hero-signal linear infinite;
 }
 
 .hero-signal-warm {
   stroke: oklch(0.88 0.11 65);
-  filter: drop-shadow(0 0 4px var(--color-brand-orange));
+}
+
+/* A wide, faint copy under each pulse stands in for a glow filter. */
+.hero-signal-glow {
+  stroke-width: 7;
+  opacity: 0.25;
 }
 
 @keyframes hero-signal {

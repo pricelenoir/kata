@@ -124,7 +124,7 @@ export function QuestionsTable({
           </SelectContent>
         </Select>
 
-        <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card/40 p-0.5">
+        <div className="flex items-center gap-0.5 rounded-lg surface p-0.5">
           {(["all", ...DIFFICULTIES] as const).map((d) => (
             <Button
               key={d}
@@ -140,7 +140,7 @@ export function QuestionsTable({
           ))}
         </div>
 
-        <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card/40 p-0.5">
+        <div className="flex items-center gap-0.5 rounded-lg surface p-0.5">
           {STATUS_FILTERS.map((s) => (
             <Button
               key={s.value}
@@ -164,7 +164,7 @@ export function QuestionsTable({
         />
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-card/40">
+      <div className="overflow-hidden rounded-xl surface">
         <Table>
           <TableHeader>
             <TableRow className="border-border/60 hover:bg-transparent">

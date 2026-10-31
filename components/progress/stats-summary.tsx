@@ -14,7 +14,7 @@ export function StatsSummary() {
   const stats = getOverallStats();
 
   return (
-    <dl className="grid grid-cols-2 divide-border overflow-hidden rounded-xl border border-border bg-card/40 sm:grid-cols-4 sm:divide-x">
+    <dl className="grid grid-cols-2 divide-border overflow-hidden rounded-xl surface sm:grid-cols-4 sm:divide-x">
       <Stat label="Answered" value={stats.answered} suffix={`/ ${stats.total}`} />
       <Stat label="Accuracy" value={stats.answered > 0 ? `${stats.accuracy}%` : "–"} />
       <Stat label="Current streak" value={state.streak.current} suffix="days" highlight={state.streak.current > 0} />

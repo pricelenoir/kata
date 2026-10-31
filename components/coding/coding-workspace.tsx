@@ -162,7 +162,7 @@ export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate
           type="button"
           disabled={cannotRun}
           onClick={() => send("submit")}
-          className="border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90 disabled:opacity-40"
+          className="glow-sky border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90 disabled:opacity-40"
         >
           {busy && state.kind === "submit" ? <LoaderCircleIcon className="animate-spin" /> : <SendIcon />}
           Submit
@@ -196,7 +196,7 @@ export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate
       {history.length > 0 && (
         <section className="space-y-2">
           <h2 className="text-base font-semibold text-foreground">Recent</h2>
-          <ul className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60">
+          <ul className="divide-y divide-border/60 overflow-hidden rounded-xl surface">
             {history.map((row) => (
               <li key={row.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
                 <button type="button" onClick={() => show(row)} className="min-w-0 truncate text-left hover:text-sky-400">

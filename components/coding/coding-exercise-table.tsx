@@ -153,7 +153,7 @@ export function CodingExerciseTable({
         />
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-border bg-card/40">
+      <div className="overflow-hidden rounded-xl surface">
         <Table>
           <TableHeader>
             <TableRow className="border-border/60 hover:bg-transparent">

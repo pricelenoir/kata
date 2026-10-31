@@ -30,7 +30,7 @@ export default function ProgressPage() {
           <WeakestCategoryCallout />
         </div>
 
-        <section className="mt-12 space-y-5 rounded-xl border border-border bg-card/40 p-6">
+        <section className="mt-12 space-y-5 rounded-xl surface p-6">
           <h2 className="text-base font-semibold text-foreground">
             By category
           </h2>

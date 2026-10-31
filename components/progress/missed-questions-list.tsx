@@ -33,7 +33,7 @@ export function MissedQuestionsList({
   }
 
   return (
-    <ul className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60">
+    <ul className="divide-y divide-border/60 overflow-hidden rounded-xl surface">
       {missed.map((q) => (
         <li key={q.id}>
           <Link
