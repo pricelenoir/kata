@@ -48,7 +48,7 @@ export default async function CodingExercisePage({ params }: { params: Params })
   return (
     <div className="flex flex-1 flex-col">
       <SiteHeader />
-      <main className="mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 gap-10 px-4 py-10 sm:px-6 lg:grid-cols-2">
+      <main className="mx-auto grid w-full max-w-[96rem] flex-1 grid-cols-1 gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:px-8">
         <article className="min-w-0 space-y-8">
           <DetailHeader
             section={{ label: "Coding", href: "/coding" }}

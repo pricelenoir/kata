@@ -55,7 +55,9 @@ export function CodeEditor({
       onChange={onChange}
       theme={kataTheme}
       extensions={LANGUAGE_EXTENSIONS[language]}
-      height="28rem"
+      // Fill the screen below the toolbar, then keep growing with the code
+      // so a long solution is never trapped in an inner scroll box.
+      minHeight="max(28rem, calc(100dvh - 15rem))"
       basicSetup={{ tabSize: 4, foldGutter: false }}
       indentWithTab
       className="text-[13px] [&_.cm-editor]:outline-none! [&_.cm-gutters]:pr-1"
