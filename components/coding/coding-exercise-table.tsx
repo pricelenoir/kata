@@ -46,7 +46,7 @@ export function CodingExerciseTable({
     const searchQuery = search.trim().toLowerCase();
     return exercises.filter((e) => {
       if (category !== "all" && e.category !== category) return false;
-      if (language !== "all" && e.language !== language) return false;
+      if (language !== "all" && !e.languages.includes(language)) return false;
       if (difficulty !== "all" && e.difficulty !== difficulty) return false;
       if (searchQuery) {
         const haystack = [e.title, ...(e.tags ?? [])].join(" ").toLowerCase();
@@ -203,12 +203,17 @@ export function CodingExerciseTable({
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge
-                    variant="outline"
-                    className={`font-mono text-[10px] ${LANGUAGE_META[exercise.language].badgeClassName}`}
-                  >
-                    {LANGUAGE_META[exercise.language].label}
-                  </Badge>
+                  <div className="flex gap-1">
+                    {exercise.languages.map((id) => (
+                      <Badge
+                        key={id}
+                        variant="outline"
+                        className={`font-mono text-[10px] ${LANGUAGE_META[id].badgeClassName}`}
+                      >
+                        {LANGUAGE_META[id].label}
+                      </Badge>
+                    ))}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

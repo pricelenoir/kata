@@ -7,8 +7,19 @@ import { SiteHeader } from "@/components/layout/site-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 
 type Mode = "sign-in" | "sign-up";
+
+/** Where to land after logging in — read at submit time (not with
+ * useSearchParams) so the page can stay statically rendered. */
+function nextPath(): string {
+  return safeRedirectPath(new URLSearchParams(window.location.search).get("next"), "/progress");
+}
+
+function callbackUrl(): string {
+  return `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath())}`;
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -37,14 +48,14 @@ export default function LoginPage() {
         setError(error.message);
         return;
       }
-      router.push("/progress");
+      router.push(nextPath());
       return;
     }
 
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      options: { emailRedirectTo: callbackUrl() },
     });
     setSubmitting(false);
     if (error) {
@@ -56,7 +67,7 @@ export default function LoginPage() {
       setCheckEmail(true);
       return;
     }
-    router.push("/progress");
+    router.push(nextPath());
   }
 
   async function handleGitHub() {
@@ -64,7 +75,7 @@ export default function LoginPage() {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "github",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: callbackUrl() },
     });
     if (error) setError(error.message);
   }

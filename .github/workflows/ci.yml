@@ -48,3 +48,31 @@ jobs:
         run: supabase db start
       - name: pgTAP
         run: supabase test db
+
+  judge:
+    name: Judge sandbox under gVisor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install gVisor as a Docker runtime
+        run: |
+          set -euo pipefail
+          URL=https://storage.googleapis.com/gvisor/releases/release/latest/$(uname -m)
+          wget -q "$URL/runsc" "$URL/runsc.sha512"
+          sha512sum -c runsc.sha512
+          chmod a+rx runsc
+          sudo mv runsc /usr/local/bin/
+          sudo /usr/local/bin/runsc install
+          sudo systemctl restart docker
+          docker info --format '{{json .Runtimes}}' | grep -q runsc
+      - name: Build judge images
+        run: npm run judge:images
+      - name: Fixtures and hostile programs
+        run: npm run test:judge
+        env:
+          JUDGE_RUNTIME: runsc

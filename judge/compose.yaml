@@ -1,0 +1,32 @@
+# A runner host: the worker plus the sandbox images it launches.
+#   docker compose -f judge/compose.yaml up -d --build
+# Requires gVisor installed as the "runsc" Docker runtime on the host
+# (https://gvisor.dev/docs/user_guide/install/), or set JUDGE_RUNTIME to a
+# Kata/Firecracker runtime on a KVM-capable host.
+services:
+  worker:
+    build:
+      context: ..
+      dockerfile: judge/worker.Dockerfile
+    restart: unless-stopped
+    # Talks to the host daemon to start sibling sandbox containers.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - ${DOCKER_GID:-999}
+    environment:
+      JUDGE_DATABASE_URL: ${JUDGE_DATABASE_URL:?set to the judge_worker connection string}
+      JUDGE_RUNTIME: ${JUDGE_RUNTIME:-runsc}
+      JUDGE_CONCURRENCY: ${JUDGE_CONCURRENCY:-2}
+      JUDGE_WORKER_ID: ${JUDGE_WORKER_ID:-runner-1}
+    stop_grace_period: 90s
+
+  # Build-only services so `up --build` also produces the sandbox images.
+  sandbox-cpp:
+    image: kata-judge-cpp
+    build: { context: images, target: cpp }
+    profiles: [images]
+  sandbox-rust:
+    image: kata-judge-rust
+    build: { context: images, target: rust }
+    profiles: [images]

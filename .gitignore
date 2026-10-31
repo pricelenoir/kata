@@ -44,6 +44,10 @@ next-env.d.ts
 # claude
 .claude
 
+# Hidden tests and reference solutions: a separate private git repository
+# checked out here. Never part of this (public) repo.
+/private/
+
 # local planning notes (kept out of commits)
 /.plans/
 /ROADMAP.md

@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local-only: planning notes and the private judge-data checkout.
+    ".plans/**",
+    "private/**",
+    "judge/dist/**",
   ]),
 ]);
 
