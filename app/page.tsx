@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRightIcon, BarChart3Icon, BrainCircuitIcon, TerminalSquareIcon } from "lucide-react";
 import { SiteHeader } from "@/components/layout/site-header";
-import { KataFigure } from "@/components/landing/kata-figure";
+import { HeroBackdrop } from "@/components/landing/hero-backdrop";
 import { CodeBlock } from "@/components/question/code-block";
 import { Button } from "@/components/ui/button";
 import { getQuestionById, getQuestionsByCategory, getTotalQuestionCount } from "@/lib/questions";
@@ -40,14 +40,9 @@ export default function LandingPage() {
       <main className="flex-1">
         {/* ---- Hero ---- */}
         <section className="relative overflow-hidden border-b border-border/70">
-          <div aria-hidden className="hero-glow glow-drift pointer-events-none absolute -inset-[10%]" />
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,oklch(1_0_0/4%)_1px,transparent_1px),linear-gradient(to_bottom,oklch(1_0_0/4%)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:radial-gradient(ellipse_70%_60%_at_50%_0%,black,transparent)]"
-          />
+          <HeroBackdrop />
           <div className="relative mx-auto grid max-w-6xl grid-cols-1 items-center gap-14 px-4 pb-20 pt-16 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pb-28 lg:pt-24">
             <div className="space-y-7 animate-in fade-in-0 slide-in-from-bottom-2 duration-700">
-              <KataFigure className="font-mono text-[12px] leading-[1.2] text-brand-sky/70 select-none" />
               <p className="inline-flex items-center gap-2 rounded-full border border-border bg-background/60 px-3 py-1 text-xs text-muted-foreground backdrop-blur">
                 <span aria-hidden className="size-1.5 rounded-full bg-brand-sky" />
                 {questionCount} hand-written questions across {CATEGORIES.length} topics
