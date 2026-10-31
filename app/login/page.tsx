@@ -122,10 +122,11 @@ export default function LoginPage() {
   const { title, blurb } = TITLES[mode];
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="relative flex flex-1 flex-col overflow-hidden">
       <SiteHeader />
-      <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-6 py-16">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
+      <div aria-hidden className="hero-glow pointer-events-none absolute inset-x-0 top-14 h-[28rem] opacity-70" />
+      <main className="relative mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-4 py-16">
+        <h1 className="relative text-3xl font-semibold tracking-tight text-foreground">{title}</h1>
         <p className="mt-2 text-sm text-muted-foreground">{blurb}</p>
 
         <Suspense fallback={null}>
@@ -141,7 +142,7 @@ export default function LoginPage() {
                 size="sm"
                 variant={mode === m ? "secondary" : "ghost"}
                 onClick={() => switchMode(m)}
-                className="font-mono text-xs"
+                className="text-sm"
               >
                 {m === "sign-in" ? "sign in" : "sign up"}
               </Button>
@@ -166,7 +167,7 @@ export default function LoginPage() {
         ) : (
           <form onSubmit={handleSubmit} className="mt-6 space-y-3">
             <div className="space-y-1.5">
-              <label htmlFor="email" className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
+              <label htmlFor="email" className="text-sm font-medium text-foreground">
                 Email
               </label>
               <Input
@@ -183,7 +184,7 @@ export default function LoginPage() {
                 <div className="flex items-baseline justify-between">
                   <label
                     htmlFor="password"
-                    className="font-mono text-xs uppercase tracking-wide text-muted-foreground"
+                    className="text-sm font-medium text-foreground"
                   >
                     Password
                   </label>
@@ -221,7 +222,7 @@ export default function LoginPage() {
               </p>
             )}
 
-            <Button type="submit" disabled={submitting} className="w-full">
+            <Button type="submit" disabled={submitting} className="h-10 w-full border-0 bg-brand-gradient font-semibold text-background hover:brightness-110">
               {submitting
                 ? "Working…"
                 : mode === "sign-in"
@@ -245,7 +246,7 @@ export default function LoginPage() {
           <>
             <div className="mt-6 flex items-center gap-3">
               <div className="h-px flex-1 bg-border/60" />
-              <span className="font-mono text-xs text-muted-foreground">or</span>
+              <span className="text-xs text-muted-foreground">or</span>
               <div className="h-px flex-1 bg-border/60" />
             </div>
 

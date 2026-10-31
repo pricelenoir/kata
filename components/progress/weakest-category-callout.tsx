@@ -26,19 +26,19 @@ export function WeakestCategoryCallout() {
   const meta = CATEGORY_META[weakest.category];
   const description =
     weakest.reason === "accuracy"
-      ? `${weakest.stats.correct} of ${weakest.stats.answered} correct (${weakest.stats.accuracy}%) — your lowest accuracy so far.`
-      : `${weakest.stats.answered}/${weakest.stats.total} answered — your least-practiced category so far.`;
+      ? `${weakest.stats.correct} of ${weakest.stats.answered} correct (${weakest.stats.accuracy}%). Your lowest accuracy so far.`
+      : `${weakest.stats.answered}/${weakest.stats.total} answered. Your least-practiced topic so far.`;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-5 py-4">
+    <div className="flex flex-wrap items-center justify-between gap-4 border-brand-gradient rounded-xl px-5 py-4">
       <div className="flex items-start gap-3">
-        <TargetIcon className="mt-0.5 size-4 shrink-0 text-amber-400" />
+        <TargetIcon className="mt-0.5 size-4 shrink-0 text-brand-orange" />
         <div className="space-y-1">
-          <p className="font-mono text-xs uppercase tracking-wide text-amber-400">
+          <p className="text-sm font-medium text-brand-orange">
             {weakest.reason === "accuracy" ? "Focus area" : "Start here"}
           </p>
-          <p className="text-sm font-medium text-foreground">{meta.label}</p>
-          <p className="text-xs text-muted-foreground">{description}</p>
+          <p className="text-base font-semibold text-foreground">{meta.label}</p>
+          <p className="text-sm text-muted-foreground">{description}</p>
         </div>
       </div>
       <Button

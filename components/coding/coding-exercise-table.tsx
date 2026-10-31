@@ -88,7 +88,7 @@ export function CodingExerciseTable({
           value={category}
           onValueChange={(v) => handleCategoryChange(v as Category | "all")}
         >
-          <SelectTrigger size="sm" className="w-32 font-mono text-xs">
+          <SelectTrigger size="sm" className="w-32 text-sm">
             <SelectValue placeholder="Category">
               {(value: Category | "all" | null) =>
                 !value || value === "all"
@@ -111,7 +111,7 @@ export function CodingExerciseTable({
           value={language}
           onValueChange={(v) => handleLanguageChange(v as Language | "all")}
         >
-          <SelectTrigger size="sm" className="w-32 font-mono text-xs">
+          <SelectTrigger size="sm" className="w-32 text-sm">
             <SelectValue placeholder="Language">
               {(value: Language | "all" | null) =>
                 !value || value === "all"
@@ -138,7 +138,7 @@ export function CodingExerciseTable({
               size="sm"
               variant={difficulty === d ? "secondary" : "ghost"}
               onClick={() => handleDifficultyChange(d)}
-              className="font-mono text-xs capitalize"
+              className="text-sm capitalize"
             >
               {d}
             </Button>
@@ -149,11 +149,11 @@ export function CodingExerciseTable({
           value={search}
           onChange={(e) => handleSearchChange(e.target.value)}
           placeholder="Search…"
-          className="ml-auto h-8 w-72 font-mono text-xs"
+          className="ml-auto h-8 w-72 text-sm"
         />
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-border/60">
+      <div className="overflow-hidden rounded-xl border border-border bg-card/40">
         <Table>
           <TableHeader>
             <TableRow className="border-border/60 hover:bg-transparent">
@@ -189,7 +189,7 @@ export function CodingExerciseTable({
                 <TableCell>
                   <Badge
                     variant="outline"
-                    className={`font-mono text-[10px] ${CATEGORY_META[exercise.category].badgeClassName}`}
+                    className={`text-xs ${CATEGORY_META[exercise.category].badgeClassName}`}
                   >
                     {CATEGORY_META[exercise.category].shortLabel}
                   </Badge>
@@ -197,7 +197,7 @@ export function CodingExerciseTable({
                 <TableCell>
                   <Badge
                     variant="outline"
-                    className={`font-mono text-[10px] uppercase ${DIFFICULTY_CLASS[exercise.difficulty]}`}
+                    className={`text-xs ${DIFFICULTY_CLASS[exercise.difficulty]}`}
                   >
                     {exercise.difficulty}
                   </Badge>
@@ -208,7 +208,7 @@ export function CodingExerciseTable({
                       <Badge
                         key={id}
                         variant="outline"
-                        className={`font-mono text-[10px] ${LANGUAGE_META[id].badgeClassName}`}
+                        className={`text-xs ${LANGUAGE_META[id].badgeClassName}`}
                       >
                         {LANGUAGE_META[id].label}
                       </Badge>

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
+import { CategoryTag, DifficultyTag } from "@/components/ui/tag";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,7 +23,7 @@ import {
 import { StatusDot } from "@/components/question/status-dot";
 import { TablePagination } from "@/components/shared/table-pagination";
 import { useProgress } from "@/lib/progress-store";
-import { DIFFICULTIES, DIFFICULTY_CLASS } from "@/lib/difficulty";
+import { DIFFICULTIES } from "@/lib/difficulty";
 import { CATEGORIES, CATEGORY_META } from "@/types/category";
 import type { Category } from "@/types/category";
 import type { Difficulty, QuestionSummary } from "@/types/question";
@@ -105,7 +105,7 @@ export function QuestionsTable({
           value={category}
           onValueChange={(v) => handleCategoryChange(v as Category | "all")}
         >
-          <SelectTrigger size="sm" className="w-32 font-mono text-xs">
+          <SelectTrigger size="sm" className="w-40 text-sm">
             <SelectValue placeholder="Category">
               {(value: Category | "all" | null) =>
                 !value || value === "all"
@@ -124,30 +124,32 @@ export function QuestionsTable({
           </SelectContent>
         </Select>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card/40 p-0.5">
           {(["all", ...DIFFICULTIES] as const).map((d) => (
             <Button
               key={d}
               type="button"
               size="sm"
               variant={difficulty === d ? "secondary" : "ghost"}
+              aria-pressed={difficulty === d}
               onClick={() => handleDifficultyChange(d)}
-              className="font-mono text-xs capitalize"
+              className="h-7 text-sm capitalize"
             >
               {d}
             </Button>
           ))}
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card/40 p-0.5">
           {STATUS_FILTERS.map((s) => (
             <Button
               key={s.value}
               type="button"
               size="sm"
               variant={status === s.value ? "secondary" : "ghost"}
+              aria-pressed={status === s.value}
               onClick={() => handleStatusChange(s.value)}
-              className="font-mono text-xs capitalize"
+              className="h-7 text-sm capitalize"
             >
               {s.label}
             </Button>
@@ -158,11 +160,11 @@ export function QuestionsTable({
           value={search}
           onChange={(e) => handleSearchChange(e.target.value)}
           placeholder="Search title or tag…"
-          className="ml-auto h-8 w-72 font-mono text-xs"
+          className="ml-auto h-8 w-full text-sm sm:w-72"
         />
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-border/60">
+      <div className="overflow-hidden rounded-xl border border-border bg-card/40">
         <Table>
           <TableHeader>
             <TableRow className="border-border/60 hover:bg-transparent">
@@ -195,20 +197,10 @@ export function QuestionsTable({
                     </Link>
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={`font-mono text-[10px] ${CATEGORY_META[q.category].badgeClassName}`}
-                    >
-                      {CATEGORY_META[q.category].shortLabel}
-                    </Badge>
+                    <CategoryTag category={q.category} short />
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={`font-mono text-[10px] uppercase ${DIFFICULTY_CLASS[q.difficulty]}`}
-                    >
-                      {q.difficulty}
-                    </Badge>
+                    <DifficultyTag difficulty={q.difficulty} />
                   </TableCell>
                 </TableRow>
               );

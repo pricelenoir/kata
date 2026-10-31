@@ -121,13 +121,13 @@ export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate
               aria-selected={language === l}
               variant={language === l ? "secondary" : "ghost"}
               onClick={() => changeLanguage(l)}
-              className="font-mono text-xs"
+              className="text-sm"
             >
               {LANGUAGE_META[l].label}
             </Button>
           ))}
         </div>
-        <Button type="button" size="sm" variant="ghost" onClick={resetCode} className="font-mono text-xs">
+        <Button type="button" size="sm" variant="ghost" onClick={resetCode} className="text-sm">
           <RotateCcwIcon />
           Reset
         </Button>
@@ -146,7 +146,7 @@ export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate
             onChange={(e) => setCustomText(e.target.value)}
             rows={4}
             spellCheck={false}
-            className="font-mono text-xs"
+            className="text-sm"
             aria-label="Custom input"
           />
         )}
@@ -158,7 +158,12 @@ export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate
           {busy && state.kind === "run" ? <LoaderCircleIcon className="animate-spin" /> : <PlayIcon />}
           Run examples
         </Button>
-        <Button type="button" disabled={cannotRun} onClick={() => send("submit")}>
+        <Button
+          type="button"
+          disabled={cannotRun}
+          onClick={() => send("submit")}
+          className="border-0 bg-brand-gradient font-semibold text-background hover:brightness-110 disabled:opacity-40"
+        >
           {busy && state.kind === "submit" ? <LoaderCircleIcon className="animate-spin" /> : <SendIcon />}
           Submit
         </Button>
@@ -169,7 +174,7 @@ export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate
         )}
         {judgeEnabled && signedOut && (
           <span className="text-sm text-muted-foreground">
-            <Link href={`/login?next=/coding/${exerciseId}`} className="text-sky-400 hover:text-sky-300">
+            <Link href={`/login?next=/coding/${exerciseId}`} className="text-brand-sky hover:underline underline-offset-4">
               Log in
             </Link>{" "}
             to run your code. Drafts are saved in this browser either way.
@@ -190,7 +195,7 @@ export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate
 
       {history.length > 0 && (
         <section className="space-y-2">
-          <h2 className="font-mono text-xs uppercase tracking-wide text-muted-foreground">Recent</h2>
+          <h2 className="text-base font-semibold text-foreground">Recent</h2>
           <ul className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60">
             {history.map((row) => (
               <li key={row.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">

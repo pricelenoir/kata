@@ -29,7 +29,7 @@ function inputText(input: TestCase | undefined): string {
 function Pre({ label, text }: { label: string; text: string }) {
   return (
     <div className="space-y-1">
-      <div className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
       <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md border border-border/60 bg-[#121212] px-3 py-2 font-mono text-xs text-foreground">
         {text === "" ? <span className="text-muted-foreground">(empty)</span> : text}
       </pre>

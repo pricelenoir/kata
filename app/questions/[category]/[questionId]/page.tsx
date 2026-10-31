@@ -6,10 +6,11 @@ import { FillInBlankInteractive } from "@/components/question/fill-in-blank-inte
 import { InlineText } from "@/components/question/inline-code";
 import { QuestionInteractive } from "@/components/question/question-interactive";
 import { QuestionNav } from "@/components/question/question-nav";
-import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
+import { ChevronRightIcon } from "lucide-react";
+import { CategoryTag, DifficultyTag } from "@/components/ui/tag";
 import { CATEGORIES, CATEGORY_META, type Category } from "@/types/category";
 import { getAllQuestions, getQuestionById } from "@/lib/questions";
-import { DIFFICULTY_CLASS } from "@/lib/difficulty";
 import { tokenizeCode } from "@/lib/code-highlight";
 import type { FillInBlankQuestion } from "@/types/question";
 
@@ -58,26 +59,23 @@ export default async function QuestionPage({ params }: { params: Params }) {
   return (
     <div className="flex flex-1 flex-col">
       <SiteHeader />
-      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
-        <div className="mb-6 space-y-3">
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6">
+        <nav aria-label="Breadcrumb" className="mb-6 flex items-center gap-1.5 text-sm text-muted-foreground">
+          <Link href="/questions" className="transition-colors hover:text-foreground">
+            Questions
+          </Link>
+          <ChevronRightIcon className="size-3.5" aria-hidden />
+          <Link href={`/questions?category=${category}`} className="transition-colors hover:text-foreground">
+            {meta.label}
+          </Link>
+        </nav>
+        <div className="mb-8 space-y-4">
           <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className={`font-mono text-xs ${meta.badgeClassName}`}
-            >
-              {meta.label}
-            </Badge>
-            <Badge
-              variant="outline"
-              className={`font-mono text-[10px] uppercase ${DIFFICULTY_CLASS[question.difficulty]}`}
-            >
-              {question.difficulty}
-            </Badge>
+            <CategoryTag category={category} />
+            <DifficultyTag difficulty={question.difficulty} />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            {question.title}
-          </h1>
-          <p className="text-sm leading-relaxed text-muted-foreground">
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{question.title}</h1>
+          <p className="text-base leading-relaxed text-muted-foreground">
             <InlineText text={question.prompt} />
           </p>
         </div>
@@ -93,7 +91,7 @@ export default async function QuestionPage({ params }: { params: Params }) {
           )}
         </div>
 
-        <div className="mt-8">
+        <div className="mt-10">
           <QuestionNav category={category} questionId={question.id} />
         </div>
       </main>

@@ -8,11 +8,10 @@ export function ExplanationPanel({
   references?: string[];
 }) {
   return (
-    <div className="space-y-3 rounded-lg border border-sky-500/20 bg-sky-500/[0.04] px-5 py-4">
-      <h3 className="font-mono text-xs uppercase tracking-wide text-sky-400">
-        Explanation
-      </h3>
-      <p className="text-sm leading-relaxed text-foreground/90">
+    <div className="relative space-y-3 overflow-hidden rounded-xl border border-border bg-card/60 py-5 pl-6 pr-5 animate-in fade-in-0 slide-in-from-top-1 duration-300">
+      <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-[linear-gradient(to_bottom,var(--color-brand-sky),var(--color-brand-orange))]" />
+      <h3 className="text-sm font-semibold text-foreground">Why</h3>
+      <p className="text-[15px] leading-relaxed text-foreground/85">
         <InlineText text={explanation} />
       </p>
       {references && references.length > 0 && (

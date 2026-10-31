@@ -46,6 +46,10 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  /* Brand accents. Sky is the everyday interactive color; orange only ever
+   * appears inside the sky-to-orange gradient, for moments of emphasis. */
+  --color-brand-sky: oklch(0.78 0.13 228);
+  --color-brand-orange: oklch(0.73 0.17 38);
 }
 
 :root {
@@ -84,24 +88,26 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  /* Near-black with a whisper of blue, so the sky/orange accents read as
+   * part of the same light rather than stickers on grey. */
+  --background: oklch(0.155 0.006 250);
+  --foreground: oklch(0.97 0.004 250);
+  --card: oklch(0.19 0.008 250);
+  --card-foreground: oklch(0.97 0.004 250);
+  --popover: oklch(0.2 0.008 250);
+  --popover-foreground: oklch(0.97 0.004 250);
+  --primary: oklch(0.96 0.004 250);
+  --primary-foreground: oklch(0.18 0.008 250);
+  --secondary: oklch(0.25 0.01 250);
+  --secondary-foreground: oklch(0.97 0.004 250);
+  --muted: oklch(0.24 0.009 250);
+  --muted-foreground: oklch(0.7 0.012 250);
+  --accent: oklch(0.25 0.01 250);
+  --accent-foreground: oklch(0.97 0.004 250);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: oklch(0.746 0.16 232.661);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -137,5 +143,52 @@
   50%,
   100% {
     opacity: 0;
+  }
+}
+/* ---- Brand gradient -------------------------------------------------- */
+
+@utility text-brand-gradient {
+  background-image: linear-gradient(100deg, var(--color-brand-sky) 10%, var(--color-brand-orange) 90%);
+  background-clip: text;
+  color: transparent;
+}
+
+@utility bg-brand-gradient {
+  background-image: linear-gradient(100deg, var(--color-brand-sky), var(--color-brand-orange));
+}
+
+/* A 1px gradient edge on top of whatever background the element has. */
+@utility border-brand-gradient {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--color-card), var(--color-card)) padding-box,
+    linear-gradient(120deg, color-mix(in oklch, var(--color-brand-sky) 70%, transparent), color-mix(in oklch, var(--color-brand-orange) 70%, transparent)) border-box;
+}
+
+/* Soft light behind the landing hero. */
+.hero-glow {
+  background:
+    radial-gradient(60% 55% at 30% 0%, color-mix(in oklch, var(--color-brand-sky) 22%, transparent), transparent 70%),
+    radial-gradient(45% 50% at 85% 20%, color-mix(in oklch, var(--color-brand-orange) 16%, transparent), transparent 70%);
+}
+
+@layer base {
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

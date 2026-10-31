@@ -2,13 +2,11 @@
 
 import Link from "next/link";
 import { ArrowRightIcon, PartyPopperIcon } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { CategoryTag, DifficultyTag } from "@/components/ui/tag";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DIFFICULTY_CLASS } from "@/lib/difficulty";
 import { useProgress } from "@/lib/progress-store";
 import { getRecommendedQuestion } from "@/lib/recommendation";
-import { CATEGORY_META } from "@/types/category";
 import type { QuestionSummary } from "@/types/question";
 
 export function NextQuestionCta({
@@ -30,7 +28,7 @@ export function NextQuestionCta({
         <PartyPopperIcon className="size-5 shrink-0 text-emerald-400" />
         <p className="text-sm text-foreground">
           You&apos;ve answered every question correctly. Nice work — check{" "}
-          <Link href="/progress" className="text-sky-400 hover:text-sky-300">
+          <Link href="/progress" className="text-brand-sky hover:underline underline-offset-4">
             your progress
           </Link>{" "}
           or reset to drill again.
@@ -40,35 +38,26 @@ export function NextQuestionCta({
   }
 
   const { question, reason } = recommended;
-  const meta = CATEGORY_META[question.category];
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-sky-500/30 bg-sky-500/5 px-5 py-4">
-      <div className="space-y-1.5">
-        <p className="font-mono text-xs uppercase tracking-wide text-sky-400">
-          {reason === "retry" ? "Retry — missed last time" : "Up next"}
+    <div className="border-brand-gradient relative flex flex-wrap items-center justify-between gap-4 overflow-hidden rounded-xl px-5 py-4">
+      <div aria-hidden className="hero-glow pointer-events-none absolute inset-0 opacity-60" />
+      <div className="relative space-y-2">
+        <p className="text-sm text-muted-foreground">
+          {reason === "retry" ? "Missed last time, try it again" : "Up next"}
         </p>
-        <p className="text-sm font-medium text-foreground">{question.title}</p>
+        <p className="text-base font-medium text-foreground">{question.title}</p>
         <div className="flex items-center gap-2">
-          <Badge
-            variant="outline"
-            className={`font-mono text-[10px] ${meta.badgeClassName}`}
-          >
-            {meta.shortLabel}
-          </Badge>
-          <Badge
-            variant="outline"
-            className={`font-mono text-[10px] uppercase ${DIFFICULTY_CLASS[question.difficulty]}`}
-          >
-            {question.difficulty}
-          </Badge>
+          <CategoryTag category={question.category} short />
+          <DifficultyTag difficulty={question.difficulty} />
         </div>
       </div>
       <Button
         nativeButton={false}
         render={<Link href={`/questions/${question.category}/${question.id}`} />}
+        className="relative border-0 bg-brand-gradient font-semibold text-background hover:brightness-110"
       >
-        Jump in
+        {reason === "retry" ? "Retry" : "Start"}
         <ArrowRightIcon />
       </Button>
     </div>

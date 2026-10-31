@@ -4,10 +4,8 @@ import { SiteHeader } from "@/components/layout/site-header";
 import { CodeBlock } from "@/components/question/code-block";
 import { InlineText } from "@/components/question/inline-code";
 import { CodingWorkspaceLoader } from "@/components/coding/coding-workspace-loader";
-import { Badge } from "@/components/ui/badge";
-import { CATEGORY_META } from "@/types/category";
+import { CategoryTag, DifficultyTag } from "@/components/ui/tag";
 import { LANGUAGES, LANGUAGE_META, type CodingExercise, type Language } from "@/types/coding-exercise";
-import { DIFFICULTY_CLASS } from "@/lib/difficulty";
 import { getAllCodingExercises, getCodingExerciseById } from "@/lib/coding-exercises";
 import { starterCode } from "@/judge/src/harness";
 import { isJudgeEnabled } from "@/lib/judge-config";
@@ -43,33 +41,28 @@ export default async function CodingExercisePage({ params }: { params: Params })
   const exercise = getCodingExerciseById((await params).exerciseId);
   if (!exercise) notFound();
 
-  const categoryMeta = CATEGORY_META[exercise.category];
   const starter = Object.fromEntries(LANGUAGES.map((l) => [l, starterCode(exercise, l)])) as Record<Language, string>;
   const { limits } = exercise;
 
   return (
     <div className="flex flex-1 flex-col">
       <SiteHeader />
-      <main className="mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 gap-10 px-6 py-10 lg:grid-cols-2">
+      <main className="mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 gap-10 px-4 py-10 sm:px-6 lg:grid-cols-2">
         <article className="min-w-0 space-y-6">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className={`font-mono text-xs ${categoryMeta.badgeClassName}`}>
-                {categoryMeta.label}
-              </Badge>
-              <Badge variant="outline" className={`font-mono text-[10px] uppercase ${DIFFICULTY_CLASS[exercise.difficulty]}`}>
-                {exercise.difficulty}
-              </Badge>
+              <CategoryTag category={exercise.category} />
+              <DifficultyTag difficulty={exercise.difficulty} />
               {exercise.tags?.map((tag) => (
-                <span key={tag} className="font-mono text-xs text-muted-foreground">
-                  #{tag}
+                <span key={tag} className="text-xs text-muted-foreground">
+                  {tag}
                 </span>
               ))}
             </div>
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">{exercise.title}</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{exercise.title}</h1>
           </div>
 
-          <div className="space-y-3 text-sm leading-relaxed text-muted-foreground">
+          <div className="space-y-3 text-[15px] leading-relaxed text-muted-foreground">
             {exercise.prompt.split(/\n\s*\n/).map((paragraph, i) => (
               <p key={i}>
                 <InlineText text={paragraph} />
@@ -79,7 +72,7 @@ export default async function CodingExercisePage({ params }: { params: Params })
 
           {exercise.constraints && (
             <section className="space-y-2">
-              <h2 className="font-mono text-xs uppercase tracking-wide text-muted-foreground">Constraints</h2>
+              <h2 className="text-base font-semibold text-foreground">Constraints</h2>
               <ul className="list-inside list-disc space-y-1 text-sm text-muted-foreground">
                 {exercise.constraints.map((c) => (
                   <li key={c}>
@@ -87,15 +80,15 @@ export default async function CodingExercisePage({ params }: { params: Params })
                   </li>
                 ))}
               </ul>
-              <p className="font-mono text-xs text-muted-foreground">
-                {limits.timeMs} ms CPU per test · {limits.memoryMb} MB · {limits.cpus ?? 1} CPU
-                {(limits.cpus ?? 1) === 1 ? "" : "s"}
+              <p className="text-sm text-muted-foreground">
+                Limits per test: {limits.timeMs} ms of CPU, {limits.memoryMb} MB of memory, {limits.cpus ?? 1} CPU
+                {(limits.cpus ?? 1) === 1 ? "" : "s"}.
               </p>
             </section>
           )}
 
           <section className="space-y-3">
-            <h2 className="font-mono text-xs uppercase tracking-wide text-muted-foreground">Examples</h2>
+            <h2 className="text-base font-semibold text-foreground">Examples</h2>
             {exercise.examples.map((_, i) => {
               const { input, expected } = exampleText(exercise, i);
               return (
@@ -108,7 +101,7 @@ export default async function CodingExercisePage({ params }: { params: Params })
           </section>
 
           {exercise.mode === "harness" && (
-            <details className="group rounded-lg border border-border/60">
+            <details className="group rounded-xl border border-border bg-card/40">
               <summary className="cursor-pointer px-4 py-3 text-sm text-foreground hover:bg-muted/40">
                 How your code is tested
               </summary>
@@ -145,8 +138,8 @@ export default async function CodingExercisePage({ params }: { params: Params })
 function ExampleBlock({ label, text }: { label: string; text: string }) {
   return (
     <div className="min-w-0 space-y-1">
-      <div className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-md border border-border/60 bg-[#121212] px-3 py-2 font-mono text-xs text-foreground">
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg border border-border bg-[oklch(0.13_0.006_250)] px-3 py-2 font-mono text-xs text-foreground">
         {text}
       </pre>
     </div>

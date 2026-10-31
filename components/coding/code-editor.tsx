@@ -12,13 +12,13 @@ import type { Language } from "@/types/coding-exercise";
 const kataTheme = createTheme({
   theme: "dark",
   settings: {
-    background: "#121212",
+    background: "#0f1418",
     foreground: "#e4e4e7",
     caret: "#38bdf8",
     selection: "#38bdf833",
     selectionMatch: "#38bdf822",
     lineHighlight: "#ffffff08",
-    gutterBackground: "#121212",
+    gutterBackground: "#0f1418",
     gutterForeground: "#52525b",
     gutterBorder: "transparent",
     fontFamily: "var(--font-mono)",
@@ -58,7 +58,7 @@ export function CodeEditor({
       height="28rem"
       basicSetup={{ tabSize: 4, foldGutter: false }}
       indentWithTab
-      className="overflow-hidden rounded-lg border border-border/60 text-[13px]"
+      className="overflow-hidden rounded-xl border border-border text-[13px] shadow-[0_0_0_1px_transparent] focus-within:border-brand-sky/50"
       aria-label="Solution editor"
     />
   );

@@ -37,7 +37,7 @@ export function PasswordForm({ submitLabel, onDone }: { submitLabel: string; onD
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div className="space-y-1.5">
-        <label htmlFor="new-password" className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
+        <label htmlFor="new-password" className="text-sm font-medium text-foreground">
           New password
         </label>
         <Input
@@ -51,7 +51,7 @@ export function PasswordForm({ submitLabel, onDone }: { submitLabel: string; onD
         />
       </div>
       <div className="space-y-1.5">
-        <label htmlFor="confirm-password" className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
+        <label htmlFor="confirm-password" className="text-sm font-medium text-foreground">
           Confirm new password
         </label>
         <Input

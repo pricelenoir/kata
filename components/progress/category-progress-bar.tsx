@@ -13,17 +13,17 @@ export function CategoryProgressBar({ meta }: { meta: CategoryMeta }) {
     <div className="space-y-2">
       <div className="flex items-center justify-between text-sm">
         <span className="font-medium text-foreground">{meta.label}</span>
-        <span className="font-mono text-xs text-muted-foreground">
-          {stats.correct} correct · {stats.answered}/{stats.total} answered
+        <span className="text-sm tabular-nums text-muted-foreground">
+          {stats.correct} correct, {stats.answered} of {stats.total} answered
         </span>
       </div>
       <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted">
         <div
-          className="absolute inset-y-0 left-0 bg-sky-500/10"
+          className="absolute inset-y-0 left-0 rounded-full bg-foreground/10"
           style={{ width: `${attemptedPct}%` }}
         />
         <div
-          className="absolute inset-y-0 left-0 bg-sky-400"
+          className="absolute inset-y-0 left-0 rounded-full bg-brand-gradient"
           style={{ width: `${correctPct}%` }}
         />
       </div>
