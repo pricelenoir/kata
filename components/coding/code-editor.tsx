@@ -12,14 +12,14 @@ import type { Language } from "@/types/coding-exercise";
 const kataTheme = createTheme({
   theme: "dark",
   settings: {
-    background: "#0f1418",
+    background: "oklch(0.13 0.006 250)",
     foreground: "#e4e4e7",
     caret: "#38bdf8",
     selection: "#38bdf833",
     selectionMatch: "#38bdf822",
     lineHighlight: "#ffffff08",
-    gutterBackground: "#0f1418",
-    gutterForeground: "#52525b",
+    gutterBackground: "oklch(0.13 0.006 250)",
+    gutterForeground: "#4b5563",
     gutterBorder: "transparent",
     fontFamily: "var(--font-mono)",
   },
@@ -58,7 +58,7 @@ export function CodeEditor({
       height="28rem"
       basicSetup={{ tabSize: 4, foldGutter: false }}
       indentWithTab
-      className="overflow-hidden rounded-xl border border-border text-[13px] shadow-[0_0_0_1px_transparent] focus-within:border-brand-sky/50"
+      className="text-[13px] [&_.cm-editor]:outline-none! [&_.cm-gutters]:pr-1"
       aria-label="Solution editor"
     />
   );

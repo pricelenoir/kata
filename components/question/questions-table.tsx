@@ -120,7 +120,7 @@ export function QuestionsTable({
               <li key={q.id}>
                 <Link
                   href={`/questions/${q.category}/${q.id}`}
-                  className="group grid grid-cols-[1.25rem_1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-foreground/[0.03] sm:grid-cols-[1.25rem_1fr_11rem_5rem_1rem]"
+                  className="group grid grid-cols-[1.25rem_1fr_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-foreground/[0.03] sm:grid-cols-[1.25rem_1fr_11rem_6rem_1rem]"
                 >
                   <StatusIcon status={s} />
                   <span className="min-w-0 truncate text-sm text-foreground">{q.title}</span>

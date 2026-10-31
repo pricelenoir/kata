@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DIFFICULTY_TEXT } from "@/lib/difficulty";
+import { DifficultyLabel } from "@/components/ui/difficulty";
 import { cn } from "@/lib/utils";
 import { CATEGORIES, CATEGORY_META, type Category } from "@/types/category";
 import type { Difficulty } from "@/types/question";
@@ -111,5 +111,5 @@ export function TopicCell({ category, className }: { category: Category; classNa
 }
 
 export function DifficultyCell({ difficulty }: { difficulty: Difficulty }) {
-  return <span className={cn("text-sm", DIFFICULTY_TEXT[difficulty])}>{DIFFICULTY_LABEL[difficulty]}</span>;
+  return <DifficultyLabel difficulty={difficulty} />;
 }

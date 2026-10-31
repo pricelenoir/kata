@@ -24,7 +24,7 @@ export default async function CodingExercisesPage({
       <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-12 sm:px-6">
         <PageHeader
           title="Coding"
-          description="Implement real systems primitives in C++ or Rust and run them against hidden tests in a sandbox."
+          description="Implement real systems primitives and run them against hidden tests in a sandbox."
         />
 
         <CodingExerciseTable exercises={exercises} initialCategory={initialCategory} />

@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { ArrowRightIcon, PartyPopperIcon } from "lucide-react";
-import { CategoryTag, DifficultyTag } from "@/components/ui/tag";
+import { DifficultyLabel } from "@/components/ui/difficulty";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProgress } from "@/lib/progress-store";
 import { getRecommendedQuestion } from "@/lib/recommendation";
+import { CATEGORY_META } from "@/types/category";
 import type { QuestionSummary } from "@/types/question";
 
 export function NextQuestionCta({
@@ -46,9 +47,9 @@ export function NextQuestionCta({
           {reason === "retry" ? "Missed last time, try it again" : "Up next"}
         </p>
         <p className="text-base font-medium text-foreground">{question.title}</p>
-        <div className="flex items-center gap-2">
-          <CategoryTag category={question.category} short />
-          <DifficultyTag difficulty={question.difficulty} />
+        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <span>{CATEGORY_META[question.category].label}</span>
+          <DifficultyLabel difficulty={question.difficulty} />
         </div>
       </div>
       <Button
