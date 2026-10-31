@@ -66,7 +66,7 @@ export default function LandingPage() {
                   Start practicing
                   <ArrowRightIcon />
                 </Button>
-                <Button size="lg" variant="outline" nativeButton={false} render={<Link href="/coding" />} className="h-11 px-5 text-[15px]">
+                <Button size="lg" variant="outline" nativeButton={false} render={<Link href="/coding" />} className="h-11 bg-background/70 px-5 text-[15px] backdrop-blur hover:bg-background/90">
                   Try a coding exercise
                 </Button>
               </div>
@@ -78,7 +78,7 @@ export default function LandingPage() {
                   aria-hidden
                   className="absolute -inset-6 rounded-[2rem] bg-brand-gradient opacity-[0.12] blur-3xl"
                 />
-                <figure className="border-brand-gradient relative overflow-hidden rounded-2xl shadow-2xl shadow-black/40">
+                <figure className="border-brand-gradient relative overflow-hidden rounded-2xl shadow-2xl shadow-black/40 backdrop-blur-xl">
                   <div className="flex items-center gap-2 border-b border-border/70 px-4 py-3">
                     <span aria-hidden className="flex gap-1.5">
                       <span className="size-2.5 rounded-full bg-foreground/15" />
