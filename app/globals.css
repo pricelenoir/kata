@@ -165,7 +165,18 @@
     linear-gradient(120deg, color-mix(in oklch, var(--color-brand-sky) 70%, transparent), color-mix(in oklch, var(--color-brand-orange) 70%, transparent)) border-box;
 }
 
-/* Soft light behind the landing hero. */
+/* Soft light behind the landing hero; drifts very slowly. */
+@keyframes glow-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  33% { transform: translate3d(4%, 3%, 0) scale(1.06); }
+  66% { transform: translate3d(-3%, 2%, 0) scale(1.03); }
+}
+
+.glow-drift {
+  animation: glow-drift 26s ease-in-out infinite;
+  will-change: transform;
+}
+
 .hero-glow {
   background:
     radial-gradient(60% 55% at 30% 0%, color-mix(in oklch, var(--color-brand-sky) 22%, transparent), transparent 70%),
