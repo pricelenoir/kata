@@ -53,7 +53,11 @@ const HOSTILE: [file: string, expected: Verdict[]][] = [
   ["stack-overflow.cpp", ["runtime_error"]],
   ["lingering-daemon.cpp", ["accepted"]],
   ["disk-fill.cpp", ["accepted"]],
-  ["thread-explosion.cpp", ["accepted"]],
+  // runc stops it at the pid limit, so it reports "contained" itself;
+  // gVisor's threads aren't host processes, so there the sandbox's memory
+  // limit kills it first. Either way it never gets its 10,000 threads (a
+  // run that did would print "escaped" and be a wrong answer).
+  ["thread-explosion.cpp", ["accepted", "memory_limit"]],
   ["escape-probes.cpp", ["accepted"]],
   ["compile-bomb-include.cpp", ["compile_error"]],
   ["compile-bomb-templates.cpp", ["compile_error"]],
