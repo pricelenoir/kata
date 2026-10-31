@@ -60,13 +60,16 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Install gVisor as a Docker runtime
+        env:
+          # Pinned so CI only changes when this does. Releases ship as one
+          # tarball: runsc, its containerd shim, and a gvisor-bin/ helper dir.
+          GVISOR_RELEASE: "20261012"
         run: |
           set -euo pipefail
-          URL=https://storage.googleapis.com/gvisor/releases/release/latest/$(uname -m)
-          wget -q "$URL/runsc" "$URL/runsc.sha512"
-          sha512sum -c runsc.sha512
-          chmod a+rx runsc
-          sudo mv runsc /usr/local/bin/
+          URL="https://storage.googleapis.com/gvisor/releases/release/${GVISOR_RELEASE}/$(uname -m)"
+          wget -q "$URL/gvisor.tar.bz2" "$URL/gvisor.tar.bz2.sha512"
+          sha512sum -c gvisor.tar.bz2.sha512
+          sudo tar -xjf gvisor.tar.bz2 -C /usr/local/bin
           sudo /usr/local/bin/runsc install
           sudo systemctl restart docker
           docker info --format '{{json .Runtimes}}' | grep -q runsc
