@@ -1,7 +1,12 @@
+import "server-only";
 import { ALL_QUESTIONS, QUESTIONS_BY_CATEGORY } from "@/content/questions";
 import { seededShuffle } from "@/lib/shuffle";
-import type { Category } from "@/types/category";
-import type { Question } from "@/types/question";
+import { CATEGORIES, type Category } from "@/types/category";
+import {
+  toQuestionSummary,
+  type Question,
+  type QuestionSummary,
+} from "@/types/question";
 
 export function getQuestionsByCategory(category: Category): Question[] {
   return QUESTIONS_BY_CATEGORY[category];
@@ -11,6 +16,19 @@ export function getQuestionsByCategory(category: Category): Question[] {
  * but the flat browse table shouldn't read as "all cpp, then all os, …". */
 export function getAllQuestions(): Question[] {
   return seededShuffle(ALL_QUESTIONS, 1337);
+}
+
+/** Same order as getAllQuestions(), slimmed down for client components. */
+export function getAllQuestionSummaries(): QuestionSummary[] {
+  return getAllQuestions().map(toQuestionSummary);
+}
+
+/** Just the ids, per category — all the progress store needs to compute
+ * answered/total stats without the question bank itself. */
+export function getQuestionIdsByCategory(): Record<Category, string[]> {
+  return Object.fromEntries(
+    CATEGORIES.map((c) => [c, QUESTIONS_BY_CATEGORY[c].map((q) => q.id)]),
+  ) as Record<Category, string[]>;
 }
 
 export function getQuestionById(id: string): Question | undefined {

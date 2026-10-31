@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+      - name: Question bank stays out of client JS
+        run: |
+          # Matches question *data* (a string-literal explanation), which
+          # only server chunks should contain; component code that merely
+          # reads `q.explanation` doesn't match.
+          if grep -lE 'explanation:["`]' .next/static/chunks/*.js; then
+            echo "::error::question content leaked into a client chunk"
+            exit 1
+          fi
+
+  database:
+    name: Migrations + RLS tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Start Postgres and apply migrations
+        run: supabase db start
+      - name: pgTAP
+        run: supabase test db
+
+  judge:
+    name: Judge sandbox under gVisor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install gVisor as a Docker runtime
+        env:
+          # Pinned so CI only changes when this does. Releases ship as one
+          # tarball: runsc, its containerd shim, and a gvisor-bin/ helper dir.
+          GVISOR_RELEASE: "20261012"
+        run: |
+          set -euo pipefail
+          URL="https://storage.googleapis.com/gvisor/releases/release/${GVISOR_RELEASE}/$(uname -m)"
+          wget -q "$URL/gvisor.tar.bz2" "$URL/gvisor.tar.bz2.sha512"
+          sha512sum -c gvisor.tar.bz2.sha512
+          sudo tar -xjf gvisor.tar.bz2 -C /usr/local/bin
+          sudo /usr/local/bin/runsc install
+          sudo systemctl restart docker
+          docker info --format '{{json .Runtimes}}' | grep -q runsc
+      - name: Build judge images
+        run: npm run judge:images
+      - name: Fixtures and hostile programs
+        run: npm run test:judge
+        env:
+          JUDGE_RUNTIME: runsc

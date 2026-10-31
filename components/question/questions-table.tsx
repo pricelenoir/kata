@@ -26,15 +26,30 @@ import { useProgress } from "@/lib/progress-store";
 import { DIFFICULTIES, DIFFICULTY_CLASS } from "@/lib/difficulty";
 import { CATEGORIES, CATEGORY_META } from "@/types/category";
 import type { Category } from "@/types/category";
-import type { Difficulty, Question } from "@/types/question";
+import type { Difficulty, QuestionSummary } from "@/types/question";
 
 const PAGE_SIZE = 20;
 
-export function QuestionsTable({ questions }: { questions: Question[] }) {
-  const [category, setCategory] = useState<Category | "all">("all");
+type StatusFilter = "all" | "unanswered" | "correct" | "incorrect";
+
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "all" },
+  { value: "unanswered", label: "unanswered" },
+  { value: "correct", label: "correct" },
+  { value: "incorrect", label: "incorrect" },
+];
+
+export function QuestionsTable({
+  questions,
+  initialCategory = "all",
+}: {
+  questions: QuestionSummary[];
+  initialCategory?: Category | "all";
+}) {
+  const [category, setCategory] = useState<Category | "all">(initialCategory);
   const [difficulty, setDifficulty] = useState<Difficulty | "all">("all");
   const [search, setSearch] = useState("");
-  const [unansweredOnly, setUnansweredOnly] = useState(false);
+  const [status, setStatus] = useState<StatusFilter>("all");
   const [page, setPage] = useState(1);
   const { getAttempt, hydrated } = useProgress();
 
@@ -43,14 +58,20 @@ export function QuestionsTable({ questions }: { questions: Question[] }) {
     return questions.filter((q) => {
       if (category !== "all" && q.category !== category) return false;
       if (difficulty !== "all" && q.difficulty !== difficulty) return false;
-      if (unansweredOnly && hydrated && getAttempt(q.id)) return false;
+      if (status !== "all") {
+        const attempt = hydrated ? getAttempt(q.id) : undefined;
+        if (status === "unanswered" && attempt) return false;
+        if (status === "correct" && attempt?.status !== "correct") return false;
+        if (status === "incorrect" && attempt?.status !== "incorrect")
+          return false;
+      }
       if (searchQuery) {
         const haystack = [q.title, ...(q.tags ?? [])].join(" ").toLowerCase();
         if (!haystack.includes(searchQuery)) return false;
       }
       return true;
     });
-  }, [questions, category, difficulty, unansweredOnly, search, hydrated, getAttempt]);
+  }, [questions, category, difficulty, status, search, hydrated, getAttempt]);
 
   const pageItems = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;
@@ -72,8 +93,8 @@ export function QuestionsTable({ questions }: { questions: Question[] }) {
     setPage(1);
   }
 
-  function handleUnansweredToggle() {
-    setUnansweredOnly((v) => !v);
+  function handleStatusChange(value: StatusFilter) {
+    setStatus(value);
     setPage(1);
   }
 
@@ -84,8 +105,14 @@ export function QuestionsTable({ questions }: { questions: Question[] }) {
           value={category}
           onValueChange={(v) => handleCategoryChange(v as Category | "all")}
         >
-          <SelectTrigger size="sm" className="font-mono text-xs">
-            <SelectValue placeholder="Category" />
+          <SelectTrigger size="sm" className="w-32 font-mono text-xs">
+            <SelectValue placeholder="Category">
+              {(value: Category | "all" | null) =>
+                !value || value === "all"
+                  ? "All"
+                  : CATEGORY_META[value].shortLabel
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All categories</SelectItem>
@@ -112,20 +139,25 @@ export function QuestionsTable({ questions }: { questions: Question[] }) {
           ))}
         </div>
 
-        <Button
-          type="button"
-          size="sm"
-          variant={unansweredOnly ? "secondary" : "ghost"}
-          onClick={handleUnansweredToggle}
-          className="font-mono text-xs"
-        >
-          unanswered only
-        </Button>
+        <div className="flex items-center gap-1">
+          {STATUS_FILTERS.map((s) => (
+            <Button
+              key={s.value}
+              type="button"
+              size="sm"
+              variant={status === s.value ? "secondary" : "ghost"}
+              onClick={() => handleStatusChange(s.value)}
+              className="font-mono text-xs capitalize"
+            >
+              {s.label}
+            </Button>
+          ))}
+        </div>
 
         <Input
           value={search}
           onChange={(e) => handleSearchChange(e.target.value)}
-          placeholder="Search…"
+          placeholder="Search title or tag…"
           className="ml-auto h-8 w-72 font-mono text-xs"
         />
       </div>

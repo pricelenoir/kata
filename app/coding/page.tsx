@@ -1,10 +1,15 @@
+import type { Metadata } from "next";
 import { SiteHeader } from "@/components/layout/site-header";
 import { CodingExerciseTable } from "@/components/coding/coding-exercise-table";
 import { StatsSummary } from "@/components/progress/stats-summary";
-import { getAllCodingExercises } from "@/lib/coding-exercises";
+import { getAllCodingExerciseSummaries } from "@/lib/coding-exercises";
+
+export const metadata: Metadata = {
+  title: "Coding",
+};
 
 export default function CodingExercisesPage() {
-  const exercises = getAllCodingExercises();
+  const exercises = getAllCodingExerciseSummaries();
 
   return (
     <div className="flex flex-1 flex-col animate-in fade-in-0 duration-300">

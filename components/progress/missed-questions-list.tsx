@@ -1,19 +1,28 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { useProgress } from "@/lib/progress-store";
-import { getQuestionById } from "@/lib/questions";
 import { CATEGORY_META } from "@/types/category";
+import type { QuestionSummary } from "@/types/question";
 
-export function MissedQuestionsList() {
+export function MissedQuestionsList({
+  questions,
+}: {
+  questions: QuestionSummary[];
+}) {
   const { state, hydrated } = useProgress();
+  const byId = useMemo(
+    () => new Map(questions.map((q) => [q.id, q])),
+    [questions],
+  );
 
   if (!hydrated) return null;
 
   const missed = Object.values(state.attempts)
     .filter((a) => a.status === "incorrect")
-    .map((a) => getQuestionById(a.questionId))
-    .filter((q): q is NonNullable<typeof q> => Boolean(q));
+    .map((a) => byId.get(a.questionId))
+    .filter((q): q is QuestionSummary => Boolean(q));
 
   if (missed.length === 0) {
     return (

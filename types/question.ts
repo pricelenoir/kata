@@ -68,7 +68,24 @@ export interface FillInBlankQuestion extends QuestionBase {
 
 // Coding exercises (browsed as a filterable table, not the per-category
 // trace-question flow) are a separate content type — see
-// types/coding-exercise.ts and content/coding-exercises/. The compile/run
-// judging backend and editor are still a future phase; only the browse
-// table + a read-only preview page exist so far.
+// types/coding-exercise.ts and content/coding-exercises/.
 export type Question = TraceQuestion | FillInBlankQuestion;
+
+/** The slice of a question that list views need. This is what gets handed to
+ * client components — the full `Question` (prompt, snippet, answer,
+ * explanation) only ever crosses to the client one question at a time, on
+ * that question's own page. */
+export type QuestionSummary = Pick<
+  QuestionBase,
+  "id" | "category" | "difficulty" | "title" | "tags"
+>;
+
+export function toQuestionSummary(q: Question): QuestionSummary {
+  return {
+    id: q.id,
+    category: q.category,
+    difficulty: q.difficulty,
+    title: q.title,
+    ...(q.tags ? { tags: q.tags } : {}),
+  };
+}

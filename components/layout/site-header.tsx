@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { AuthStatus } from "@/components/layout/auth-status";
 
 const NAV_ITEMS = [
   { href: "/questions", label: "Questions" },
@@ -38,6 +39,7 @@ export function SiteHeader() {
               </Link>
             );
           })}
+          <AuthStatus />
         </nav>
       </div>
     </header>

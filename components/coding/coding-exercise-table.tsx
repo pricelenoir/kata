@@ -24,7 +24,7 @@ import { TablePagination } from "@/components/shared/table-pagination";
 import { DIFFICULTIES, DIFFICULTY_CLASS } from "@/lib/difficulty";
 import { CATEGORIES, CATEGORY_META } from "@/types/category";
 import { LANGUAGES, LANGUAGE_META } from "@/types/coding-exercise";
-import type { CodingExercise } from "@/types/coding-exercise";
+import type { CodingExerciseSummary } from "@/types/coding-exercise";
 import type { Difficulty } from "@/types/question";
 import type { Category } from "@/types/category";
 import type { Language } from "@/types/coding-exercise";
@@ -34,7 +34,7 @@ const PAGE_SIZE = 20;
 export function CodingExerciseTable({
   exercises,
 }: {
-  exercises: CodingExercise[];
+  exercises: CodingExerciseSummary[];
 }) {
   const [category, setCategory] = useState<Category | "all">("all");
   const [language, setLanguage] = useState<Language | "all">("all");
@@ -46,7 +46,7 @@ export function CodingExerciseTable({
     const searchQuery = search.trim().toLowerCase();
     return exercises.filter((e) => {
       if (category !== "all" && e.category !== category) return false;
-      if (language !== "all" && e.language !== language) return false;
+      if (language !== "all" && !e.languages.includes(language)) return false;
       if (difficulty !== "all" && e.difficulty !== difficulty) return false;
       if (searchQuery) {
         const haystack = [e.title, ...(e.tags ?? [])].join(" ").toLowerCase();
@@ -88,8 +88,14 @@ export function CodingExerciseTable({
           value={category}
           onValueChange={(v) => handleCategoryChange(v as Category | "all")}
         >
-          <SelectTrigger size="sm" className="font-mono text-xs">
-            <SelectValue placeholder="Category" />
+          <SelectTrigger size="sm" className="w-32 font-mono text-xs">
+            <SelectValue placeholder="Category">
+              {(value: Category | "all" | null) =>
+                !value || value === "all"
+                  ? "All"
+                  : CATEGORY_META[value].shortLabel
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All categories</SelectItem>
@@ -105,8 +111,14 @@ export function CodingExerciseTable({
           value={language}
           onValueChange={(v) => handleLanguageChange(v as Language | "all")}
         >
-          <SelectTrigger size="sm" className="font-mono text-xs">
-            <SelectValue placeholder="Language" />
+          <SelectTrigger size="sm" className="w-32 font-mono text-xs">
+            <SelectValue placeholder="Language">
+              {(value: Language | "all" | null) =>
+                !value || value === "all"
+                  ? "All languages"
+                  : LANGUAGE_META[value].label
+              }
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All languages</SelectItem>
@@ -165,10 +177,11 @@ export function CodingExerciseTable({
                 key={exercise.id}
                 className="cursor-pointer border-border/60"
               >
-                <TableCell className="p-0">
+                <TableCell className="max-w-56 min-w-28 p-0">
                   <Link
                     href={`/coding/${exercise.id}`}
-                    className="block px-2 py-2.5 text-sm text-foreground"
+                    title={exercise.title}
+                    className="block truncate px-2 py-2.5 text-sm text-foreground"
                   >
                     {exercise.title}
                   </Link>
@@ -190,12 +203,17 @@ export function CodingExerciseTable({
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge
-                    variant="outline"
-                    className={`font-mono text-[10px] ${LANGUAGE_META[exercise.language].badgeClassName}`}
-                  >
-                    {LANGUAGE_META[exercise.language].label}
-                  </Badge>
+                  <div className="flex gap-1">
+                    {exercise.languages.map((id) => (
+                      <Badge
+                        key={id}
+                        variant="outline"
+                        className={`font-mono text-[10px] ${LANGUAGE_META[id].badgeClassName}`}
+                      >
+                        {LANGUAGE_META[id].label}
+                      </Badge>
+                    ))}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

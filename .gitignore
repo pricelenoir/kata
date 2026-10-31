@@ -8,6 +8,11 @@
 !.yarn/releases
 !.yarn/versions
 
+# env files (examples are committed, real values never are)
+.env*
+!.env.example
+!.env.local.example
+
 # testing
 /coverage
 
@@ -17,6 +22,7 @@
 
 # production
 /build
+/judge/dist/
 
 # misc
 .DS_Store
@@ -28,9 +34,6 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
-
 # vercel
 .vercel
 
@@ -40,3 +43,12 @@ next-env.d.ts
 
 # claude
 .claude
+
+# Hidden tests and reference solutions: a separate private git repository
+# checked out here. Never part of this (public) repo.
+/private/
+
+# local planning notes (kept out of commits)
+/.plans/
+/ROADMAP.md
+/QUESTION_REVIEW_TODO.md

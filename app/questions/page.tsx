@@ -1,10 +1,23 @@
+import type { Metadata } from "next";
 import { SiteHeader } from "@/components/layout/site-header";
-import { QuestionsTable } from "@/components/question/questions-table";
-import { StatsSummary } from "@/components/progress/stats-summary";
-import { getAllQuestions } from "@/lib/questions";
+import { QuestionsBrowser } from "@/components/question/questions-browser";
+import { getAllQuestionSummaries } from "@/lib/questions";
+import { CATEGORIES, type Category } from "@/types/category";
 
-export default function QuestionsPage() {
-  const questions = getAllQuestions();
+export const metadata: Metadata = {
+  title: "Questions",
+};
+
+export default async function QuestionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ category?: string }>;
+}) {
+  const questions = getAllQuestionSummaries();
+  const { category: rawCategory } = await searchParams;
+  const initialCategory = CATEGORIES.includes(rawCategory as Category)
+    ? (rawCategory as Category)
+    : "all";
 
   return (
     <div className="flex flex-1 flex-col animate-in fade-in-0 duration-300">
@@ -19,11 +32,10 @@ export default function QuestionsPage() {
           </p>
         </div>
 
-        <div className="mb-8">
-          <StatsSummary />
-        </div>
-
-        <QuestionsTable questions={questions} />
+        <QuestionsBrowser
+          questions={questions}
+          initialCategory={initialCategory}
+        />
       </main>
     </div>
   );
