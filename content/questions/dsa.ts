@@ -1216,4 +1216,413 @@ int quickselect(vector<int>& a, int lo, int hi, int k) {
       "admit O(n)-time algorithms (SA-IS for suffix arrays, Ukkonen's for suffix trees), well " +
       "under the naive O(n^2 log n) of sorting all suffixes directly.",
   },
+  {
+    id: "dsa-consistent-hashing-01",
+    category: "dsa",
+    difficulty: "easy",
+    title: "Modulo sharding vs. consistent hashing when a node is added",
+    tags: ["consistent-hashing", "hashing", "sharding", "distributed-systems"],
+    type: "trace",
+    prompt:
+      "A cache tier of 10 nodes places each key on node hash(key) mod N, with hash outputs " +
+      "uniformly distributed. Operators add an 11th node, so N goes from 10 to 11. The " +
+      "alternative design is a consistent-hashing ring: every node is hashed to many points " +
+      "(virtual nodes) on a circular hash space, and a key belongs to the first node point " +
+      "clockwise from hash(key). Roughly what fraction of all keys change owner when the 11th " +
+      "node joins under each scheme?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "About 1/11 under both schemes, since each only has to fill the new node's share",
+        "About 1/2 under modulo sharding, and about 1/11 under consistent hashing",
+        "About 10/11 under modulo sharding, and about 1/11 under consistent hashing",
+        "About 10/11 under both, since any hash-based placement reshuffles on a resize",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "Under modulo placement a key stays put only if hash mod 10 equals hash mod 11. For a " +
+      "uniform hash h, the pair (h mod 10, h mod 11) is uniform over all 110 combinations (by " +
+      "the Chinese remainder theorem, since 10 and 11 are coprime, it is determined by h mod " +
+      "110). The two residues agree only for the 10 combinations (r, r) with r in 0..9, so just " +
+      "10/110 = 1/11 of keys stay and 10/11 move, most of them between two old nodes that both " +
+      "already existed. For a cache that is a near-total cold start, and for a sharded store it " +
+      "is a near-total data migration. On the ring, adding a node inserts its points into the " +
+      "circle, and the only keys that change owner are those whose clockwise successor is now " +
+      "one of the new points. With the load evenly spread, the new node ends up owning about " +
+      "1/(N+1) = 1/11 of the hash space, and every moved key moves onto the new node; no key " +
+      "moves between two existing nodes. 1/11 is also the minimum possible for any scheme that " +
+      "keeps load balanced, since the new node has to end up with its fair share from " +
+      "somewhere. Virtual nodes do not change that expectation; they reduce its variance. With a " +
+      "single point per node, arc lengths are very uneven (the largest arc is around (log N)/N " +
+      "of the ring), while many points per node average the arcs out so each node's share, and " +
+      "the slice it takes over on joining, stays close to 1/N.",
+    references: [
+      "https://doi.org/10.1145/258533.258660",
+      "https://en.wikipedia.org/wiki/Consistent_hashing",
+    ],
+  },
+  {
+    id: "dsa-sort-stability-01",
+    category: "dsa",
+    difficulty: "easy",
+    title: "Re-sorting by a second key with std::sort",
+    tags: ["sorting", "stability", "std-sort", "stable-sort"],
+    type: "trace",
+    prompt:
+      "trades arrives already sorted by timestamp, ascending. The code re-sorts it by symbol so " +
+      "that each symbol's trades are contiguous, and a downstream step treats the last trade in " +
+      "each symbol's group as that symbol's most recent price. What does the C++ standard " +
+      "guarantee about the order of trades within one symbol's group after this std::sort?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `struct Trade { std::string symbol; int64_t ts; double px; };
+
+// trades is already sorted by ts ascending
+std::sort(trades.begin(), trades.end(),
+          [](const Trade& a, const Trade& b) { return a.symbol < b.symbol; });
+
+// Downstream: the last Trade in each symbol's group is taken as its latest price`,
+      highlightLines: [4, 5],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Nothing: equal-symbol trades may be reordered, so the last one need not be the latest",
+        "Timestamp order is kept, since std::sort never swaps two elements that compare equal",
+        "Timestamp order is kept, since the input was already sorted by that earlier key",
+        "Reverse timestamp order, since introsort's partitioning consistently flips equal keys",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "A sort is stable if elements that compare equal keep their relative input order. " +
+      "std::sort makes no such promise: the standard specifies only the complexity and that the " +
+      "result is ordered by the comparator, and equal elements may come out in any order. In " +
+      "practice it is introsort, and quicksort-style partitioning swaps elements across long " +
+      "distances based only on their relation to the pivot, so one trade can be swapped over " +
+      "the top of others with the same symbol without the comparator ever being asked about " +
+      "that pair, and the heapsort fallback scrambles ties even more thoroughly. So " +
+      "after the sort, a symbol's group holds the right trades in an unspecified order, and " +
+      "'last in group' can be any of them: a correctness bug, not a performance one, and one " +
+      "that often hides in small tests because typical implementations insertion-sort short " +
+      "ranges (16 elements or fewer in libstdc++), which happens to preserve ties. The prior timestamp order is irrelevant to an unstable " +
+      "algorithm, since it never consults the information that made the input ordered. Two " +
+      "fixes: std::stable_sort, typically a merge sort, which guarantees stability (O(n log n) with a " +
+      "temporary buffer, O(n log^2 n) if it cannot allocate one), which makes 'sort by the " +
+      "secondary key, then stable-sort by the primary' correct; or keep std::sort and compare " +
+      "the full composite key (symbol, then ts), which makes the intended order explicit and " +
+      "stability unnecessary.",
+    references: [
+      "https://en.cppreference.com/w/cpp/algorithm/sort",
+      "https://en.cppreference.com/w/cpp/algorithm/stable_sort",
+    ],
+  },
+  {
+    id: "dsa-countmin-sketch-01",
+    category: "dsa",
+    difficulty: "medium",
+    title: "Error guarantee of a count-min sketch point query",
+    tags: ["count-min-sketch", "probabilistic-data-structures", "streaming"],
+    type: "trace",
+    prompt:
+      "A count-min sketch has d rows of w counters, each row with its own independent hash " +
+      "function. Each stream item increments one counter per row (counts only ever increase), " +
+      "and a point query for item x returns the minimum, over the d rows, of the counter x " +
+      "hashes to. The sketch is sized as w = ⌈e/ε⌉ and d = ⌈ln(1/δ)⌉. Let N be the total count " +
+      "over the whole stream, a the true count of x, and â the query's answer. Which statement " +
+      "is the sketch's guarantee?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "â is unbiased, and |â - a| ≤ εN holds with probability at least 1 - δ",
+        "â ≤ a always, and â ≥ a - εN holds with probability at least 1 - δ",
+        "â ≥ a always, and â ≤ (1 + ε)·a holds with probability at least 1 - δ",
+        "â ≥ a always, and â ≤ a + εN holds with probability at least 1 - δ",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "In each row, the counter x maps to holds a plus the counts of every other item that " +
+      "collides with x in that row. Because updates are non-negative, that collision term X_j is " +
+      "never negative, so every row overestimates and so does their minimum: â ≥ a with " +
+      "certainty, a one-sided error just like a Bloom filter's lack of false negatives. For the " +
+      "upper side, each other item lands in x's bucket with probability 1/w, so " +
+      "E[X_j] ≤ N/w ≤ εN/e. Markov's inequality gives P[X_j ≥ εN] ≤ 1/e for a single row, and " +
+      "since the rows hash independently, the probability that all d rows exceed the bound at " +
+      "once is at most e^(-d) ≤ δ. The minimum fails only if every row fails, so â ≤ a + εN with " +
+      "probability at least 1 - δ. The error is additive and scales with the whole stream's " +
+      "mass N, not with x's own count: for a heavy hitter, εN is small relative to a, but for a " +
+      "rare item the estimate can be pure collision noise, which is why the sketch is good at " +
+      "finding heavy hitters and poor at estimating rare frequencies. The guarantee also depends " +
+      "on counts never decreasing: if decrements are allowed, collision terms can be negative, " +
+      "the minimum is no longer a safe overestimate, and the median over rows is used instead. " +
+      "An unbiased two-sided estimator with an error bound tied to the stream's L2 norm is a " +
+      "different structure, the Count sketch (Charikar, Chen, Farach-Colton).",
+    references: [
+      "https://doi.org/10.1016/j.jalgor.2003.12.001",
+      "https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch",
+    ],
+  },
+  {
+    id: "dsa-persistent-pathcopy-01",
+    category: "dsa",
+    difficulty: "medium",
+    title: "Space cost of path copying in a persistent balanced BST",
+    tags: ["persistent-data-structures", "path-copying", "space-complexity", "bst"],
+    type: "trace",
+    prompt:
+      "A persistent balanced BST never mutates a node: insert returns a new root, and every " +
+      "older root remains a valid, queryable version. It is implemented by path copying, where " +
+      "any node whose contents would change is copied instead of modified. Starting from a " +
+      "version holding n keys, m inserts (m ≤ n) are performed and every version is retained. How many " +
+      "nodes exist in total across all versions?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Θ(n·m)",
+        "Θ(n + m)",
+        "Θ(n + m log n)",
+        "Θ((n + m) log n)",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "Inserting a key attaches a new leaf below some node p, which means p's child pointer has " +
+      "to change. p cannot be mutated, since older versions still reach it, so p is copied with " +
+      "the new pointer. But now p's parent has to point at the copy, so it is copied too, and " +
+      "the same argument repeats all the way to the root. Every node on the search path gets " +
+      "copied: Θ(depth) = Θ(log n) new nodes for a balanced tree. Every subtree hanging off " +
+      "that path is untouched and simply shared by pointer between the old and new versions, " +
+      "which is what keeps the cost from being a full Θ(n) copy. Rebalancing does not change " +
+      "the bound: red-black or AVL fixups recolor or rotate nodes on or immediately beside the " +
+      "insertion path, so at most O(log n) extra copies. Since m ≤ n, the tree never holds more " +
+      "than 2n keys and every path stays O(log n) long, so over m inserts the total is " +
+      "Θ(n + m log n). (Without that cap the per-insert cost is Θ(log(n + m)).) A single new node per insert is not achievable by pure path copying, " +
+      "since the ancestors' pointers are what make the new leaf reachable from the new root. " +
+      "Driscoll, Sarnak, Sleator, and Tarjan's node-copying technique does get O(1) amortized " +
+      "space per update, but only by giving nodes a mutable spare pointer slot, giving up the " +
+      "'never mutate a node' property. Path copying is what functional maps and vectors " +
+      "(Haskell's Data.Map, Clojure's 32-way persistent vector) use, the latter keeping the " +
+      "copied path short by using a very high fanout.",
+    references: [
+      "https://doi.org/10.1016/0022-0000(89)90034-2",
+      "https://en.wikipedia.org/wiki/Persistent_data_structure#Path_copying",
+    ],
+  },
+  {
+    id: "dsa-sliding-window-01",
+    category: "dsa",
+    difficulty: "medium",
+    title: "Two-pointer shortest subarray with sum at least k",
+    tags: ["sliding-window", "two-pointers", "prefix-sums", "monotonic-deque"],
+    type: "trace",
+    prompt:
+      "This function returns the length of the shortest contiguous subarray whose sum is at " +
+      "least k, using the standard grow-right, shrink-left window. What does it return for " +
+      "a = {1, -5, 2, 2} and k = 4?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `int shortestAtLeastK(const vector<int>& a, int k) {
+    int best = INT_MAX, sum = 0, lo = 0;
+    for (int hi = 0; hi < (int)a.size(); hi++) {
+        sum += a[hi];
+        while (sum >= k && lo <= hi) {
+            best = min(best, hi - lo + 1);
+            sum -= a[lo++];
+        }
+    }
+    return best == INT_MAX ? -1 : best;
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "-1, no subarray found",
+        "2, the length of {2, 2}",
+        "4, the length of the whole array",
+        "It never terminates",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "Tracing it: the running sum after each hi is 1, -4, -2, 0. It never reaches 4, so the " +
+      "inner loop never runs, lo stays at 0, best stays INT_MAX, and the function returns -1. " +
+      "Yet {2, 2} at indices 2..3 sums to 4. The window was stuck carrying the prefix {1, -5}, " +
+      "whose sum is -4, and dropping it would have raised the sum, but the loop only ever " +
+      "shrinks when the sum is already large enough. The technique is only correct when every " +
+      "element is non-negative. Then, for a fixed right end, moving lo rightward can only " +
+      "lower the sum, so once sum(lo..hi) < k, every window [lo', hi] with lo' > lo is also " +
+      "below k and the loop is right to stop shrinking. (Never moving lo backward is safe " +
+      "either way: lo only passes a start after recording a qualifying window from it, and any " +
+      "later window from that start would be longer.) With negatives, moving lo past a " +
+      "negative-sum prefix raises the sum, so 'sum < k, stop shrinking' discards exactly the " +
+      "windows that answer the query. The general fix works on prefix sums " +
+      "P[i]: the goal is the minimum j - i with P[j] - P[i] ≥ k. Keep a deque of start indices " +
+      "with strictly increasing P values. Before pushing j, pop from the back any index whose P " +
+      "is ≥ P[j], since j starts later and subtracts less, so it dominates. Then pop from the " +
+      "front while P[j] - P[front] ≥ k, recording j - front each time, since no later j can " +
+      "give that front a shorter window. Each index enters and leaves the deque once, so this " +
+      "is still O(n). The linear time bound was never the problem with the two-pointer version; " +
+      "its monotonicity assumption was.",
+  },
+  {
+    id: "dsa-treap-priority-01",
+    category: "dsa",
+    difficulty: "medium",
+    title: "A treap whose priorities come from an insertion counter",
+    tags: ["treap", "randomized-algorithms", "self-balancing", "bst"],
+    type: "trace",
+    prompt:
+      "A treap keeps keys in BST order and priorities in min-heap order (every node's priority " +
+      "is smaller than its children's), restoring heap order after an ordinary BST insertion by " +
+      "rotating the new node upward. Normally each priority is drawn uniformly at random. To " +
+      "make runs reproducible, an engineer instead assigns the i-th inserted key priority i. " +
+      "Keys 1, 2, ..., n are then inserted in increasing order. What is the resulting tree's " +
+      "height?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Expected Θ(log n), the same as with random priorities",
+        "Θ(n), a single chain",
+        "Θ(log n) in the worst case",
+        "Θ(n), and it would be Θ(n) for any arrival order",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "For distinct keys and distinct priorities there is exactly one valid treap: the root " +
+      "must be the key with the smallest priority, the keys below it in key order form its left " +
+      "subtree, the keys above form its right subtree, and the same rule applies recursively. " +
+      "That is precisely the BST you get by inserting the keys one at a time in increasing " +
+      "priority order, with no rotations at all. With random priorities, that order is a " +
+      "uniformly random permutation independent of the order keys actually arrive in, so the " +
+      "treap is distributed as a random BST: expected depth of any node is O(log n), about " +
+      "2 ln n ≈ 1.39 log2 n, and the expected number of rotations per insert is under 2. The " +
+      "randomness is where the balance comes from; rotations are just the mechanism that " +
+      "maintains the unique shape that randomness determines. With priority = insertion " +
+      "index, priority order is arrival order, so the treap is exactly the unbalanced BST built " +
+      "in arrival order, and sorted arrivals produce a chain of height n with Θ(n) operations. " +
+      "Each new node gets the largest priority so far, so it stays a leaf and no rotation ever " +
+      "fires, whatever the arrival order. That does not make every order degenerate, though: a " +
+      "randomly ordered arrival stream still gives an expected O(log n) height, as an ordinary " +
+      "BST would, so the chain here comes from the sorted input. Heap order alone bounds " +
+      "nothing: a binary heap's log n height comes from its array layout forcing a complete " +
+      "tree, not from the heap property. Reproducibility only " +
+      "needs a seeded PRNG, or priority = a good hash of the key, either of which keeps " +
+      "priorities independent of arrival order.",
+    references: [
+      "https://doi.org/10.1007/BF01940876",
+      "https://en.wikipedia.org/wiki/Treap",
+    ],
+  },
+  {
+    id: "dsa-intervaltree-augment-01",
+    category: "dsa",
+    difficulty: "hard",
+    title: "Maintaining the max-endpoint field across an interval tree rotation",
+    tags: ["interval-tree", "augmented-bst", "red-black-tree", "rotations"],
+    type: "trace",
+    prompt:
+      "An interval tree (CLRS-style) is a red-black tree keyed on each interval's low " +
+      "endpoint, where every node x is augmented with x.max = max(x.high, x.left.max, " +
+      "x.right.max), the largest high endpoint anywhere in x's subtree. Overlap queries use " +
+      "this field to prune whole subtrees. During insertion fixup, a left rotation is performed " +
+      "at x, whose right child y becomes the subtree's new root. a, b, and c are arbitrary " +
+      "subtrees. What must the rotation do to keep every max field in the tree correct, and at " +
+      "what cost?",
+    snippet: {
+      language: "text",
+      filename: "rotation.txt",
+      code: `   before:     x                after:       y
+              / \\                           / \\
+             a   y                         x   c
+                / \\                       / \\
+               b   c                     a   b`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Recompute x.max, then y.max, then every ancestor's max up to the root, O(log n)",
+        "Nothing, since a rotation never changes the set of intervals in any subtree",
+        "Set y.max to x's old max, then recompute x.max from x, a, and b alone, O(1)",
+        "Recompute the max of every node in the rotated subtree from the leaves up, O(size)",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "Check which subtrees actually change membership. a, b, and c are moved as units, so " +
+      "every node inside them still roots exactly the same set of intervals and its max is " +
+      "still valid. The rotated subtree as a whole still contains exactly x, y, a, b, and c, so " +
+      "whatever node now roots it (y) must have the same max that x had before, and every " +
+      "ancestor above sees a child subtree with the same contents and the same max, so none of " +
+      "them changes. Only x's subtree changed composition: it lost y and c, and now holds just " +
+      "x, a, and b, so x.max = max(x.high, a.max, b.max) is recomputed from its new children. " +
+      "That is two field updates, O(1) per rotation. If y.max is recomputed from its children " +
+      "instead of copied, order matters: x has to be fixed first, since y's computation reads " +
+      "x.max. The 'nothing changes' option is right about the whole rotated subtree but wrong " +
+      "about x's. The walk to the root is part of insertion itself, which updates max along the " +
+      "descent path (O(log n)), not something each rotation repeats; since red-black " +
+      "insertion does at most two rotations, the augmented insert stays O(log n). This is the " +
+      "general CLRS augmentation theorem: any field computable from a node and its children " +
+      "alone can be maintained through red-black insert and delete without hurting their " +
+      "O(log n) bounds, because rotations only disturb O(1) nodes' children. The payoff is the " +
+      "query: if x.left.max < q.low, nothing in the left subtree can overlap q and the search " +
+      "goes right; otherwise it goes left, and if the left side has no overlap, the right side " +
+      "cannot either, giving O(log n) to find one overlapping interval.",
+    references: [
+      "https://en.wikipedia.org/wiki/Interval_tree#Augmented_tree",
+    ],
+  },
+  {
+    id: "dsa-veb-recurrence-01",
+    category: "dsa",
+    difficulty: "hard",
+    title: "van Emde Boas insert with and without a separately stored minimum",
+    tags: ["van-emde-boas", "integer-data-structures", "recurrence-relations"],
+    type: "trace",
+    prompt:
+      "A van Emde Boas tree over universe size u splits each key into a cluster index (high " +
+      "half of its bits) and an offset (low half), giving √u clusters, each a vEB tree of size " +
+      "√u, plus a summary vEB tree of size √u recording which clusters are nonempty. In the " +
+      "CLRS design each node stores its min separately and never inserts that min into any " +
+      "cluster, so inserting into an empty cluster just sets its min in O(1), and insert makes " +
+      "at most one recursive call that does real work. A simplified version drops this trick " +
+      "and stores every key inside its cluster, so inserting into an empty cluster needs a full " +
+      "recursive insert into the cluster and another into the summary. What is the insert " +
+      "complexity of each version?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Θ(log log u) with the stored min, and Θ(log u) without it",
+        "Θ(log log u) for both, since each call shrinks the universe to √u",
+        "Θ(log u) with the stored min, and Θ(log^2 u) without it",
+        "Θ(log log u) with the stored min, and Θ(√u) without it",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "With the stored min, the recurrence is T(u) = T(√u) + O(1). Substituting m = log2 u and " +
+      "S(m) = T(2^m) turns it into S(m) = S(m/2) + O(1), which is Θ(log m) = Θ(log log u): the " +
+      "number of bits halves at each level, so only log log u levels exist. Without it, an " +
+      "insert into an empty cluster recurses into both the cluster and the summary, giving " +
+      "T(u) = 2T(√u) + O(1). The same substitution gives S(m) = 2S(m/2) + O(1), which by the " +
+      "master theorem (a = 2, b = 2, f(m) = O(1) = O(m^(1-ε))) is Θ(m) = Θ(log u). The " +
+      "universe still shrinks to √u at each level, but the branching factor of 2 doubles the " +
+      "work at every one of the log log u levels, and 2^(log log u) = log u. For 64-bit keys " +
+      "that is the difference between about 6 levels of work and about 64, and since n ≤ u, " +
+      "Θ(log u) is never better than a balanced BST's O(log n). The stored min is what makes the " +
+      "two recursive calls mutually exclusive: if the cluster was empty, its insert is O(1) and " +
+      "only the summary recursion costs anything; if it was not, the summary already marks it " +
+      "and only the cluster recursion runs. Successor relies on a stored max the same way, " +
+      "checking in O(1) whether the answer lies in the current cluster before choosing a single " +
+      "branch. Beating the Ω(log n) comparison bound is possible because the structure works " +
+      "on the keys' bits rather than comparing them, at the cost of Θ(u) space unless the " +
+      "clusters are kept in hash tables, which leads to x-fast and y-fast tries.",
+    references: [
+      "https://en.wikipedia.org/wiki/Van_Emde_Boas_tree",
+    ],
+  },
 ];

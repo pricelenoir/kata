@@ -153,7 +153,7 @@ SUB R4, R1, R5   ; R4 = R1 - R5  (needs R1 the very next instruction)`,
       "are measurable optimizations on virtual-dispatch-heavy C++ and on interpreter dispatch " +
       "loops.",
     references: [
-      "Intel 64 and IA-32 Architectures Optimization Reference Manual, front-end optimization chapter",
+      "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html",
     ],
   },
   {
@@ -298,7 +298,7 @@ for (size_t i = 0; i < data.size(); ++i) {
       "never have touched, and a cache-timing side channel exfiltrates the result even though the " +
       "computation itself was undone.",
     references: [
-      "Kocher et al., \"Spectre Attacks: Exploiting Speculative Execution\", IEEE S&P 2019",
+      "https://doi.org/10.1109/SP.2019.00002",
     ],
   },
   {
@@ -336,7 +336,7 @@ for (size_t i = 0; i < data.size(); ++i) {
       "capacity and access-pattern predictability dominate memory-bound code far more than " +
       "instruction count does.",
     references: [
-      "Agner Fog, \"The microarchitecture of Intel, AMD and VIA CPUs\", cache latency tables",
+      "https://www.agner.org/optimize/microarchitecture.pdf",
     ],
   },
   {
@@ -512,7 +512,7 @@ for (int j = 0; j < N; ++j) {
       "or a LOCK-prefixed RMW between the store and the load, which drains the store buffer " +
       "first, and that is precisely what a seq_cst store lowers to on x86.",
     references: [
-      "Sewell et al., \"x86-TSO: A Rigorous and Usable Programmer's Model for x86 Multiprocessors\", CACM 2010",
+      "https://doi.org/10.1145/1785414.1785443",
     ],
   },
   {
@@ -708,8 +708,8 @@ int64_t b = *reinterpret_cast<int64_t*>(p32);          // all 8 bytes`,
       "serializers, union-based type punning, and byte-at-a-time buffer assembly followed by a " +
       "wide read.",
     references: [
-      "Intel 64 and IA-32 Architectures Optimization Reference Manual, store-forwarding restrictions",
-      "Agner Fog, \"The microarchitecture of Intel, AMD and VIA CPUs\", store forwarding stalls",
+      "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html",
+      "https://www.agner.org/optimize/microarchitecture.pdf",
     ],
   },
   {
@@ -1375,7 +1375,7 @@ double sum = (s0 + s1) + (s2 + s3);`,
       "leave microarchitectural traces such as cache lines touched using the stale value, probeable " +
       "by a timing side channel, which is Spectre variant 4 (Speculative Store Bypass).",
     references: [
-      "Intel, \"Speculative Store Bypass\" (CVE-2018-3639) technical advisory",
+      "https://nvd.nist.gov/vuln/detail/CVE-2018-3639",
     ],
   },
   {
@@ -1421,5 +1421,471 @@ double sum = (s0 + s1) + (s2 + s3);`,
       "sharing itself) and NUMA-aware allocation such as first-touch placement or explicit " +
       "node-local allocation (e.g., numa_alloc_onnode on Linux), so that each thread's working set is " +
       "physically local to the node it actually runs on.",
+  },
+  {
+    id: "computer-architecture-write-back-vs-write-through-32",
+    category: "computer-architecture",
+    difficulty: "easy",
+    title: "A hot counter under write-back vs. write-through L1 policies",
+    tags: ["cache-write-policy", "write-back", "write-through"],
+    type: "trace",
+    prompt:
+      "A single thread increments a `volatile uint64_t counter` one million times in a tight " +
+      "loop. `volatile` forces the compiler to emit a real load and store on every iteration, " +
+      "nothing else touches the counter's cache line, and the line stays resident in L1 for the " +
+      "whole loop. Compare two L1 data caches that are identical except for their write policy: " +
+      "Cache A is write-back, Cache B is write-through (assume no write buffer coalesces stores " +
+      "between L1 and L2). Roughly how many writes does each cache send to L2 during the loop?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `volatile uint64_t counter = 0;
+for (int i = 0; i < 1'000'000; ++i) {
+    counter = counter + 1;   // one load and one store per iteration
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The same number for both: every store reaches L2 either way, and the policy only changes " +
+          "when the core gets its acknowledgment",
+        "A sends essentially none until the dirty line is evicted, then writes it back once; B " +
+          "sends all one million stores on to L2",
+        "B sends only the final value once the dirty line leaves L1; A forwards all one million " +
+          "stores on to L2 as they happen",
+        "Neither sends anything during the loop: a store that hits in L1 stays in L1 under " +
+          "either policy until the line is evicted",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "A write-back cache updates only its own copy on a store hit and sets the line's dirty bit " +
+      "(in a coherent multicore it moves the line to Modified). The lower level is updated once, " +
+      "when the dirty line is eventually evicted or snooped away. However many times the loop " +
+      "overwrites the counter, L2 sees one fill at the start and one write-back at some later " +
+      "point. A write-through cache propagates every store to the next level so that level always " +
+      "holds current data, which means one million L2 writes here. That costs bandwidth and power " +
+      "even though L1 hits on every access. That traffic is why mainstream x86 and Arm L1D caches " +
+      "are write-back. Write-through L1s do exist, and they pair the policy with a structure that " +
+      "merges repeated writes: AMD's Bulldozer family used a write-through L1D backed by a small " +
+      "write-coalescing cache in front of L2. The upside of write-through is simpler state, " +
+      "because L1 never holds the only up-to-date copy, so an L1 parity error can be recovered " +
+      "by refetching and coherence is easier to reason about. The choice in which B sends " +
+      "only the final value describes write-back, with the names swapped.",
+    references: [
+      "https://en.wikipedia.org/wiki/Cache_(computing)#Writing_policies",
+    ],
+  },
+  {
+    id: "computer-architecture-macro-op-fusion-33",
+    category: "computer-architecture",
+    difficulty: "medium",
+    title: "Fused-domain uop count for a four-instruction x86 loop",
+    tags: ["macro-fusion", "micro-fusion", "front-end", "uops"],
+    type: "trace",
+    prompt:
+      "On an Intel Skylake core (4-wide rename/allocate, measured in fused-domain uops), this " +
+      "summing loop runs over a large in-cache array. The load uses a simple base-register " +
+      "address with no index register. How many fused-domain uops per iteration does the " +
+      "rename/allocate stage (and the ROB) actually see?",
+    snippet: {
+      language: "text",
+      code: `.loop:
+    add   rax, [rdi]     ; load + add
+    add   rdi, 8
+    cmp   rdi, rsi
+    jne   .loop`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "3: the memory-source add stays one micro-fused uop through rename, and cmp+jne decode " +
+          "together into a single macro-fused uop",
+        "4: every x86 instruction becomes at least one uop, and fusion only saves decoder slots, " +
+          "not rename slots or ROB entries",
+        "5: the memory-source add splits into separate load and ALU uops, plus one uop for each " +
+          "of the remaining three instructions",
+        "2: the decoders fold add rdi, cmp, and jne into one compare-and-branch uop alongside the " +
+          "micro-fused load-add",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "Intel cores use two different fusions, and both shrink the fused-domain uop count. That " +
+      "count is what the 4-wide rename/allocate stage, the uop cache, and the ROB are budgeted " +
+      "in. Micro-fusion keeps the load and ALU halves of `add rax, [rdi]` as one fused-domain " +
+      "uop from decode through rename and retirement, using a single ROB entry. It splits into " +
+      "two unfused uops only in the scheduler, where the load goes to a load port and the add to " +
+      "an ALU port. On Sandy Bridge, and for many three-operand forms on Haswell and Skylake, an " +
+      "indexed addressing mode (`[rdi + rcx*8]`) causes the uop to be unlaminated back into two " +
+      "before rename, which is why the prompt pins the addressing mode. Macro-fusion goes the " +
+      "other way and merges two adjacent instructions, a flag-setting CMP/TEST (and on Sandy " +
+      "Bridge and later also ADD, SUB, AND, INC, DEC) followed immediately by a conditional " +
+      "jump, into one uop that executes on a branch-capable port. Fusion only ever pairs two " +
+      "instructions, so there is no three-way compare-and-branch. The loop is 3 fused-domain " +
+      "uops and 4 unfused-domain uops, which leaves rename headroom on a 4-wide machine: the " +
+      "binding limit becomes the taken-branch rate and the 1-cycle `rax` dependency chain, not " +
+      "front-end width. Counting instructions or unfused uops against issue width gets the " +
+      "bottleneck wrong in both directions. Compilers exploit macro-fusion by keeping the " +
+      "flag-setter adjacent to its branch, and a loop counted toward zero (`sub rcx, 1; jnz`) " +
+      "drops the separate `cmp` entirely.",
+    references: [
+      "https://www.agner.org/optimize/microarchitecture.pdf",
+      "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html",
+    ],
+  },
+  {
+    id: "computer-architecture-return-stack-buffer-longjmp-34",
+    category: "computer-architecture",
+    difficulty: "medium",
+    title: "Return prediction after a longjmp out of a deep call chain",
+    tags: ["branch-prediction", "return-stack-buffer", "longjmp"],
+    type: "trace",
+    prompt:
+      "`caller()` calls `handler()`, which calls `setjmp` and then descends `f1 -> f2 -> f3`. " +
+      "Assume every call is a real `call` instruction (no inlining or tail calls). " +
+      "`f3` calls `longjmp`, which restores the stack pointer to `handler`'s frame and jumps " +
+      "back into it with an indirect jump. Nothing executes a `ret` for the abandoned frames. " +
+      "`handler` then returns normally to `caller`, and `caller` returns to its own parent. The " +
+      "core predicts returns with a return stack buffer (RSB): every `call` pushes its return " +
+      "address and every `ret` pops the top entry as its predicted target. What happens to the " +
+      "returns that follow the `longjmp`?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <csetjmp>
+std::jmp_buf env;
+
+void f3() { std::longjmp(env, 1); }   // call longjmp pushes an RSB entry too
+void f2() { f3(); }
+void f1() { f2(); }
+
+int handler() {
+    if (setjmp(env) == 0) f1();
+    return 0;                          // ret back into caller()
+}
+
+void caller() { handler(); /* ... */ }  // later ret to caller's parent`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Nothing changes: returns are predicted from the BTB by instruction address, so a reset " +
+          "stack pointer is invisible to return prediction",
+        "Only the longjmp itself risks a mispredict, as the one unusual indirect transfer, and " +
+          "every ret after it predicts as normal",
+        "The core notices the stack pointer jumping upward and flushes the RSB, so the next few " +
+          "returns fall back to the BTB at no extra cost",
+        "handler's ret pops the stale entry pushed by the call into longjmp and mispredicts, and " +
+          "each later ret up the chain pops another stale entry and mispredicts",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "The RSB is a small hardware stack (typically 16 to 32 entries) that mirrors the software " +
+      "call stack on the assumption that calls and returns pair up. It knows nothing about the " +
+      "stack pointer, and it does not consult the BTB while it has entries. `longjmp` breaks the " +
+      "pairing. At the moment of the jump the RSB still holds four entries that no `ret` will " +
+      "ever consume: return addresses into `handler` (pushed by `call f1`), into `f1`, into " +
+      "`f2`, and into `f3` (pushed by `call longjmp`). When `handler` executes `ret`, it pops " +
+      "the top entry, an address inside `f3`, while the real target is in `caller`. Fetch is " +
+      "redirected the wrong way, and the core takes a full misprediction flush once the `ret` " +
+      "resolves. `caller`'s own `ret` then pops the entry pointing into `f2`, and so on. The RSB " +
+      "stays off by the number of abandoned frames, so each return that unwinds above the " +
+      "`setjmp` point pops an entry meant for a deeper frame and mispredicts, until the RSB " +
+      "runs dry and the core falls back to another predictor such as the BTB. New " +
+      "call/ret pairs made after the `longjmp` still predict correctly, because they push and " +
+      "pop above the stale entries. C++ exception unwinding, user-space context switches " +
+      "(`swapcontext`, fiber and coroutine switches that `ret` onto another stack), and " +
+      "hand-written `push target; ret` trampolines cause the same desynchronization, so fast " +
+      "context-switch code tries to keep calls and returns paired. Retpoline goes the other " +
+      "way: it desynchronizes the RSB on purpose so that speculation goes to a harmless capture " +
+      "loop.",
+    references: [
+      "https://www.agner.org/optimize/microarchitecture.pdf",
+      "https://en.wikipedia.org/wiki/Branch_predictor#Prediction_of_function_returns",
+    ],
+  },
+  {
+    id: "computer-architecture-non-temporal-stores-35",
+    category: "computer-architecture",
+    difficulty: "medium",
+    title: "Zero-filling a 1 GB buffer with regular vs. streaming stores",
+    tags: ["non-temporal-stores", "read-for-ownership", "write-allocate", "memory-bandwidth"],
+    type: "trace",
+    prompt:
+      "On a typical x86-64 core, a routine fills a 1 GB buffer, far larger than the last-level " +
+      "cache, with zeros using 32-byte AVX stores. Version A uses ordinary stores " +
+      "(`_mm256_store_si256`) to normal write-back memory. Version B uses non-temporal " +
+      "streaming stores (`_mm256_stream_si256`) followed by one `_mm_sfence()`. Both write " +
+      "every byte of every cache line, in order. Measured at the memory controller, Version A " +
+      "moves close to twice as many bytes over the DRAM bus as Version B. Why?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `// Version A
+for (size_t i = 0; i < n; i += 32)
+    _mm256_store_si256((__m256i*)(buf + i), zero);
+
+// Version B
+for (size_t i = 0; i < n; i += 32)
+    _mm256_stream_si256((__m256i*)(buf + i), zero);
+_mm_sfence();`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "A store miss allocates an empty line without reading DRAM, so the extra bytes in A come " +
+          "from L3 evicting unrelated dirty lines",
+        "Each store miss in A first reads the line from DRAM to gain ownership, then writes it " +
+          "back later; B fills whole lines in WC buffers and writes them with no read",
+        "Streaming stores help only by bypassing the store buffer and draining sooner; the DRAM " +
+          "bytes moved per byte written are the same for both",
+        "A writes each 32-byte store through to DRAM on its own, while B gathers its stores in L3 " +
+          "and writes each line back exactly once",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "Normal write-back memory is write-allocate. A store that misses must bring the line into " +
+      "the cache in a state that permits writing, which requires a read-for-ownership (RFO). The " +
+      "RFO fetches the full current contents of the line from DRAM and invalidates other copies. " +
+      "The hardware does this because one store covers only part of a line, and it cannot know " +
+      "that later stores will overwrite the rest. In A, every line is therefore read from DRAM, " +
+      "overwritten, and later evicted dirty and written back, about 2 GB of traffic to write " +
+      "1 GB. It also pushes the cache's entire useful working set out along the way. (Some " +
+      "recent Intel server cores can detect full-line overwrites and skip the read in some " +
+      "cases, which narrows the gap without closing it reliably.) " +
+      "Non-temporal stores skip allocation. They collect in write-combining buffers, and a fully " +
+      "written 64-byte line goes to memory as a single full-line write with no RFO, so B moves " +
+      "about 1 GB and leaves the cache hierarchy untouched. There are two costs. NT stores are " +
+      "weakly ordered even on x86 TSO, so an SFENCE is required before publishing a flag that " +
+      "tells another thread the data is ready. And the data is not in cache afterward, which " +
+      "makes NT stores a loss when the buffer is small or will be read again soon. Partially " +
+      "written lines also flush as slower partial writes. Large `rep stosb`/`rep movsb` on cores " +
+      "with fast-string support can use a similar no-RFO protocol internally, and that is part " +
+      "of why `memset` implementations switch strategies above a size threshold.",
+    references: [
+      "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html",
+      "https://www.agner.org/optimize/optimizing_assembly.pdf",
+    ],
+  },
+  {
+    id: "computer-architecture-precise-exception-wrong-path-36",
+    category: "computer-architecture",
+    difficulty: "medium",
+    title: "A load to an unmapped page on the wrong path of a mispredicted branch",
+    tags: ["precise-exceptions", "out-of-order-execution", "rob", "page-fault"],
+    type: "trace",
+    prompt:
+      "The branch predictor predicts `jae skip` not-taken, so the out-of-order core keeps " +
+      "fetching and executes `mov rax, [rbx]` speculatively. `rbx` points into a virtual page " +
+      "with no mapping at all, so the load's page walk finds a not-present entry. The add that " +
+      "consumes `rax` is also in flight. A few cycles later the branch resolves as actually " +
+      "taken: the load was on the wrong path all along. What does the core do about the fault?",
+    snippet: {
+      language: "text",
+      code: `    cmp   rdi, rsi
+    jae   skip            ; predicted not-taken, actually taken
+    mov   rax, [rbx]      ; rbx -> unmapped page
+    add   rcx, rax
+skip:
+    ...`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "It raises #PF as soon as the page walk fails, so the kernel handles a fault for a load " +
+          "the program never architecturally executes",
+        "It holds back any load that could fault until all older branches resolve, so this load " +
+          "never issues and no page walk ever starts",
+        "It records the fault in the load's ROB entry only; the older branch's misprediction " +
+          "squashes the load, and no exception is ever delivered",
+        "It defers the fault until the branch resolves, then delivers #PF with the saved RIP set " +
+          "to the branch, the oldest instruction not yet retired",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "The ISA requires precise exceptions. When a fault is taken, every instruction before the " +
+      "faulting one has completed, none after it has had any architectural effect, and the saved " +
+      "instruction pointer names the faulting instruction itself. An out-of-order core meets this " +
+      "with lazy fault handling. A uop that detects a fault during execution (a not-present " +
+      "translation, a permission violation, a divide error) does not trap right away. It marks " +
+      "its ROB entry as excepting and is otherwise treated as complete. The fault is acted on " +
+      "only when that entry reaches the head of the ROB and would retire. At that point the core " +
+      "flushes everything younger and vectors to the handler, with CR2 holding the faulting " +
+      "address and RIP pointing at the `mov`. Here the older `jae` resolves first as " +
+      "mispredicted, and branch recovery squashes every younger uop, the excepting load " +
+      "included. The fault is discarded with it, and the OS never sees a #PF. That is " +
+      "architecturally correct, because the program never executed that load. Holding back " +
+      "potentially faulting loads would serialize nearly every load behind every branch, and " +
+      "reporting the fault against the branch would break precision. The same deferral is what " +
+      "Meltdown exploited. On affected Intel cores, a load that failed its permission check " +
+      "still passed its data to dependent uops during the window before retirement raised the " +
+      "fault, and those uops encoded the value in which cache line they touched. Precise " +
+      "exceptions guarantee architectural state, not the absence of transient side effects.",
+    references: [
+      "https://doi.org/10.1109/12.4607",
+      "https://www.usenix.org/conference/usenixsecurity18/presentation/lipp",
+    ],
+  },
+  {
+    id: "computer-architecture-message-passing-litmus-arm-37",
+    category: "computer-architecture",
+    difficulty: "hard",
+    title: "Message-passing litmus test on ARMv8 with a DMB between the stores",
+    tags: ["memory-consistency", "weak-ordering", "litmus-test", "arm"],
+    type: "trace",
+    prompt:
+      "`data` and `flag` start at 0 and live in different cache lines. On an ARMv8 multicore, " +
+      "Thread 0 stores `data`, executes `DMB ISH`, then stores `flag`. Thread 1 loads `flag` and " +
+      "then loads `data`, using two plain `LDR` instructions with no barrier and no dependency " +
+      "between them. Can Thread 1 end with `r1 == 1 && r2 == 0`, having seen the flag but stale " +
+      "data?",
+    snippet: {
+      language: "text",
+      code: `// Thread 0                  // Thread 1
+MOV  w0, #42                   LDR  w1, [flag]   // r1
+STR  w0, [data]                LDR  w2, [data]   // r2
+DMB  ISH
+MOV  w0, #1
+STR  w0, [flag]`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Yes: the DMB orders only Thread 0's two stores; Thread 1's independent loads can still " +
+          "be satisfied out of order, so the reader also needs LDAR or a barrier",
+        "No: once the DMB guarantees flag becomes visible after data, any core that reads flag " +
+          "as 1 is guaranteed to read data as 42",
+        "No: ARMv8 is multi-copy atomic, so each store becomes visible to all other cores at " +
+          "once, and no reader can observe the two out of order",
+        "Yes, but only across clusters without a shared coherent L2; within one coherent cluster, " +
+          "a core's loads complete in program order",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "Message passing needs ordering on both sides. The writer must keep its `data` store ahead " +
+      "of its `flag` store, and the reader must keep its `flag` load ahead of its `data` load. " +
+      "The DMB covers only the writer. ARMv8 places no ordering between two loads to different " +
+      "addresses unless something creates it: a barrier (`DMB ISHLD` or `DMB ISH`), an " +
+      "acquire load (`LDAR` on `flag`), or an address or control+ISB dependency from `r1` to the " +
+      "second load. Without one, the core may satisfy the `data` load first, perhaps because " +
+      "that line was already in L1 while `flag` missed, and read 0 before the writer's stores " +
+      "propagate. It then reads the new `flag` and produces `r1 == 1, r2 == 0` on real " +
+      "hardware. The multi-copy-atomicity answer is a true fact attached to a wrong " +
+      "conclusion. ARMv8 is other-multi-copy-atomic, meaning a store becomes visible to all " +
+      "other observers at the same moment. That constrains when stores become visible, not the " +
+      "order in which one core performs its own loads. On x86 TSO the outcome is forbidden even " +
+      "with no fences, because TSO preserves both store-store and load-load order. x86 cores " +
+      "still execute loads out of order internally, but they snoop for invalidations of " +
+      "already-loaded lines and squash and replay on a conflict (a memory-ordering machine " +
+      "clear). In C++ terms, this is roughly a release store paired with a relaxed load. Code " +
+      "that is correct by accident on x86 breaks on Arm until the reader is made " +
+      "`memory_order_acquire`, which compiles to `LDAR`.",
+    references: [
+      "https://doi.org/10.1145/3158107",
+      "https://developer.arm.com/documentation/ddi0487/latest",
+    ],
+  },
+  {
+    id: "computer-architecture-lru-cyclic-thrash-38",
+    category: "computer-architecture",
+    difficulty: "hard",
+    title: "Cycling through 8 vs. 9 lines that map to one 8-way set",
+    tags: ["cache-associativity", "replacement-policy", "lru"],
+    type: "trace",
+    prompt:
+      "A hot loop repeatedly touches K distinct cache lines in the same fixed cyclic order (L0, " +
+      "L1, ..., L(K-1), L0, ...). All K lines map to the same set of an 8-way set-associative " +
+      "cache, and nothing else touches that set. With K = 8, both true LRU and random " +
+      "replacement hit on every access after warm-up. What is the steady-state miss rate with " +
+      "K = 9 under each policy?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "About 1 miss in 9 under both policies: each pass, only the single line that does not " +
+          "fit has to be refetched",
+        "Every access misses under both policies, with the 9 lines continually displacing one " +
+          "another from the 8 ways",
+        "LRU misses about 1 access in 9 and keeps the 8 most recent lines resident; random " +
+          "replacement misses on nearly every access",
+        "LRU misses on every access after warm-up; random replacement misses on only about 22% " +
+          "of accesses",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "LRU evicts the line used longest ago, and in a cyclic pattern that is exactly the line " +
+      "needed next. With L0..L7 resident, accessing L8 evicts L0, the next access is L0, which " +
+      "misses and evicts L1, the next access is L1, and so on. Every access misses, a 0% to 100% " +
+      "cliff from adding one line, where a naive capacity argument predicts about 11%. Random " +
+      "replacement has no such pathology. A miss evicts an arbitrary way, which is often one not " +
+      "needed for several more accesses, so for K = 9 over 8 ways the steady-state miss rate " +
+      "settles around 22%. It degrades gradually as K grows instead of falling off a cliff. " +
+      "Unlike a power-of-two stride conflict, this is not a set-indexing problem. It is a " +
+      "replacement-policy problem that appears whenever a looping working set slightly exceeds " +
+      "the capacity it maps onto, whether that is one set's ways, a whole cache, or a TLB. The " +
+      "tree pseudo-LRU used in many real L1s behaves like LRU on this simple cyclic pattern. " +
+      "This failure mode is why modern last-level caches use adaptive insertion or RRIP-style " +
+      "policies with set dueling, which insert new lines at low priority so that part of a " +
+      "thrashing loop stays resident instead of all of it being churned out.",
+    references: [
+      "https://doi.org/10.1145/1250662.1250709",
+      "https://doi.org/10.1145/1815961.1815971",
+    ],
+  },
+  {
+    id: "computer-architecture-fill-buffer-mlp-39",
+    category: "computer-architecture",
+    difficulty: "hard",
+    title: "Single-core bandwidth for independent random DRAM loads",
+    tags: ["memory-level-parallelism", "line-fill-buffers", "littles-law", "memory-bandwidth"],
+    type: "trace",
+    prompt:
+      "One thread performs a long stream of loads from a 16 GB array at precomputed random " +
+      "indices. Every load is independent of the others, each hits a different cache line, and " +
+      "every load misses all the way to DRAM with about 80 ns latency. The array is backed by " +
+      "1 GB pages, so TLB misses are negligible, and the hardware prefetchers cannot predict the " +
+      "addresses. The core has a 224-entry ROB, a 72-entry load buffer, and 12 L1D line fill " +
+      "buffers, and the loop spends about 3 instructions per load. The DRAM channels can supply " +
+      "well over 50 GB/s. What bounds this single core's achieved bandwidth?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The ROB: about 70 loads fit in its window at once, so about 70 misses overlap and the " +
+          "core runs close to the DRAM channels' full bandwidth",
+        "The fill buffers: at most about 12 L1 misses can be outstanding, so by Little's law the " +
+          "core sustains about 12 x 64 B / 80 ns, roughly 10 GB/s",
+        "Nothing inside the core: independent loads overlap without limit, so per-core bandwidth " +
+          "is set only by the DRAM channels and their controller",
+        "The load buffer: its 72 entries cap outstanding misses at 72, so the core sustains about " +
+          "72 x 64 B / 80 ns, roughly 58 GB/s from DRAM",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "Out-of-order execution exposes memory-level parallelism only up to the smallest structure " +
+      "that has to hold each miss while it is outstanding. The ROB (224 / 3 is about 74 loads) " +
+      "and the load buffer (72) could both keep roughly 70 independent loads in flight. Each L1D " +
+      "miss, however, also needs a line fill buffer (LFB, also called a miss status holding " +
+      "register) to track the outstanding request and receive the returning line. With only 12 " +
+      "LFBs, the 13th miss cannot issue to L2 until one of the first 12 completes. Little's law " +
+      "gives the ceiling: throughput = concurrency / latency = 12 x 64 B / 80 ns, about 9.6 GB/s. " +
+      "That is a small fraction of what the DRAM channels can deliver. Larger ROBs and load " +
+      "buffers raise nothing here. The same ceiling keeps single-core bandwidth on many Intel " +
+      "parts, server parts with high uncore latency especially, far short of socket bandwidth, " +
+      "and it is why newer cores keep adding fill buffers (Golden Cove raised the count to " +
+      "16). Sequential streams beat this limit because the L2 streamer prefetches into L2 " +
+      "using the L2's own, deeper queue of outstanding requests, so most demand loads hit L2 " +
+      "and hold an LFB only briefly. Random access gets no such help. The practical fixes are spreading the work " +
+      "across cores, each with its own LFBs, or restructuring for locality so that fewer loads " +
+      "need DRAM at all.",
+    references: [
+      "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html",
+      "https://en.wikipedia.org/wiki/Memory-level_parallelism",
+    ],
   },
 ];

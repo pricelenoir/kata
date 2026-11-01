@@ -27,9 +27,9 @@ bool bufferFits(char* buf, size_t len) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Yes. end < buf is true exactly when buf + len wraps, so the guard correctly returns false on overflow.",
-        "No. Forming buf + len outside the array is undefined behavior, so the optimizer may assume end < buf is never true and fold the guard away.",
-        "No. Comparing pointers into unrelated objects is unspecified, so the guard returns an arbitrary answer fixed at link time.",
+        "Yes. end < buf is true exactly when buf + len wraps, and the guard returns false in that case.",
+        "No. The optimizer may treat end < buf as always false and fold the guard away.",
+        "No. Comparing pointers into unrelated objects gives an unspecified result, fixed arbitrarily at link time.",
         "Yes at -O0, where the comparison is emitted literally, but not at -O2, where the branch gets folded.",
       ],
       correctIndex: 1,
@@ -70,8 +70,8 @@ int main() {
       kind: "multiple-choice",
       choices: [
         "Always 1.000000. The bit pattern sitting in that storage is the same whichever pointer type reads it back.",
-        "Always 0.000000, because the load through fp is scheduled ahead of the store through ip committing to memory.",
-        "Undefined behavior: reading an int object through a float lvalue violates strict aliasing, so no particular output is guaranteed.",
+        "Always 0.000000: the load through fp is scheduled ahead of the store through ip committing to memory.",
+        "Undefined behavior. It may well print 1.000000, but no particular output is guaranteed.",
         "Well-defined but implementation-defined: the result depends on the platform's float representation, which the ABI documents.",
       ],
       correctIndex: 2,
@@ -106,9 +106,9 @@ float bitsToFloat(int bits) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Well-defined, and the fixed-size memcpy between same-sized scalars lowers to a single register move with no call and no copy loop.",
-        "Well-defined, but it costs a real call into the C library at every optimization level, since memcpy is opaque to the front end.",
-        "Still undefined behavior, because memcpy reads the object representation of an int and writes those bytes into a float object.",
+        "Well-defined, and at -O2 it compiles to one register move, the same instruction the reinterpret_cast version emits.",
+        "Well-defined, but it costs a real call into the C library at every optimization level; memcpy is opaque to the front end.",
+        "Still undefined behavior: memcpy reads the object representation of an int and writes those bytes into a float object.",
         "Compile error: memcpy's source and destination must have the same type for the copy to be well-formed.",
       ],
       correctIndex: 0,
@@ -140,10 +140,10 @@ float bitsToFloat(int bits) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "A tight machine-code loop that squares i and accumulates it n times, since n is not known at compile time.",
+        "A tight machine-code loop that squares i and accumulates it n times, with n known only at runtime.",
         "The loop is left intact: replacing it with a formula is a source-level rewrite, which the as-if rule does not cover.",
         "A vectorized loop adding four squares per iteration, which is as far as the as-if rule lets the compiler take this.",
-        "No loop at all. The as-if rule lets the compiler emit a closed-form arithmetic expression instead, and GCC and Clang do.",
+        "No loop at all. GCC and Clang replace it with a short closed-form arithmetic sequence that has no backward branch.",
       ],
       correctIndex: 3,
     },
@@ -175,10 +175,10 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Nothing but the literal 58 handed to printf, at every level: a is constexpr, so its initializer must be folded at compile time.",
+        "Nothing but the literal 58 handed to printf, and that holds at every optimization level, -O0 included.",
         "A runtime call to square(7), a runtime call to square(3), an addition, and then the call to printf.",
         "The folding happens at -O1 and above; at -O0 both calls to square are emitted and run at runtime.",
-        "Undefined behavior: square is constexpr but not consteval, so calling it twice in one initializer is unsequenced.",
+        "Undefined behavior: square is constexpr but not consteval, and the two calls in one initializer are unsequenced.",
       ],
       correctIndex: 0,
     },
@@ -207,9 +207,9 @@ int computeLimit() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "It folds to a constant at compile time, since *2 + 1 is pure arithmetic the optimizer can always evaluate.",
-        "The whole function is deleted as dead code, because nothing in this translation unit calls computeLimit.",
-        "No folding. The call has to be emitted, though *2 can still be strength-reduced to a shift or lea with the +1 folded in.",
+        "It folds to a constant at compile time; *2 + 1 is pure arithmetic the optimizer can always evaluate.",
+        "The whole function is deleted as dead code; nothing in this translation unit calls computeLimit.",
+        "No folding. The call is emitted, though *2 can still become a shift or lea with the +1 folded in.",
         "Compile error: a call to a function that is not constexpr may not appear inside a returned arithmetic expression.",
       ],
       correctIndex: 2,
@@ -242,10 +242,10 @@ int compute(int x) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "The branch is folded away: DEBUG is a known-false constant, so dead code elimination drops the block and the call with it.",
-        "expensiveDiagnostic() is still called at runtime, since it sits in a reachable if statement inside the emitted function.",
+        "The branch and the call are both removed, and the program links even with no definition of expensiveDiagnostic.",
+        "expensiveDiagnostic() is still called at runtime from a reachable if statement inside the emitted function.",
         "The branch survives but the call is replaced by a nop, keeping compute's code layout stable for the debugger.",
-        "Link error: naming expensiveDiagnostic in the body odr-uses it, so a definition must exist somewhere in the program.",
+        "Link error: naming expensiveDiagnostic in the body odr-uses it, and no definition exists anywhere in the program.",
       ],
       correctIndex: 0,
     },
@@ -279,9 +279,9 @@ void run(bool trigger) {
       kind: "multiple-choice",
       choices: [
         'The write quietly corrupts adjacent stack memory, then "after write" and "done" both print as usual.',
-        'The write is bounds-checked against the array\'s known extent and discarded, so only "done" prints.',
+        'The write is bounds-checked against the array\'s known extent and discarded, and only "done" prints.',
         "Compile error: arr[10] is a constant subscript outside a declared 4-element array and must be diagnosed.",
-        "The trigger==true path executes undefined behavior, so the compiler may drop the write, drop the printf at (2), or drop the branch entirely.",
+        "Anything: the compiler may drop the write, drop the printf at (2), or delete the trigger==true branch entirely.",
       ],
       correctIndex: 3,
     },
@@ -309,8 +309,8 @@ void run(bool trigger) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Once. a * b is a side-effect-free expression whose operands never change in between, so CSE computes it and reuses the register.",
-        "Twice, once for x and once for y, because they are separate statements initializing separate variables.",
+        "Once. One register holds the product, feeding both the add for x and the sub for y.",
+        "Twice: x and y are separate statements initializing separate variables, with one multiply each.",
         "Three times: once for x, once for y, and once more for the multiplication in the return statement.",
         "Zero times: reassociation collapses (a*b+c)*(a*b-c) into a form that no longer contains the product a * b.",
       ],
@@ -322,7 +322,7 @@ void run(bool trigger) {
   {
     id: "compilers-cse-02",
     category: "compilers",
-    difficulty: "medium",
+    difficulty: "easy",
     title: "The same call, written twice",
     tags: ["cse", "optimizer", "aliasing"],
     type: "trace",
@@ -342,9 +342,9 @@ int f() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Once: a nullary function returning int is treated as pure by default, so the first result is reused for both x and y.",
-        "Zero: x and y feed only into a sum that is returned, so both calls are dead and get eliminated together.",
-        "Twice. Without the body, the compiler cannot prove getValue() is side-effect-free, so neither call may be dropped.",
+        "Once: a nullary function returning int is treated as pure by default, and the first result is reused for both x and y.",
+        "Zero: x and y feed only into the returned sum, and both calls are eliminated together as dead code.",
+        "Twice. Both calls are emitted, at -O2 and at every other optimization level.",
         "Twice at -O2 and once at -O3, where interprocedural analysis switches to assuming external functions are pure.",
       ],
       correctIndex: 2,
@@ -373,9 +373,9 @@ int f() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Nothing. Elementwise float arithmetic reads and writes one lane at a time, so overlap cannot change the result.",
-        "It either skips vectorization or emits a runtime overlap check that guards a vectorized fast path against a scalar fallback.",
-        "It vectorizes unconditionally, because -O3 turns off alias analysis in favor of assuming distinct pointer arguments.",
+        "Nothing. Elementwise float arithmetic reads and writes one lane at a time, and overlap cannot change the result.",
+        "It either skips vectorization or versions the loop behind a runtime overlap check with a scalar fallback.",
+        "It vectorizes unconditionally: -O3 turns off alias analysis in favor of assuming distinct pointer arguments.",
         "It never vectorizes: only restrict-qualified pointers make a loop containing a store a legal vectorization candidate.",
       ],
       correctIndex: 1,
@@ -405,8 +405,8 @@ int f() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "No, but only because __restrict is a GCC and Clang extension with no codegen effect outside -fno-strict-aliasing builds.",
-        "Yes: SIMD requires a compile-time-constant trip count so the compiler knows how many lanes each iteration will fill.",
+        "No, but only thanks to __restrict; without it, a loop that stores through a pointer is never vectorized.",
+        "Yes: SIMD requires a compile-time-constant trip count to know how many lanes each iteration will fill.",
         "Yes, unless n is provably a multiple of the target's vector width, which the compiler cannot establish from a parameter.",
         "No. The main body is vectorized in fixed-width chunks and a scalar remainder loop mops up the leftover elements.",
       ],
@@ -436,7 +436,7 @@ int f() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Nothing about inlining. It grants an ODR exemption so the same definition may appear in many translation units.",
+        "Nothing about inlining. It lets the identical definition appear in many translation units without an ODR violation.",
         "That the compiler substitutes the body at every call site rather than emitting a call instruction.",
         "That the body is pasted in during preprocessing, the way a function-like macro would be expanded.",
         "Nothing at all in modern C++; the keyword is a C compatibility artifact the front end discards.",
@@ -470,7 +470,7 @@ int f() {
       choices: [
         "Compile error: the function has more simultaneously-live values than the target has allocatable registers.",
         "It widens the pool by parking the surplus scalar values in otherwise unused SIMD registers for the duration.",
-        "The interference graph has no valid 8-coloring, so the allocator spills live ranges to stack slots with stores and reloads.",
+        "It spills some live ranges to stack slots, with stores after their definitions and reloads before their uses.",
         "It rematerializes each surplus value at every use, recomputing it from its operands rather than touching memory at all.",
       ],
       correctIndex: 2,
@@ -498,9 +498,9 @@ int f() {
       kind: "multiple-choice",
       choices: [
         "Stack overflow: one million recursive calls each push a frame that is only popped on the way back out.",
-        "No overflow. The call is in tail position, so the frame is reused and the recursion becomes a loop using O(1) stack.",
-        "No overflow, but only because GCC and Clang move deep recursion onto a heap-allocated frame chain past a depth threshold.",
-        "Stack overflow anyway: the standard offers no tail-call guarantee, so no C++ compiler performs the transformation.",
+        "No overflow. The frame is reused on each call, and the recursion runs in O(1) stack like a loop.",
+        "No overflow: past a depth threshold, GCC and Clang move deep recursion onto a heap-allocated frame chain.",
+        "Stack overflow anyway: the standard offers no tail-call guarantee, and no C++ compiler performs the transformation.",
       ],
       correctIndex: 1,
     },
@@ -528,10 +528,10 @@ int f() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "At -O2 the compiler raises the stack size recorded in the binary's headers so that a million frames now fit.",
-        "The frames still exist at -O2 but are far smaller, so a million of them fit inside the default thread stack.",
-        "Nothing in the compiler changed the recursion; the -O0 crash comes from an unrelated bug such as the missing base case.",
-        "Addition is associative, so the tail-recursion pass can introduce the accumulator itself and turn the call into a tail call.",
+        "At -O2 the compiler records a larger stack size in the binary's headers, enough for a million frames.",
+        "The frames still exist at -O2 but are far smaller, and a million of them fit inside the default thread stack.",
+        "At -O2, GCC and Clang turn every self-recursive function into a loop, whatever the shape of the recursion.",
+        "The tail-recursion pass introduces an accumulator itself, turning the call into a tail call and then a loop.",
       ],
       correctIndex: 3,
     },
@@ -556,10 +556,10 @@ int square(int x) { return x * x; }`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Only with LTO. An ordinary build sees just the declaration and must emit a call; -flto puts both bodies in front of the optimizer.",
+        "Only with LTO. The ordinary build has to emit a call; the -flto build can inline square straight into the loop.",
         "There is no difference: the compiler resolves declarations against definitions in other objects during ordinary compilation.",
-        "It is inlined either way, because square is trivially small; LTO only widens inlining for large function bodies.",
-        "LTO changes symbol resolution and debug info layout only, so the call instruction survives in both builds.",
+        "It is inlined either way: square is trivially small, and LTO only widens inlining for large function bodies.",
+        "LTO changes only symbol resolution and debug info layout, and the call instruction survives in both builds.",
       ],
       correctIndex: 0,
     },
@@ -583,10 +583,10 @@ int square(int x) { return x * x; }`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "No: inlining across any file boundary requires LTO, whichever file the definition physically lives in.",
-        "Only if math.cpp is compiled at -O2 as well, since the inliner needs matching optimization levels on both sides.",
-        "Yes. The preprocessor pastes the body into caller.cpp, so ordinary single-TU optimization can inline it.",
-        "Compile error: a function defined in a header included by several .cpp files has multiple definitions at link time.",
+        "No: inlining across any file boundary requires LTO, wherever the definition physically lives.",
+        "Only if math.cpp is also compiled at -O2; the inliner needs matching optimization levels on both sides.",
+        "Yes. The ordinary per-TU inliner can act on it while compiling caller.cpp, with no LTO involved.",
+        "Link error: a function defined in a header included by several .cpp files ends up with multiple definitions.",
       ],
       correctIndex: 2,
     },
@@ -614,9 +614,9 @@ int main() {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Yes: both compilers write the plain source name into the symbol table, so the linker pairs them up directly.",
-        "No, undefined reference. The C++ TU asks the linker for a mangled symbol like _Z7processi; the C object exports plain process.",
-        "Yes, because modern linkers demangle C++ references before matching them against undecorated symbols.",
+        "Yes: both compilers write the plain source name into the symbol table, and the linker pairs them up directly.",
+        "No. The link fails with an undefined reference to a mangled symbol such as _Z7processi.",
+        "Yes. Modern linkers demangle C++ references before matching them against undecorated symbols.",
         "No, and the failure is at compile time: caller.cpp may not declare a function whose definition comes from a C object.",
       ],
       correctIndex: 1,
@@ -649,9 +649,9 @@ int callFromB(int x) { return helper(x); }`,
       kind: "multiple-choice",
       choices: [
         "Link error: helper is defined twice across a.o and b.o, with two conflicting bodies under one name.",
-        "Compile error when b.cpp is built, since helper already has an internal-linkage definition in a.cpp.",
-        "Links, but both callers end up in one merged helper, so callFromA and callFromB return the same value.",
-        "Links fine. static gives each helper internal linkage, so the two are distinct entities that never reach the global symbol table.",
+        "Compile error when b.cpp is built: helper already has an internal-linkage definition in a.cpp.",
+        "Links, but both callers end up in one merged helper, and callFromA and callFromB return the same value.",
+        "Links fine. callFromA uses the x + 1 helper and callFromB uses the x * 2 helper, each from its own file.",
       ],
       correctIndex: 3,
     },
@@ -683,15 +683,15 @@ inline int scale(int x) { return x * 3; }`,
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "The compiler must diagnose it at compile time, since the two definitions differ in a plainly visible way.",
-        "Ill-formed, no diagnostic required. Everything builds cleanly, the linker keeps one definition, and both TUs call that one.",
+        "The compiler must diagnose it at compile time: the two definitions differ in a plainly visible way.",
+        "Ill-formed, no diagnostic required. It builds cleanly, and which body a given call runs depends on the linker and optimizer.",
         "The linker rejects it with a multiple-definition error, exactly as it would for two non-inline functions of the same name.",
-        "Each TU keeps and calls its own copy, the way two same-named static functions would coexist.",
+        "Well-defined: each TU keeps and calls its own copy, the way two same-named static functions would coexist.",
       ],
       correctIndex: 1,
     },
     explanation:
-      "The ODR requires an `inline` function to have the same definition, token for token, in every translation unit that defines it. That requirement exists precisely because the ODR's exemption for inline entities lets the toolchain keep any one of the supposedly identical definitions and discard the rest. Here `a.cpp` and `b.cpp` genuinely disagree, which is a real violation, but [basic.def.odr] classifies it as ill-formed, no diagnostic required. Detecting it would mean comparing function bodies across separately compiled TUs, which an ordinary non-LTO pipeline never does. So both objects compile silently, and the linker follows the usual weak/COMDAT merging rules for inline functions and templates: one definition survives and every call site in the binary, from either TU, reaches it. Which one survives is not specified and depends on link order and the linker's own tie-breaking. The upshot is that `a.cpp`'s callers can silently get `b.cpp`'s multiplier with no warning anywhere, which is the classic stale-header bug in large multi-library builds. LTO and the gold linker's `--detect-odr-violations` can sometimes surface it, and building with `-flto` makes the mismatch visible to the optimizer, but neither is required by the standard.",
+      "The ODR requires an `inline` function to have the same definition, token for token, in every translation unit that defines it. That requirement exists precisely because the ODR's exemption for inline entities lets the toolchain keep any one of the supposedly identical definitions and discard the rest. Here `a.cpp` and `b.cpp` genuinely disagree, which is a real violation, but [basic.def.odr] classifies it as ill-formed, no diagnostic required. Detecting it would mean comparing function bodies across separately compiled TUs, which an ordinary non-LTO pipeline never does. So both objects compile silently, and the linker follows the usual weak/COMDAT merging rules for inline functions and templates: one out-of-line definition survives, chosen by link order and the linker's own tie-breaking, and every real call instruction reaches it. Calls the optimizer has already inlined keep whichever body their own TU saw. With a `main` in `b.cpp` that prints `fa(1)` (a function in `a.cpp` that returns `scale(1)`) next to its own `scale(1)`, Clang and GCC at -O0 print `2 2`, because both calls reach the surviving copy, and at -O2 print `2 3`, because each TU inlined its own body. The upshot is that `a.cpp`'s callers can silently get `b.cpp`'s multiplier, or not, depending on link order and optimization level, with no warning anywhere, which is the classic stale-header bug in large multi-library builds. LTO and the gold linker's `--detect-odr-violations` can sometimes surface it, and building with `-flto` makes the mismatch visible to the optimizer, but neither is required by the standard.",
     references: ["https://en.cppreference.com/w/cpp/language/definition"],
   },
   {
@@ -724,8 +724,8 @@ void run() {
       choices: [
         "Yes. Every call to a virtual function loads the vtable pointer and dispatches indirectly; that is what virtual means.",
         "Yes, unless Dog::speak is also declared final, which is the only annotation that permits skipping a vtable load.",
-        "No. obj's dynamic type is provably Dog, so the compiler emits a direct call to Dog::speak and usually inlines it.",
-        "No, but only in builds where Dog's vtable is emitted in this same translation unit rather than imported.",
+        "No. The compiler emits a direct call to Dog::speak, and usually inlines it, with no vtable load at all.",
+        "No, but only in builds where Dog's vtable is emitted in this same translation unit.",
       ],
       correctIndex: 2,
     },
@@ -759,10 +759,10 @@ void call(Dog* d) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Yes. The pointee is not visible here, so the compiler must assume it could be any class derived from Dog.",
-        "Yes, unless Animal::speak is also marked final, since that is the annotation that actually closes the override set.",
+        "Yes. The pointee is not visible here, and the compiler must assume it could be any class derived from Dog.",
+        "Yes, unless Animal::speak is also marked final; that is the annotation that actually closes the override set.",
         "No, but only under LTO, where whole-program analysis can enumerate the classes that derive from Dog.",
-        "No. final means nothing can derive from Dog, so Dog::speak is the only possible override and the call becomes direct.",
+        "No. The call is bound statically to Dog::speak and compiled with no vtable load at all.",
       ],
       correctIndex: 3,
     },
@@ -794,10 +794,10 @@ int makePoint(int x, int y) {
     answerFormat: {
       kind: "multiple-choice",
       choices: [
-        "Yes. operator new[] and operator delete[] are replaceable functions whose calls are observable, so the as-if rule protects them.",
-        "No. [expr.new] specifically permits omitting a replaceable allocation call, and Clang at -O2 folds makePoint to a single add.",
+        "Yes. operator new[] and operator delete[] are replaceable, their calls are observable, and the as-if rule protects them.",
+        "No. The standard permits eliding the new/delete pair, and Clang at -O2 compiles makePoint down to a single add.",
         "Yes, unless the build uses -flto, which is what exposes the matched new/delete pair to the allocation-elision pass.",
-        "No, but the standard does not sanction it; this is a spot where GCC and Clang knowingly depart from the abstract machine.",
+        "No, but the standard does not sanction it; GCC and Clang knowingly depart from the abstract machine here.",
       ],
       correctIndex: 1,
     },
@@ -832,9 +832,9 @@ int dispatch(int x, bool condition) {
       kind: "multiple-choice",
       choices: [
         "Nothing changes here: PGO steers vectorization and loop unrolling, and leaves the inliner's cost model alone.",
-        "PGO lifts the inliner's cost cap entirely, so every call site in dispatch gets inlined no matter how large the callee.",
-        "PGO reorders the if/else so the hot arm falls through, but inlining stays driven purely by static size heuristics.",
-        "The counters show condition true ~99.9% of the time, so the inliner favors fastPath and treats slowPath as cold code.",
+        "PGO lifts the inliner's cost cap entirely, and every call site in dispatch gets inlined no matter how large the callee.",
+        "PGO reorders the if/else to make the hot arm fall through, but inlining stays driven purely by static size heuristics.",
+        "With the profile, the inliner spends its budget on fastPath and leaves slowPath as an out-of-line cold call.",
       ],
       correctIndex: 3,
     },
@@ -866,9 +866,9 @@ gcc -O3 hot_path.cpp -o hot_path_o3
       kind: "multiple-choice",
       choices: [
         "-O3 is a strict superset of -O2 and is guaranteed to produce code at least as fast, for any program on any hardware.",
-        "-O3's extra unrolling, inlining, and vectorization grow code size, which here can cost more in icache misses than it saves.",
-        "-O3 differs from -O2 only in debug information and symbol retention, so runtime performance is unchanged either way.",
-        "-O3 and -O2 have been identical since GCC 4.x; the flag survives only for build-script compatibility.",
+        "-O3's larger unrolled, inlined, and vectorized code can cost more in icache misses here than it saves.",
+        "-O3 differs from -O2 only in debug information and symbol retention, leaving runtime performance unchanged.",
+        "-O3 and -O2 have been identical from GCC 4.x onward; the flag survives only for build-script compatibility.",
       ],
       correctIndex: 1,
     },
@@ -949,7 +949,7 @@ void bumpR(int* restrict in, int* restrict out) {
       kind: "multiple-choice",
       choices: [
         "Both reload: restrict only feeds the vectorizer's runtime overlap checks and never affects scalar load elimination.",
-        "(A) must reload *in, since out could equal in. (B) may reuse the first load, and the now-dead first store disappears too.",
+        "(A) must reload *in. (B) may reuse the first load, and the first store, now dead, disappears as well.",
         "Neither reloads. The two statements sit in one function, and *out and *in are syntactically distinct lvalue expressions.",
         "Both reload, and (B) additionally traps under UBSan if a caller ever passes overlapping pointers to a restrict parameter.",
       ],
@@ -958,5 +958,368 @@ void bumpR(int* restrict in, int* restrict out) {
     explanation:
       "This is the same aliasing uncertainty as the vectorization and CSE questions, applied to load and store elimination instead of SIMD widening. In (A) the compiler must allow for a caller passing `in == out`. Under that possibility the first store overwrites the very object `*in` names, so the second statement's load cannot reuse the first load's value and a real reload instruction is emitted. In (B) `restrict` is the caller's promise that neither pointer will be used to reach the object the other designates for the duration of the call. Breaking the promise is undefined behavior on the caller's side, but given it, the store through `out` provably cannot disturb `*in`, so the value stays in a register. Clang compiling this as C at -O2 turns `bumpR` into a single load, a single add of 2, and a single store: not only is the redundant load gone, so is the first store, now provably dead. Two practical caveats. `restrict` is a C keyword with no standard C++ equivalent, and the `__restrict` extension C++ compilers offer is honored inconsistently: Apple Clang 17, for one, emits no `noalias` for `__restrict` parameters in C++ mode and compiles both halves of this pair identically. And no sanitizer checks the promise, so a caller that breaks it gets a silent miscompile rather than a diagnostic.",
     references: ["https://en.cppreference.com/w/c/language/restrict"],
+  },
+  {
+    id: "compilers-licm-01",
+    category: "compilers",
+    difficulty: "easy",
+    title: "A loop bound computed by an external function",
+    tags: ["loop-invariant-code-motion", "optimizer", "function-attributes"],
+    type: "trace",
+    prompt:
+      "limit() is defined in another translation unit, and in this program it happens to return the same value every time. Compiled with -O2 and no LTO, how many times does fill call limit()?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `int limit();   // defined in another translation unit
+
+void fill(int* a) {
+    for (int i = 0; i < limit(); ++i) {
+        a[i] = 0;
+    }
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Once. limit() takes no arguments and nothing in the loop feeds it, so LICM hoists the call out of the condition.",
+        "Once at -O2 but once per iteration at -O0, since hoisting invariant calls is a standard part of the -O2 pipeline.",
+        "Once per iteration plus the final check, since the compiler cannot prove limit() is side-effect free or invariant.",
+        "Once, because strict aliasing guarantees the int store a[i] = 0 cannot touch anything that limit() might read.",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "Loop-invariant code motion may only hoist a computation if it can prove two things: the value is the same on every iteration, and evaluating it once instead of n+1 times changes no observable behavior. A call to a function whose body the compiler cannot see fails both tests. `limit()` might print, bump a counter, read a global that the loop's stores change, or simply return something different each time, and under the as-if rule the compiler must preserve every one of those possibilities. Taking no arguments says nothing about purity, and that it happens to return a constant in this program is a fact the compiler has no access to. Clang at -O2 on arm64 emits the call to `limit()` inside the loop body, once per iteration. The strict-aliasing answer fails on its own terms: `a[i]` is an `int` store, and `limit()` could well read an `int` global that `a` points into. Function attributes change the picture. `__attribute__((pure))` (may read memory, must not write it) is still not enough here, because the loop's stores through `a` could change memory that `limit()` reads, and Clang keeps the per-iteration call. `__attribute__((const))` (reads no memory at all) is enough: Clang then calls `limit()` once and replaces the whole loop with a single `bzero` call. GCC 16 keeps the per-iteration call even then, since the attribute permits the hoist without requiring it. C23 standardizes similar promises as `[[unsequenced]]` and `[[reproducible]]`. All of these are promises from the programmer, and breaking one is undefined behavior. The portable fix is simply to hoist by hand: `const int n = limit();`.",
+    references: [
+      "https://gcc.gnu.org/onlinedocs/gcc/Common-Function-Attributes.html",
+      "https://en.cppreference.com/w/cpp/language/as_if",
+    ],
+  },
+  {
+    id: "compilers-strength-reduction-01",
+    category: "compilers",
+    difficulty: "easy",
+    title: "Dividing a signed int by two",
+    tags: ["strength-reduction", "codegen", "integer-division"],
+    type: "trace",
+    prompt:
+      "Compiled with -O2 for arm64 or x86-64, halfU becomes a single logical right shift. What does the compiler emit for half?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `int half(int x) {
+    return x / 2;
+}
+
+unsigned halfU(unsigned x) {
+    return x / 2;
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "A shift plus a fix-up that first adds the sign bit, since signed division rounds toward zero and a bare shift rounds down.",
+        "A single arithmetic right shift, the same cost as halfU's logical shift, since x >> 1 equals x / 2 for every int value.",
+        "A real hardware divide instruction, because rewriting division as a shift is only permitted when the operand is unsigned.",
+        "A single arithmetic shift, since x / 2 for negative odd x is implementation-defined and compilers pick floor rounding.",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "Strength reduction replaces an expensive operation with a cheaper one, but only where the two are equal for every input, and for signed division by a power of two they are not. Since C++11 (and C99) integer division truncates toward zero, so `-7 / 2` is `-3`. An arithmetic right shift rounds toward negative infinity, so `-7 >> 1` is `-4`. The two agree for non-negative values and for even negative values, and disagree for odd negative ones. To use a shift anyway, the compiler adds 1 to negative inputs first, and that 1 is exactly the sign bit. Clang at -O2 on arm64 emits `add w8, w0, w0, lsr #31` followed by `asr w0, w8, #1`; GCC on x86-64 emits the equivalent `shr`/`add`/`sar` sequence. `halfU` has no negative inputs, so it gets a single `lsr w0, w0, #1`. The implementation-defined answer describes C++03, which left the rounding direction of negative division up to the implementation; C++11 removed that latitude. No undefined behavior is involved anywhere here: the compiler is applying an exact identity, not exploiting an assumption. If you know `x` is never negative, tell the compiler: make it unsigned, or add `__builtin_assume(x >= 0)` (or C++23 `[[assume(x >= 0)]]`), and Clang drops the fix-up and emits the bare shift. Division by other constants gets the same treatment, lowered to a multiply by a precomputed reciprocal plus shifts and a similar sign correction.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/operator_arithmetic",
+    ],
+  },
+  {
+    id: "compilers-forward-progress-01",
+    category: "compilers",
+    difficulty: "hard",
+    title: "A Collatz loop called with zero",
+    tags: ["forward-progress", "undefined-behavior", "loop-deletion"],
+    type: "trace",
+    prompt:
+      "For n = 0 the loop body maps 0 to 0, so the abstract machine never leaves the loop. Compiled as C++20 with -O2, what does this program do?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <cstdio>
+
+bool reachesOne(unsigned long n) {
+    while (n != 1) {
+        n = (n % 2) ? 3 * n + 1 : n / 2;
+    }
+    return true;
+}
+
+int main() {
+    std::printf("%d\\n", reachesOne(0));
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Hangs forever. Non-termination is behavior the program exhibits, so the as-if rule obliges the compiler to keep the loop.",
+        "Traps. Clang lowers a provably infinite loop with no side effects to a trap instruction, so the process dies with SIGILL.",
+        "Hangs forever, because unsigned arithmetic wraps by definition, leaving no undefined behavior for the optimizer to exploit.",
+        "Prints 1. A loop with no I/O, volatile, or atomic operations may be assumed to terminate, so the compiler may delete it.",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "The unsigned-wraparound answer is right that no arithmetic here is undefined, but the undefined behavior is somewhere else. The forward progress guarantee, [intro.progress]p1, lets the implementation assume every thread eventually terminates, calls a library I/O function, performs a volatile access, or performs a synchronization or atomic operation. A loop that spins forever doing none of those violates the assumption, and executing it is undefined behavior. For `n = 0` this loop is exactly that. The rule exists for the optimizer's benefit: without it, the compiler could not delete or reorder a side-effect-free loop unless it first proved that the loop terminates, which is undecidable in general (and for this recurrence, an open problem in mathematics). With it, the reasoning is short. Nothing computed in the loop is used afterward, the only exit leads to `return true`, and the loop may be assumed to finish, so the whole loop goes. Both GCC 16 and Clang at -O2 compile `reachesOne` to `mov w0, #1; ret`, and the program prints 1 rather than hanging. Clang marks C++ functions `mustprogress`, and GCC enables `-ffinite-loops` by default at -O2 for C++11 and later. C has a narrower version of the rule, C11 6.8.5p6, which covers only loops whose controlling expression is not a constant expression. This loop qualifies, so Clang folds it in C too. C++26 (P2809) carves out trivial infinite loops such as `while (true);`, so embedded idle loops are no longer UB, but a loop with a real condition and body like this one is still covered. If you need the hang, put a volatile access or an atomic operation in the body, or build with `-fno-finite-loops`.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/multithread#Forward_progress",
+      "https://wg21.link/p2809r3",
+    ],
+  },
+  {
+    id: "compilers-icf-01",
+    category: "compilers",
+    difficulty: "medium",
+    title: "Two handlers with the same body and a pointer comparison",
+    tags: ["identical-code-folding", "linker", "function-pointers"],
+    type: "trace",
+    prompt:
+      "Each of the three files below is its own translation unit, all built at -O2 with -ffunction-sections and linked with lld using -Wl,--icf=all. There is no LTO. What does the program print?",
+    snippet: {
+      language: "cpp",
+      filename: "handlers.cpp",
+      code: `// handlers.cpp
+int onRead(int fd)  { return fd + 1; }
+int onWrite(int fd) { return fd + 1; }
+
+// names.cpp
+using Handler = int (*)(int);
+int onRead(int);
+int onWrite(int);
+
+const char* nameOf(Handler h) {
+    if (h == onRead)  return "read";
+    if (h == onWrite) return "write";
+    return "unknown";
+}
+
+// main.cpp
+#include <cstdio>
+using Handler = int (*)(int);
+int onWrite(int);
+const char* nameOf(Handler h);
+
+int main() {
+    std::puts(nameOf(onWrite));
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "write. Distinct functions are guaranteed distinct addresses, and lld never folds a function whose address is taken.",
+        "unknown. Folding gives the merged body a fresh address, so h matches neither of the two original function symbols.",
+        "read. --icf=all merges identical bodies even when their addresses are taken, so the two pointers now compare equal.",
+        "A link error. lld detects that a folded function's address is compared and refuses to complete the --icf=all link.",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "The standard is unambiguous that pointers to two different functions compare unequal ([expr.eq]), so a conforming implementation must print write. Identical code folding is a linker optimization that trades that guarantee away for size. With `-ffunction-sections`, each function lands in its own section; `onRead` and `onWrite` compile to byte-identical sections with identical relocations, and `--icf=all` merges every such group into one copy, regardless of whether anyone takes the function's address. Both symbols then resolve to the same address, the first comparison in `nameOf` succeeds, and the program prints read. No fresh address is invented: the survivor keeps the address of one of the originals, and every symbol in the group is pointed at it. `--icf=safe` is the conforming-in-practice mode. Clang emits an `.llvm_addrsig` section (on by default for ELF) listing every symbol whose address is significant, meaning taken and possibly compared, and lld in safe mode folds only functions that are absent from that list. Gold's safe mode approximates the same thing by inspecting relocations. MSVC's `/OPT:ICF` folds aggressively like `--icf=all`, which is why Windows stack traces sometimes show an unrelated function name and why function-address-as-unique-ID tricks fail there. A nasty side effect: the compiler is still entitled to fold `onRead == onWrite` to false whenever both symbols are visible to it in one TU, so under `--icf=all` the same comparison can be false in one place and true in another within a single binary. The names.cpp split in this snippet keeps the comparison opaque so the link-time merge is what decides it.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/operator_comparison",
+    ],
+  },
+  {
+    id: "compilers-launder-01",
+    category: "compilers",
+    difficulty: "hard",
+    title: "A virtual call before and after placement new",
+    tags: [
+      "std-launder",
+      "object-lifetime",
+      "devirtualization",
+      "undefined-behavior",
+    ],
+    type: "trace",
+    prompt:
+      "morph lives in its own translation unit, so it is opaque to twice. Built with Clang at -O2 the program prints 12; adding -fstrict-vtable-pointers, it prints 11. Which statement is correct?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <cstdio>
+#include <new>
+
+struct Base    { virtual int id() { return 1; } };
+struct Derived : Base { int id() override { return 2; } };
+
+// morph.cpp (separate TU)
+void morph(Base* b) {
+    b->~Base();
+    new (b) Derived;          // same size, same alignment
+}
+
+// main.cpp
+void morph(Base* b);
+
+int twice(Base* b) {
+    int first = b->id();
+    morph(b);
+    int second = b->id();     // (1)
+    return first * 10 + second;
+}
+
+int main() {
+    std::printf("%d\\n", twice(new Base));
+}`,
+      highlightLines: [19],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Line (1) is UB. A Derived does not transparently replace a Base, so b still names the dead object and its stale vptr may be reused.",
+        "-fstrict-vtable-pointers is non-conforming here. After morph, line (1) must dispatch to Derived::id, so 12 is the only valid output.",
+        "The UB is inside morph. Placement new may only construct an object of the same type as the one that previously occupied the storage.",
+        "The program is fine and 11 is a miscompile. std::launder is only needed when the replaced object has const or reference members.",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "Ending an object's lifetime and constructing a new one in its storage is legal, so morph itself is fine. The question is what the old pointer `b` refers to afterward. [basic.life]p8 says a pointer to the original object automatically refers to the new one only if the new object transparently replaces the old: same storage, same type (ignoring cv-qualifiers), the original was not a complete const object, and neither is a potentially-overlapping subobject. A `Derived` replacing a `Base` fails the same-type requirement, so `b` still points to the dead `Base`, and calling a member function through it on line (1) is undefined behavior. The const-and-reference-member answer describes the pre-C++20 wording, which C++20 relaxed; the same-type requirement was never relaxed. Clang's `-fstrict-vtable-pointers` puts that rule to work. It tags vptr loads with `invariant.group` metadata, meaning a vptr loaded through a given pointer cannot change for the object's lifetime, and inserts a launder barrier at placement new and `std::launder`. In `twice` it then loads the vptr and the `id` slot once, and line (1) reuses the same function pointer register, calling `Base::id` even though a `Derived` now lives there. Without the flag, Clang reloads the vptr after the opaque call and prints 12, but only because it assumes conservatively that `morph` might write memory, not because the standard requires it. GCC 16 needs no flag at all: at -O2 it inlines `twice` into `main`, where it can see the object was created by `new Base`, devirtualizes both calls to `Base::id`, and the program prints 11 out of the box. The fix is to name the new object: write `std::launder(b)->id()`, or use the pointer that placement new returns. With `std::launder` on line (1), the flagged build prints 12 too. The flag is off by default because a great deal of existing code relies on the old pointer just working.",
+    references: [
+      "https://en.cppreference.com/w/cpp/utility/launder",
+      "https://en.cppreference.com/w/cpp/language/lifetime",
+    ],
+  },
+  {
+    id: "compilers-trivially-copyable-01",
+    category: "compilers",
+    difficulty: "medium",
+    title: "Three ways to declare a destructor that does nothing",
+    tags: ["trivially-copyable", "special-member-functions", "abi"],
+    type: "trace",
+    prompt:
+      "Which of these three types satisfy std::is_trivially_copyable, the property that sanctions copying them with memcpy and makes them eligible for the memmove fast paths in std::copy and vector reallocation?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <type_traits>
+
+struct A { int x; };                     // no destructor declared
+struct B { int x; ~B() = default; };     // defaulted on first declaration
+struct C { int x; ~C() {} };             // user-provided, empty body
+
+// Which of these assertions hold?
+static_assert(std::is_trivially_copyable_v<A>);
+static_assert(std::is_trivially_copyable_v<B>);
+static_assert(std::is_trivially_copyable_v<C>);`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Only A. Declaring any destructor, even = default, makes it user-declared, and a user-declared destructor is never trivial.",
+        "All three. Trivial copyability looks only at the copy and move operations, and none of these types declares any of them.",
+        "Only A. Declaring a destructor in B or C suppresses the implicit move constructor, which trivial copyability requires.",
+        "A and B. Defaulting on the first declaration keeps a destructor trivial, but C's empty body makes it user-provided.",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "[class.prop] defines trivially copyable as: at least one eligible copy or move constructor or assignment operator, every eligible one trivial, and a trivial, non-deleted destructor. So the destructor matters, which rules out the all-three answer. A destructor is trivial when it is not user-provided (and it is not virtual, and every base and member is trivially destructible). `~B() = default;` on its first declaration is user-declared but not user-provided, so it stays trivial. `~C() {}` is user-provided, so it is non-trivial even though its body is empty; the compiler does not look inside the body to decide. B's user-declared destructor does suppress the implicit move constructor and move assignment, but the copy operations are still implicitly declared (a deprecated generation, but still valid) and trivial, and that is enough. So A and B pass and C fails. This shows up in generated code, not just in the type trait. Library algorithms branch on the trait: std::copy and vector reallocation use memmove for A and B, and do element-wise copies for C, which the optimizer may or may not turn back into a memcpy afterward. memcpy-ing into a C object is not something the standard sanctions. The calling convention changes too. The Itanium C++ ABI passes a class with a non-trivial destructor indirectly, so `int f(C c)` receives a pointer to a caller-owned temporary. Clang at -O2 on arm64 compiles `f(A)` and `f(B)` to a bare `ret`, with the value already in `w0`, but `f(C)` to `ldr w0, [x0]; ret`. One empty pair of braces costs a memory round-trip on every call.",
+    references: [
+      "https://en.cppreference.com/w/cpp/types/is_trivially_copyable",
+      "https://en.cppreference.com/w/cpp/language/destructor#Trivial_destructor",
+      "https://itanium-cxx-abi.github.io/cxx-abi/abi.html#non-trivial",
+    ],
+  },
+  {
+    id: "compilers-eh-noexcept-01",
+    category: "compilers",
+    difficulty: "hard",
+    title: "A noexcept function calling code that may throw",
+    tags: ["exception-handling", "noexcept", "unwind-tables"],
+    type: "trace",
+    prompt:
+      "consume is not noexcept and may throw. Compiled at -O2 for a table-based (Itanium ABI) exception model, what does marking process noexcept change in its generated code compared with the unmarked version?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `struct Buffer {
+    Buffer();
+    ~Buffer();
+};
+
+void consume(Buffer&);   // may throw
+
+void process() noexcept {
+    Buffer b;
+    consume(b);
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "It wraps the body in an implicit try/catch(...) whose setup runs on every call, so the non-throwing path gets a little slower.",
+        "Nothing at runtime. noexcept is a promise visible only to the noexcept operator, and an exception from consume still propagates.",
+        "No happy-path code is added. A throw from consume ends in std::terminate, possibly without ~Buffer ever running.",
+        "It is ill-formed: a noexcept function may not call a potentially-throwing one, though compilers only warn about the violation.",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "Under the table-based model, the non-throwing path costs nothing at runtime, and that holds with or without `noexcept`. The compiler records which call-site address ranges map to which landing pads in a side table (the LSDA in `.gcc_except_table`). The happy path is straight-line code: construct, call, destroy, return. No registration and no flag checks; the setup-per-call answer describes the old setjmp/longjmp model. Without `noexcept`, if `consume` throws, the landing pad runs `~Buffer` and then calls `_Unwind_Resume` to keep unwinding. With `noexcept`, [except.spec] requires that an exception reaching the function's boundary call `std::terminate`, so the annotation is enforced at runtime and is not purely advisory. [except.terminate] then makes it implementation-defined whether the stack is unwound, unwound partially, or not unwound at all before `std::terminate` runs, and both major compilers use that latitude to drop the cleanup. Clang at -O2 on arm64 emits the same construct, call, destroy sequence on the happy path of both versions, but the noexcept version's single landing pad is just `bl ___clang_call_terminate`, with no destructor call. GCC goes further and emits an empty call-site table: when the personality routine finds no entry for the faulting PC it calls `std::terminate` during the search phase, so there is no landing pad at all and nothing is unwound. Zero-cost is not zero overall. The tables and landing pads take space in the binary, and every potentially-throwing call is an edge the optimizer must respect when moving code. `noexcept` also pays off one level up: callers of process need no cleanup landing pads around the call.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/noexcept_spec",
+      "https://itanium-cxx-abi.github.io/cxx-abi/abi-eh.html",
+    ],
+  },
+  {
+    id: "compilers-devirt-03",
+    category: "compilers",
+    difficulty: "hard",
+    title: "Three LTO builds of the same virtual call",
+    tags: ["devirtualization", "lto", "whole-program-vtables", "visibility"],
+    type: "trace",
+    prompt:
+      "Circle is the only class anywhere in the program that derives from Shape, and nothing is loaded dynamically. The program is built three ways with Clang at -O2: (1) -flto, (2) -flto -fwhole-program-vtables, (3) -flto -fwhole-program-vtables -fvisibility=hidden. In which builds does s->area() in total become a direct call?",
+    snippet: {
+      language: "cpp",
+      filename: "shape.h",
+      code: `// shape.h
+struct Shape {
+    virtual ~Shape() = default;
+    virtual double area() const = 0;
+};
+Shape* makeShape();
+
+// circle.cpp
+struct Circle : Shape {
+    double r = 1.0;
+    double area() const override { return 3.14159 * r * r; }
+};
+Shape* makeShape() { return new Circle; }
+
+// total.cpp
+double total(const Shape* s, int n) {
+    double t = 0;
+    for (int i = 0; i < n; ++i) t += s->area();
+    return t;
+}
+
+// main.cpp calls total(makeShape(), argc)`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "All three. LTO already sees every translation unit, so it can prove that Circle is the only Shape implementation there is.",
+        "Only (3). Whole-program vtable analysis also needs hidden LTO visibility before it may treat the hierarchy as closed.",
+        "(2) and (3). -fwhole-program-vtables is what enables hierarchy analysis; visibility affects only which symbols get exported.",
+        "None. A call through a Shape* that arrives from another TU can be devirtualized only speculatively, using PGO data.",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "Measured with Apple Clang 21 on arm64, where `total` ends up inlined into `main`: builds (1) and (2) both keep an indirect `blr` through the vtable, while build (3) devirtualizes the call, inlines `Circle::area`, and unrolls the loop into repeated adds of the constant 3.14159. Plain LTO merges the IR from every TU, but it gives the optimizer no notion of a class hierarchy. It can still devirtualize when it proves the dynamic type at a particular call site, as with a local object, but it cannot argue that only one implementation exists anywhere. `-fwhole-program-vtables` adds that argument: vtables carry type metadata, virtual call sites carry type tests, and the WholeProgramDevirt pass at link time can apply single-implementation devirtualization, virtual constant propagation, and related transforms. The pass only acts on classes with hidden LTO visibility, though. With default visibility, `Shape` is part of the binary's public interface, so a shared library loaded at runtime could derive from it and hand `total` a pointer the link never saw, and the pass declines to assume otherwise. `-fvisibility=hidden` (or an explicit visibility attribute on the class) is the programmer's promise that the hierarchy is closed at link time. So the claim that visibility affects only exported symbols misses the point: what the linker exports is the very fact the optimizer needs here. None of this is speculative, and none of it needs PGO. Speculative devirtualization, which emits a guarded direct call with an indirect fallback, is a separate technique that GCC enables by default at -O2.",
+    references: [
+      "https://clang.llvm.org/docs/LTOVisibility.html",
+      "https://llvm.org/docs/TypeMetadata.html",
+    ],
   },
 ];

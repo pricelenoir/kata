@@ -1181,4 +1181,425 @@ int sock = socket(AF_INET, SOCK_STREAM, 0);
       "to unrelated streams.",
     references: ["https://www.rfc-editor.org/rfc/rfc9000.html"],
   },
+  {
+    id: "networking-dns-ttl-31",
+    category: "networking",
+    difficulty: "easy",
+    title: "A DNS record change and a long-running client",
+    tags: ["dns", "ttl", "caching", "connection-pooling"],
+    type: "trace",
+    prompt:
+      "A service's A record has a 300-second TTL. Ops repoints the name at a new host, waits " +
+      "an hour, and decommissions the old one. A long-running client process, which resolved " +
+      "the name once at startup and keeps a pool of persistent connections, is still sending " +
+      "requests to the old IP and failing hours later. What explains it?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "DNS is consulted only on a new lookup, and this process never makes one: neither its stored address nor its open connections expire with the TTL.",
+        "The authoritative server keeps returning the old address to any resolver that cached it until every cached copy has aged out everywhere.",
+        "The host's local caching resolver ignores the 300-second TTL and keeps handing the process the startup answer until that cache is flushed.",
+        "Recursive resolvers must hold every record for at least 24 hours regardless of TTL, so a 300-second TTL is only an advisory hint.",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "A TTL is an upper bound on how long a cache may keep serving an answer. It only matters " +
+      "to code that asks again. DNS has no push or invalidation channel, so the record change " +
+      "reaches a client only when that client does a fresh lookup and the cached answer along " +
+      "the way has expired. This client did one lookup at startup and stored the sockaddr. A " +
+      "struct sockaddr carries no TTL, so from then on the application owns the staleness, and " +
+      "no cache in between, local or recursive, well-behaved or not, ever gets asked. Its " +
+      "pooled connections are worse: an established TCP connection is identified by its " +
+      "4-tuple and never touches DNS again, so it keeps talking to the old IP until the host " +
+      "disappears and the pool starts failing. Language runtimes add their own layer on top. " +
+      "The JVM's networkaddress.cache.ttl historically cached forever under a security manager, " +
+      "and many HTTP clients reuse pooled connections indefinitely. The fix is on the client " +
+      "and operational side: re-resolve periodically while honoring the TTL, put a maximum " +
+      "lifetime on pooled connections, and keep the old host serving (or draining) for longer " +
+      "than the TTL plus the longest connection lifetime any client might hold.",
+    references: [
+      "https://www.rfc-editor.org/rfc/rfc1035.html",
+      "https://www.rfc-editor.org/rfc/rfc2181.html#section-8",
+    ],
+  },
+  {
+    id: "networking-sigpipe-epipe-32",
+    category: "networking",
+    difficulty: "medium",
+    title: "write() to a peer that has already closed",
+    tags: ["tcp", "sigpipe", "epipe", "rst", "connection-teardown"],
+    type: "trace",
+    prompt:
+      "The peer has called close() on its socket, and its FIN has already arrived here, so this " +
+      "side is in CLOSE_WAIT. On Linux, with default signal dispositions, what happens at (1) " +
+      "and (2)?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `// Peer's FIN already received; we have not called close().
+ssize_t a = write(fd, "hello", 5);   // (1)
+usleep(100000);                      // peer's response to (1) arrives meanwhile
+ssize_t b = write(fd, "world", 5);   // (2)`,
+      highlightLines: [2, 4],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "(1) already fails: write() returns -1 with EPIPE and SIGPIPE kills the process before (2) runs.",
+        "Both return 5, and the peer's kernel silently discards bytes that no application will read.",
+        "Both return 5; the failure surfaces only on the next read(), which returns -1 with ECONNRESET.",
+        "(1) returns 5 and draws a RST from the peer; (2) raises SIGPIPE, which kills the process.",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "A FIN means only \"I will send no more data\". TCP supports half-close, so the peer " +
+      "might have called shutdown(SHUT_WR) and still be reading. This side cannot tell that " +
+      "apart from a full close(), so CLOSE_WAIT is a perfectly legal state to send from. Write " +
+      "(1) therefore succeeds the way any write does: the bytes are copied into the send buffer " +
+      "and transmitted. The peer, though, did a full close(), so no application will ever read " +
+      "them. Its kernel answers data arriving for a closed socket with RST. On Linux, a RST " +
+      "received in CLOSE_WAIT records EPIPE as the socket error, and the next write fails with " +
+      "EPIPE and, more importantly, raises SIGPIPE. The default action for SIGPIPE is to " +
+      "terminate the process, with no core dump and nothing on stderr, which is the classic " +
+      "\"server dies silently when a client disconnects mid-response\" bug. Robust servers " +
+      "either set SIGPIPE to SIG_IGN at startup or pass MSG_NOSIGNAL to every send() (BSD and " +
+      "macOS also offer the per-socket SO_NOSIGPIPE), and then handle EPIPE as an ordinary " +
+      "error return. The timing matters too: if (2) runs before the RST arrives it also " +
+      "succeeds, so the failure lands on whichever write happens to come after the reset, not " +
+      "necessarily the one that caused it.",
+    references: [
+      "https://man7.org/linux/man-pages/man2/send.2.html",
+      "https://man7.org/linux/man-pages/man7/signal.7.html",
+      "https://www.rfc-editor.org/rfc/rfc9293.html",
+    ],
+  },
+  {
+    id: "networking-udp-connect-icmp-33",
+    category: "networking",
+    difficulty: "medium",
+    title: "connect() on a UDP socket with nothing listening on the port",
+    tags: ["udp", "connect", "icmp", "econnrefused", "errno"],
+    type: "trace",
+    prompt:
+      "The client runs on Linux. The remote host is up and reachable, but no process is bound to " +
+      "the destination UDP port, and no firewall filters ICMP. What does this client observe?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `int fd = socket(AF_INET, SOCK_DGRAM, 0);
+connect(fd, (struct sockaddr*)&srv, sizeof(srv));
+send(fd, "ping", 4, 0);                       // (1)
+
+char buf[64];
+ssize_t n = recv(fd, buf, sizeof(buf), 0);    // (2)`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "connect() returns -1 with ECONNREFUSED, so neither send() nor recv() ever gets to use the socket.",
+        "send() returns 4 and recv() blocks indefinitely, with no error ever reported on the socket.",
+        "send() returns 4; the remote host's ICMP Port Unreachable then makes recv() fail with ECONNREFUSED.",
+        "send() blocks until the remote host's ICMP reply arrives and then returns -1 with ECONNREFUSED.",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "connect() on a UDP socket sends nothing. It is purely local bookkeeping: it fixes the " +
+      "default destination, makes the kernel filter out datagrams from any other source, and " +
+      "caches the route. send() returns as soon as the datagram is queued to the device, long " +
+      "before anything could come back. When the datagram reaches a host with no socket on " +
+      "that port, the remote UDP layer replies with ICMP Destination Unreachable, code 3 (Port " +
+      "Unreachable), as RFC 1122 asks it to. Locally, the kernel matches that ICMP to the " +
+      "socket that sent the datagram and records ECONNREFUSED as a pending asynchronous error. " +
+      "The next call on the socket reports it, which here is recv(), though it could just as " +
+      "easily be a later send(). Connecting is what makes this work. On Linux, unless " +
+      "IP_RECVERR is enabled, ICMP errors are only surfaced on connected UDP sockets, because " +
+      "an unconnected socket talking to many peers cannot tell the application which " +
+      "destination failed (with IP_RECVERR, the details come back via MSG_ERRQUEUE instead). " +
+      "Two practical consequences follow. The error is sticky until reported, so it can show " +
+      "up on a call that has nothing to do with the datagram that triggered it. And ICMP is " +
+      "rate-limited and often filtered, so the absence of ECONNREFUSED proves nothing about " +
+      "whether a listener exists. It is a fast-fail hint, not a liveness check.",
+    references: [
+      "https://man7.org/linux/man-pages/man7/udp.7.html",
+      "https://man7.org/linux/man-pages/man7/ip.7.html",
+      "https://www.rfc-editor.org/rfc/rfc1122.html#section-4.1.3.1",
+    ],
+  },
+  {
+    id: "networking-tls13-zero-rtt-34",
+    category: "networking",
+    difficulty: "medium",
+    title: "TLS 1.3 0-RTT early data on a resumed session",
+    tags: ["tls", "tls13", "0-rtt", "session-resumption", "security"],
+    type: "trace",
+    prompt:
+      "An order-entry gateway enables TLS 1.3 0-RTT, so a reconnecting client can send its " +
+      "first request (a new order) in the same flight as its ClientHello, protected by a " +
+      "pre-shared key from an earlier session's ticket. Security review flags the change. What " +
+      "property does that early data lack that ordinary post-handshake data has?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Replay protection: an attacker who records the ClientHello and early data can resend them, and the server may execute the same order twice.",
+        "Confidentiality: no keys exist before the handshake completes, so early data travels in plaintext and any on-path observer can read the order.",
+        "Server authentication: until a certificate arrives the client cannot know who it is talking to, so an impostor could receive the order.",
+        "Integrity: early data is encrypted but not authenticated, so an on-path attacker can flip bits in the order without the server detecting it.",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "Early data is encrypted and authenticated with AEAD under client_early_traffic_secret, " +
+      "which is derived from the resumption PSK and the ClientHello, so it is neither readable " +
+      "nor modifiable on the path. Server authentication carries over from the " +
+      "earlier session, since an impostor without the PSK cannot decrypt anything. What the " +
+      "early-data key does not include is any fresh contribution from the server: no server " +
+      "random and no server (EC)DHE share. Data sent after the handshake is protected by keys " +
+      "that mix in both sides' fresh randomness, so a recorded flight cannot be spliced into a " +
+      "new connection. A recorded ClientHello plus early data, by contrast, decrypts and " +
+      "verifies correctly every time it is replayed. RFC 8446 says outright that 0-RTT data " +
+      "has no non-replay guarantee across connections. Single-use tickets and ClientHello " +
+      "recording narrow the window, but they are hard to make airtight across a distributed " +
+      "fleet of terminators. Early data also lacks forward secrecy with respect to the PSK: " +
+      "if the ticket-encryption key leaks, recorded early data can be decrypted. For an order " +
+      "gateway, a replay is a duplicate order, so 0-RTT should be limited to idempotent " +
+      "requests or paired with application-level deduplication such as client order IDs. On " +
+      "HTTP, RFC 8470 adds the Early-Data header and the 425 Too Early status so a backend can " +
+      "refuse it. Without 0-RTT, resumption still costs one round trip on top of the TCP " +
+      "handshake. That round trip is the latency 0-RTT buys back, and replay is its price.",
+    references: [
+      "https://www.rfc-editor.org/rfc/rfc8446.html#section-8",
+      "https://www.rfc-editor.org/rfc/rfc8446.html#appendix-E.5",
+      "https://www.rfc-editor.org/rfc/rfc8470.html",
+    ],
+  },
+  {
+    id: "networking-close-unread-rst-35",
+    category: "networking",
+    difficulty: "hard",
+    title: "Closing right after an early error response",
+    tags: ["tcp", "rst", "close", "so_linger", "connection-teardown"],
+    type: "trace",
+    prompt:
+      "A client sends a 4KB request and then blocks in recv() waiting for the response. The " +
+      "Linux server below reads only the request line, decides the request is bad, writes a complete " +
+      "400 response, and closes. The client intermittently gets ECONNRESET from recv() and " +
+      "never sees the 400. What causes that?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `// Server, per connection:
+char line[256];
+read_request_line(cfd, line, sizeof(line));  // ~3.8KB of the request still unread
+write(cfd, resp400, resp400_len);            // full response, returns resp400_len
+close(cfd);`,
+      highlightLines: [5],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "close() discards the server's send buffer immediately in every case, so response bytes written just before closing are never transmitted at all.",
+        "With unread data still queued, close() aborts with RST instead of FIN, and the RST can destroy the response in flight or in the client's buffer.",
+        "The client's kernel treats a FIN that arrives before it has finished sending as a protocol violation, and resets the connection from its side.",
+        "Once the server enters TIME_WAIT it answers the client's in-flight ACKs with RST, tearing the connection down before the response is read.",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "A normal close() is graceful. Queued send data is still transmitted, then followed by a " +
+      "FIN. Discarding the send buffer outright is the abortive SO_LINGER-zero case, not this one. " +
+      "What changes the outcome here is the 3.8KB of request the server never read. RFC 1122 " +
+      "section 4.2.2.13 says a host that closes while received data is still pending SHOULD " +
+      "send a RST to signal that data was lost, and Linux does exactly that. tcp_close() " +
+      "counts the unread bytes, and if there are any it moves the socket straight to CLOSE, " +
+      "sends a RST, and destroys the socket, incrementing TCPAbortOnClose. Destroying the " +
+      "socket purges the write queue, so any part of the 400 not yet transmitted, or " +
+      "transmitted and lost, will never be sent or retransmitted. Response bytes that did reach " +
+      "the client are not safe either. RFC 9293 directs a receiver of RST to flush its segment " +
+      "queues, and stacks that do (Windows is the common case) throw away the received but " +
+      "unread response and report ECONNRESET. The race between the client's recv() and the " +
+      "RST's arrival is what makes the failure intermittent. SO_LINGER with a nonzero timeout " +
+      "does not help, because Linux checks for unread data before it ever consults the linger " +
+      "setting. The fix is a lingering close, as Apache and nginx implement it: shutdown(SHUT_WR) " +
+      "to send the FIN after the response, keep reading and discarding until the client's EOF " +
+      "or a short timeout, then close() with an empty receive queue.",
+    references: [
+      "https://www.rfc-editor.org/rfc/rfc1122.html#section-4.2.2.13",
+      "https://www.rfc-editor.org/rfc/rfc9293.html",
+      "https://nginx.org/en/docs/http/ngx_http_core_module.html#lingering_close",
+    ],
+  },
+  {
+    id: "networking-so-reuseport-36",
+    category: "networking",
+    difficulty: "hard",
+    title: "SO_REUSEPORT listeners with one stalled worker",
+    tags: ["so_reuseport", "accept", "load-balancing", "tail-latency"],
+    type: "trace",
+    prompt:
+      "On a Linux host, eight worker processes each open their own listening socket on port 9000 with " +
+      "SO_REUSEPORT and run their own accept() loop. One worker blocks for two seconds on a " +
+      "synchronous disk flush while the other seven sit idle. No BPF steering program is " +
+      "attached. What happens to new connections arriving during those two seconds?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `// In each of 8 worker processes:
+int lfd = socket(AF_INET, SOCK_STREAM, 0);
+int one = 1;
+setsockopt(lfd, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(one));
+bind(lfd, (struct sockaddr*)&addr, sizeof(addr));   // port 9000
+listen(lfd, 1024);
+for (;;) handle(accept(lfd, NULL, NULL));`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The kernel sees that the stalled worker's accept queue is not draining and steers new SYNs to the other seven listeners until it recovers.",
+        "All eight listeners share a single accept queue behind the scenes, so the idle workers simply pick up the connections the stalled one would have.",
+        "Listeners are chosen strictly round-robin, so exactly every eighth connection waits for the stalled worker and the rest proceed without delay.",
+        "Each SYN's 4-tuple is hashed to one listener regardless of load, so about one in eight connections waits two seconds, or is dropped if that queue fills.",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "On Linux, SO_REUSEPORT for TCP gives every socket in the group its own accept queue. " +
+      "The kernel picks the listener for an incoming SYN in reuseport_select_sock() by hashing " +
+      "the connection's 4-tuple and taking it modulo the group size. Nothing feeds load or " +
+      "queue depth into that decision, so the stalled worker keeps receiving its hashed share " +
+      "of roughly one in eight connections. Those connections finish the handshake in the " +
+      "kernel and then wait in its accept queue for the full two seconds while seven workers " +
+      "idle. If the queue overflows, Linux drops the handshake-completing ACK or the SYN. The " +
+      "handshake is then retried on an exponential backoff (SYN retries land about 1, 3, and 7 " +
+      "seconds after the first attempt), which shows up " +
+      "as multi-second tail latency rather than an error. A single shared listening socket " +
+      "behaves differently: whichever worker calls accept() next takes the connection, so an " +
+      "idle worker absorbs the load (EPOLLEXCLUSIVE limits the thundering herd). The tradeoff " +
+      "is lock contention and cache locality on the shared queue, against REUSEPORT's lack of " +
+      "work stealing. Two related gotchas. Closing one listener in the group, say on a worker " +
+      "restart, resets the connections sitting in its accept queue unless " +
+      "net.ipv4.tcp_migrate_req (Linux 5.14+) is enabled. And adding or removing a socket " +
+      "changes the modulus, which reshuffles which listener every new 4-tuple lands on. Load-aware steering " +
+      "needs an SO_ATTACH_REUSEPORT_EBPF program that picks the socket itself.",
+    references: [
+      "https://man7.org/linux/man-pages/man7/socket.7.html",
+      "https://lwn.net/Articles/542629/",
+      "https://docs.kernel.org/networking/ip-sysctl.html",
+    ],
+  },
+  {
+    id: "networking-slow-start-idle-37",
+    category: "networking",
+    difficulty: "hard",
+    title: "Periodic 2MB pushes over one persistent TCP connection",
+    tags: ["tcp", "congestion-control", "slow-start", "connection-pooling"],
+    type: "trace",
+    prompt:
+      "A Linux server pushes a 2MB risk snapshot to a client over one persistent TCP " +
+      "connection on a 40ms-RTT path. In a benchmark that sends snapshots back-to-back, every " +
+      "snapshot after the first completes in roughly one RTT. In production the snapshots go " +
+      "out every 5 seconds with the connection idle in between, and every one of them takes " +
+      "about seven RTTs, as if the connection were brand new. There is no loss, no " +
+      "reconnection, and receive windows are ample. Kernel defaults are untouched. What " +
+      "explains the difference?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "After the connection idles longer than its RTO, Linux decays cwnd back to the initial window as RFC 5681 directs, so each snapshot redoes slow start.",
+        "The client's advertised window collapses to zero during the idle gap and then reopens by only one MSS per RTT once data starts flowing again.",
+        "Keepalive probes sent during each gap go unanswered and are counted as losses, halving cwnd each time, so every snapshot starts from a degraded window.",
+        "The kernel silently tears down an idle connection and reconnects on the next write(), so each snapshot pays a fresh handshake plus a full slow start.",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "A congestion window is a measurement of what the path could absorb the last time the " +
+      "sender probed it, and that measurement goes stale when the sender stops sending. RFC " +
+      "5681 section 4.1 says that a sender that has been idle for longer than the " +
+      "retransmission timeout SHOULD restart from a window no larger than the initial window " +
+      "before sending again. Linux implements this behind net.ipv4.tcp_slow_start_after_idle, " +
+      "which defaults to 1. In tcp_cwnd_restart(), cwnd is halved once per RTO that has " +
+      "elapsed, in the style of RFC 2861 congestion window validation (since superseded by " +
+      "RFC 7661), and floored at the initial window. With a 40ms RTT, Linux's 200ms minimum " +
+      "on the variance term puts the RTO around 240ms, so a 5-second gap allows about twenty " +
+      "halvings, far more than needed to put cwnd back at 10 segments. Climbing from roughly " +
+      "14KB to 2MB by doubling (10, 20, 40, ... segments per round trip) takes about seven " +
+      "round trips, which matches the production " +
+      "numbers. In the back-to-back benchmark no gap ever exceeded the RTO, so the warmed " +
+      "window survived. Keepalive plays no part: by default it sends nothing until two hours " +
+      "of idle time, and probes never feed congestion control. The receive window does not shrink " +
+      "on an idle socket. Linux never reconnects on its own. The consequence is that connection " +
+      "pooling reliably amortizes the handshake and TLS setup, but it only amortizes congestion " +
+      "state for connections that stay busy. Bursty senders on high-BDP paths typically set " +
+      "tcp_slow_start_after_idle=0, which applies to the whole network namespace, and accept " +
+      "the risk of bursting a full stale window into a path whose conditions may have changed.",
+    references: [
+      "https://www.rfc-editor.org/rfc/rfc5681.html#section-4.1",
+      "https://www.rfc-editor.org/rfc/rfc2861.html",
+      "https://www.rfc-editor.org/rfc/rfc7661.html",
+      "https://docs.kernel.org/networking/ip-sysctl.html",
+    ],
+  },
+  {
+    id: "networking-msg-zerocopy-38",
+    category: "networking",
+    difficulty: "hard",
+    title: "Reusing a send buffer with MSG_ZEROCOPY",
+    tags: ["zero-copy", "msg_zerocopy", "tcp", "errqueue", "hpc"],
+    type: "trace",
+    prompt:
+      "A publisher switches its 256KB snapshot sends to MSG_ZEROCOPY to save CPU. Every send() " +
+      "returns the full length. Afterward, the receiver occasionally decodes snapshots that mix " +
+      "bytes from two consecutive iterations, even though the stream is never desynchronized. " +
+      "What is going on?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `int one = 1;
+setsockopt(fd, SOL_SOCKET, SO_ZEROCOPY, &one, sizeof(one));
+
+static char buf[256 * 1024];          // one buffer, reused every iteration
+for (;;) {
+    fill_snapshot(buf, sizeof(buf));
+    ssize_t n = send(fd, buf, sizeof(buf), MSG_ZEROCOPY);
+    // n == sizeof(buf) every time; loop refills buf immediately
+}`,
+      highlightLines: [6, 7],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "MSG_ZEROCOPY is ignored unless the NIC supports scatter-gather, so the kernel silently copied the data and the corruption must be on the receive side.",
+        "send() actually returned short counts here and there, and since the loop never checks n, the next snapshot's bytes were appended to a truncated one.",
+        "A returned send() only means the pages are pinned and queued; the kernel reads buf until the data is acknowledged, signaled later on MSG_ERRQUEUE.",
+        "Zero-copy maps buf's pages straight into the receiver, so the receiver sees the sender's later writes until it copies the snapshot out of the mapping.",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "Ordinary send() copies user data into kernel skbs, so the buffer can be reused as soon " +
+      "as the call returns. MSG_ZEROCOPY drops that copy. The kernel pins the user pages and " +
+      "attaches them to skbs as fragments, and the NIC reads them by DMA whenever the segment " +
+      "actually goes out. TCP may also have to retransmit from those same pages at any point " +
+      "until the bytes are acknowledged. The buffer therefore stays live long after send() " +
+      "returns, and refilling it immediately means some segments, especially retransmissions, " +
+      "carry the next snapshot's bytes at the original sequence numbers. That produces exactly " +
+      "the intact-framing, mixed-content corruption described. The kernel's signal that pages " +
+      "are free is a completion notification read with recvmsg(fd, ..., MSG_ERRQUEUE): a " +
+      "sock_extended_err with ee_origin SO_EE_ORIGIN_ZEROCOPY whose ee_info..ee_data range " +
+      "identifies which numbered send() calls have completed. Correct designs keep a ring of " +
+      "buffers and recycle each one only when its completion arrives. If the code is " +
+      "SO_EE_CODE_ZEROCOPY_COPIED, the kernel fell back to copying (for example on loopback, " +
+      "or when the device lacks scatter-gather or checksum offload), which tells you zero-copy " +
+      "is not buying anything on that path. A fallback copy would also have made reuse safe, " +
+      "so it cannot be the cause of this corruption. Pinning pages and " +
+      "processing completions has its own cost, so the kernel documentation notes the feature " +
+      "generally pays off only for writes above roughly 10KB.",
+    references: [
+      "https://docs.kernel.org/networking/msg_zerocopy.html",
+      "https://man7.org/linux/man-pages/man2/recvmsg.2.html",
+    ],
+  },
 ];

@@ -1647,4 +1647,512 @@ __global__ void warpSyncAssumption() {
       "https://developer.nvidia.com/blog/using-cuda-warp-level-primitives/",
     ],
   },
+  {
+    id: "gpu-cuda-kernel-timing-01",
+    category: "gpu-cuda",
+    difficulty: "easy",
+    title: "Timing a kernel with std::chrono around the launch statement",
+    tags: ["kernel-launch", "async", "timing", "benchmarking"],
+    type: "trace",
+    prompt:
+      "`d_x` holds 2^28 floats (1 GiB) in device memory. The kernel reads and rewrites every element " +
+      "once, so it moves about 2 GiB of DRAM traffic per run on a GPU with roughly 2 TB/s of memory " +
+      "bandwidth. The program has already done a warm-up launch. The printed interval " +
+      "is consistently about 7 microseconds. What explains the number?",
+    snippet: {
+      language: "cpp",
+      filename: "bench.cu",
+      code: `__global__ void scale(float* x, size_t n, float s) {
+    size_t i = blockIdx.x * (size_t)blockDim.x + threadIdx.x;
+    if (i < n) x[i] *= s;
+}
+
+const size_t n = size_t(1) << 28;
+auto t0 = std::chrono::steady_clock::now();
+scale<<<(n + 255) / 256, 256>>>(d_x, n, 2.0f);
+auto t1 = std::chrono::steady_clock::now();
+printf("%.1f us\\n",
+       std::chrono::duration<double, std::micro>(t1 - t0).count());`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The launch is asynchronous: the call returns as soon as the kernel is queued, so t1 - t0 measures only the enqueue cost and none of the kernel's run on the GPU",
+        "The kernel really did finish: at this size the grid covers every SM, and 268 million multiplies at tens of TFLOPS of FP32 throughput complete in a handful of microseconds",
+        "The kernel did no work: d_x is never copied back to the host, so nvcc treats the stores as dead, removes them, and the launch completes as an empty grid in microseconds",
+        "The host clock is too coarse: steady_clock ticks only every few microseconds on typical systems, so any GPU interval collapses into one or two ticks no matter how long it ran",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "A `<<<>>>` launch is asynchronous with respect to the host: the runtime validates the " +
+      "configuration, writes the launch into the stream's command queue, and returns, typically in a " +
+      "few microseconds, without waiting for a single thread to run. The two clock reads therefore " +
+      "bracket the enqueue, not the execution. A sanity check on the real cost: 2 GiB of traffic at " +
+      "about 2 TB/s is roughly 1 ms, so a 7 us figure is about 150x too fast to be physically possible. " +
+      "The kernel is memory-bound, which is why the 'tens of TFLOPS' reasoning fails: one multiply per " +
+      "8 bytes moved puts it far below any compute roof. nvcc does not eliminate stores to global " +
+      "memory just because the host never reads them back, since device memory is visible to later " +
+      "kernels, copies, and other streams. And `steady_clock` has nanosecond-level resolution on " +
+      "mainstream platforms, which would happily show a 1 ms interval. The fixes are to call " +
+      "`cudaDeviceSynchronize()` (or `cudaStreamSynchronize`) before reading t1, which then also " +
+      "includes launch overhead in the number, or to record `cudaEvent`s on the stream before and after " +
+      "the kernel and read `cudaEventElapsedTime`, which measures GPU-side time with roughly " +
+      "half-microsecond resolution. The warm-up launch matters too: the first launch in a process " +
+      "can absorb context creation and lazy module loading, which would otherwise inflate one sample.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#using-cpu-timers",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#using-cuda-gpu-timers",
+      "https://developer.nvidia.com/blog/how-implement-performance-metrics-cuda-cc/",
+    ],
+  },
+  {
+    id: "gpu-cuda-launch-config-01",
+    category: "gpu-cuda",
+    difficulty: "easy",
+    title: "A launch configured with dim3(64, 32) threads per block",
+    tags: ["thread-hierarchy", "launch-configuration", "error-handling"],
+    type: "trace",
+    prompt:
+      "The program below fills a 256 x 32 buffer with 1.0f using four blocks of 64 x 32 threads, then " +
+      "copies it back and prints the sum of all elements. Nothing in the program checks a CUDA " +
+      "return code. It runs on any current NVIDIA GPU. What does it print?",
+    snippet: {
+      language: "cpp",
+      filename: "fill.cu",
+      code: `__global__ void fill(float* out, int width) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;   // 0..255
+    int y = threadIdx.y;                             // 0..31
+    out[y * width + x] = 1.0f;
+}
+
+int main() {
+    const int width = 256, height = 32;              // 8192 elements
+    const size_t bytes = width * height * sizeof(float);
+    float* d_out;
+    cudaMalloc(&d_out, bytes);
+    cudaMemset(d_out, 0, bytes);
+
+    fill<<<4, dim3(64, 32)>>>(d_out, width);
+
+    static float h[256 * 32];
+    cudaMemcpy(h, d_out, bytes, cudaMemcpyDeviceToHost);
+    float sum = 0.0f;
+    for (float v : h) sum += v;
+    printf("%.0f\\n", sum);
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "8192: the runtime splits each 2048-thread block into two 1024-thread halves behind the scenes and schedules them as separate blocks with the same blockIdx",
+        "4096: each block is clamped to the 1024-thread hardware limit, so threadIdx.y only reaches 15 and the upper half of every block's rows is never written",
+        "0: the launch is rejected with cudaErrorInvalidConfiguration before any thread runs, and the later copy reads back the zeros left by the memset",
+        "Nothing: the runtime aborts the process at the launch with an 'invalid configuration argument' message, so control never reaches the cudaMemcpy or printf",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "A thread block is limited to 1024 threads in total (blockDim.x * blockDim.y * blockDim.z <= " +
+      "1024) on every architecture since compute capability 2.0, in addition to the per-dimension " +
+      "limits of 1024, 1024, and 64. A 64 x 32 block is 2048 threads, so the launch is invalid. The " +
+      "runtime does not split or clamp it: it refuses the launch outright and records " +
+      "`cudaErrorInvalidConfiguration` ('invalid configuration argument'). The `<<<>>>` syntax has no " +
+      "return value, so that error only surfaces if the program calls `cudaGetLastError()` or " +
+      "`cudaPeekAtLastError()` after the launch. It is not a sticky error, so the context stays " +
+      "healthy, the following `cudaMemcpy` proceeds normally, and the host reads back the zeros written " +
+      "by `cudaMemset`, printing 0. The runtime does not abort the process over a failed launch; errors " +
+      "are reported only through return codes. That makes a launch that silently did nothing one of the " +
+      "most common first-week CUDA bugs, and the reason production code wraps every API call and " +
+      "follows every launch with an error check (plus `cudaDeviceSynchronize()` in debug builds to " +
+      "catch faults that happen during execution, which are reported asynchronously by a later call). " +
+      "The fix here is a block of 32 x 32 or 64 x 16 threads with a correspondingly larger grid.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html#features-and-technical-specifications",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#thread-hierarchy",
+      "https://developer.nvidia.com/blog/how-query-device-properties-and-handle-errors-cuda-cc/",
+    ],
+  },
+  {
+    id: "gpu-cuda-default-stream-01",
+    category: "gpu-cuda",
+    difficulty: "medium",
+    title: "A kernel launched with no stream argument between two streamed kernels",
+    tags: ["streams", "default-stream", "concurrency", "implicit-synchronization"],
+    type: "trace",
+    prompt:
+      "`kernelA` and `kernelB` each launch only a handful of blocks, far too few to fill the GPU, and " +
+      "are independent of each other. The program is compiled with plain `nvcc` (no stream-related " +
+      "flags). The author expected A and B to overlap, but Nsight Systems shows A, then the " +
+      "log kernel, then B, strictly back to back. Why?",
+    snippet: {
+      language: "cpp",
+      filename: "pipeline.cu",
+      code: `cudaStream_t s1, s2;
+cudaStreamCreate(&s1);
+cudaStreamCreate(&s2);
+
+kernelA<<<8, 256, 0, s1>>>(bufA);
+logKernel<<<1, 32>>>(stats);        // added later for debugging
+kernelB<<<8, 256, 0, s2>>>(bufB);
+
+cudaDeviceSynchronize();`,
+      highlightLines: [6],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Kernels from different streams serialize by default; concurrent kernel execution is opt-in and must be enabled per device with a scheduling flag before the streams are created",
+        "One host thread feeds a single hardware work queue, so B cannot dispatch until everything queued ahead of it has started; streams reorder only copies, not kernel launches",
+        "logKernel runs on the legacy default stream, which waits for all prior work in blocking streams and holds back their later work until it is done, fencing A off from B",
+        "logKernel's single block occupies an SM slot that A and B both need, and since neither of the 8-block grids can start a block until that SM frees up, the two end up taking turns",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "A launch with no stream argument goes to stream 0, and under the default compilation mode that " +
+      "is the legacy default stream, which has special synchronizing semantics: an operation issued to " +
+      "it does not begin until all previously issued work in every blocking stream on the device has " +
+      "completed, and no later work issued to a blocking stream begins until it finishes. Streams made " +
+      "with plain `cudaStreamCreate` are blocking streams. So the tiny debugging kernel turns into a " +
+      "device-wide barrier: B, despite being on its own stream and independent of A, must wait for " +
+      "logKernel, which must wait for A. Concurrent kernels from different streams are on by default " +
+      "(Hyper-Q provides many hardware queues, so the single-queue story is a Fermi-era limitation), " +
+      "and a single 32-thread block cannot block two 8-block grids on a GPU with dozens of SMs. Three " +
+      "standard fixes: launch the logging kernel on an explicit stream; create s1 and s2 with " +
+      "`cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking)`, which opts them out of synchronizing " +
+      "with the legacy stream; or compile with `--default-stream per-thread`, which makes stream 0 a " +
+      "regular per-host-thread stream with no implicit cross-stream synchronization. The same trap " +
+      "applies to library calls " +
+      "and `cudaMemcpy`/`cudaMemset` without an explicit stream, which also land on the default stream.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-runtime-api/stream-sync-behavior.html",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/asynchronous-execution.html#cuda-streams",
+      "https://developer.nvidia.com/blog/gpu-pro-tip-cuda-7-streams-simplify-concurrency/",
+    ],
+  },
+  {
+    id: "gpu-cuda-stream-ordered-alloc-01",
+    category: "gpu-cuda",
+    difficulty: "medium",
+    title: "Allocating and freeing a scratch buffer inside a multi-stream loop",
+    tags: ["streams", "memory-allocation", "cudaMallocAsync", "implicit-synchronization"],
+    type: "trace",
+    prompt:
+      "This loop pipelines chunks across four non-default streams using pinned host buffers, so copies " +
+      "and kernels from different chunks should overlap. Each iteration needs a temporary device buffer " +
+      "between `stage1` and `stage2`. How does the per-iteration `cudaMalloc`/" +
+      "`cudaFree` affect the pipeline, and what is the idiomatic fix?",
+    snippet: {
+      language: "cpp",
+      filename: "pipeline.cu",
+      code: `for (int i = 0; i < numChunks; ++i) {
+    cudaStream_t s = streams[i % 4];
+    size_t off = i * chunkElems;
+
+    float* scratch;
+    cudaMalloc(&scratch, chunkBytes);
+
+    cudaMemcpyAsync(d_in + off, h_in + off, chunkBytes, cudaMemcpyHostToDevice, s);
+    stage1<<<grid, block, 0, s>>>(d_in + off, scratch);
+    stage2<<<grid, block, 0, s>>>(scratch, d_out + off);
+    cudaMemcpyAsync(h_out + off, d_out + off, chunkBytes, cudaMemcpyDeviceToHost, s);
+
+    cudaFree(scratch);
+}`,
+      highlightLines: [6, 13],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The pipeline degrades to roughly serial: cudaFree waits for all outstanding device work, so each iteration drains all four streams; cudaMallocAsync/cudaFreeAsync on s avoid it",
+        "Overlap survives, but freeing is a use-after-free: cudaFree returns at once while stage2 on s may still be reading scratch, so the fix is a cudaStreamSynchronize(s) just before the free",
+        "Overlap survives and the code is fine: both allocation calls touch only the driver's host-side bookkeeping, so the whole cost is a few microseconds of CPU time spent per iteration",
+        "Overlap is lost only on the first pass: the driver caches freed blocks by size, so from the second iteration on cudaMalloc and cudaFree are cheap no-ops and the streams run concurrently",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "The programming guide states that managing memory with `cudaMalloc` and `cudaFree` causes the " +
+      "GPU to synchronize across all executing streams: before `cudaFree` returns, previously issued " +
+      "work in every stream has finished, and a device memory allocation is on the guide's list of " +
+      "operations that keep commands from different streams from overlapping. That synchronization is " +
+      "what keeps freeing `scratch` right after enqueueing work that uses it from being a " +
+      "use-after-free, and it is also why the loop collapses: iteration i's free stalls the host until " +
+      "chunk i's copies and kernels are done (along with everything else in flight), so iteration i+1 " +
+      "is never queued while i is running and the four streams buy almost nothing. Classic `cudaMalloc` " +
+      "has no free-block cache that turns these calls into no-ops; that behavior belongs to framework " +
+      "allocators such as PyTorch's, built precisely to avoid this cost. The CUDA 11.2+ stream-ordered " +
+      "allocator is the native fix: `cudaMallocAsync(&scratch, chunkBytes, s)` and " +
+      "`cudaFreeAsync(scratch, s)` are enqueued on the stream like any other operation, the free takes " +
+      "effect in stream order after stage2, and a later allocation on that stream can reuse the memory " +
+      "from the pool without any device-wide synchronization. One tuning knob matters for loops like " +
+      "this: the default pool's release threshold (`cudaMemPoolAttrReleaseThreshold`) is 0, so the pool " +
+      "may hand unused memory back to the OS at synchronization points; raising it keeps the " +
+      "steady-state working set in the pool. " +
+      "Hoisting one scratch buffer per stream out of the loop is the other common fix.",
+    references: [
+      "https://developer.nvidia.com/blog/using-cuda-stream-ordered-memory-allocator-part-1/",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/stream-ordered-memory-allocation.html",
+      "https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__MEMORY__POOLS.html",
+    ],
+  },
+  {
+    id: "gpu-cuda-tensor-cores-01",
+    category: "gpu-cuda",
+    difficulty: "medium",
+    title: "An 8192 x 8192 SGEMM on an A100 compared with the datasheet",
+    tags: ["tensor-cores", "tf32", "cublas", "precision"],
+    type: "trace",
+    prompt:
+      "An engineer benchmarks `cublasSgemm` on square 8192 x 8192 FP32 matrices on an A100 with a CUDA " +
+      "11 or later toolkit, using a freshly created cuBLAS handle with default settings. It sustains " +
+      "about 18.5 TFLOPS. The A100 datasheet lists 156 TFLOPS for 'TF32 Tensor Core' and 19.5 TFLOPS " +
+      "for 'FP32'. What " +
+      "accounts for the gap between 18.5 and 156?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The problem is memory-bound: an 8192-cubed GEMM streams about 800 MB of operands, and at roughly 1.5-2 TB/s of HBM bandwidth that traffic alone caps throughput near 19 TFLOPS",
+        "Tensor-core kernels need 16-byte-aligned leading dimensions, which a column-major 8192-wide float matrix does not provide, so cuBLAS falls back to its plain SIMT FP32 kernels",
+        "Tensor cores accept only FP16 or BF16 operands, so FP32 inputs can never reach them; the 156 TFLOPS figure assumes the caller has already converted A and B to half precision",
+        "156 TFLOPS is TF32 tensor-core throughput; by default cuBLAS runs FP32 SGEMM on the SIMT FP32 pipes (19.5 TFLOPS peak) unless TF32 math is opted into, which drops mantissa bits",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "Ampere's tensor cores can consume FP32 data, but only by rounding it to TF32: an 8-bit exponent " +
+      "(same range as FP32) with a 10-bit mantissa (same precision as FP16), with products accumulated " +
+      "in FP32. cuBLAS's default math mode, `CUBLAS_DEFAULT_MATH`, only uses compute precisions with at " +
+      "least as many mantissa and exponent bits as requested, and TF32 has fewer mantissa bits than " +
+      "FP32, so `cublasSgemm` does not use it by default: the GEMM runs on the regular FP32 CUDA cores, " +
+      "whose peak is 19.5 TFLOPS, so 18.5 TFLOPS is actually about 95% of the relevant roof. Opting in " +
+      "is explicit: `cublasSetMathMode(handle, CUBLAS_TF32_TENSOR_OP_MATH)`, or `cublasGemmEx` with " +
+      "`CUBLAS_COMPUTE_32F_FAST_TF32`; in PyTorch, `torch.backends.cuda.matmul.allow_tf32 = True` or " +
+      "`torch.set_float32_matmul_precision(\"high\")` (PyTorch enabled TF32 matmuls by default in 1.7 " +
+      "through 1.11 and turned it off in 1.12, which is where the belief that FP32 GEMMs get TF32 " +
+      "automatically comes from). The memory-bound story fails on arithmetic intensity: the GEMM " +
+      "performs 2 * 8192^3, about 1.1 TFLOP, on roughly 805 MB of operand data (about 1,300 FLOPs per " +
+      "byte), which takes well under a millisecond to stream at HBM speeds against tens of milliseconds " +
+      "of math, so it is solidly compute-bound. An 8192-element row is 32 KB, aligned to every boundary " +
+      "tensor-core kernels care about. And the 'half precision only' picture is out of date: Volta's " +
+      "tensor cores took only FP16 inputs (Turing added integer modes), but Ampere added BF16, TF32, " +
+      "and on A100 FP64, with TF32 there so FP32 code could reach the tensor cores. The broader point: " +
+      "datasheet peaks are per datatype and per execution unit, and hitting the tensor-core number " +
+      "requires both a " +
+      "supported input type and a code path that actually selects it.",
+    references: [
+      "https://docs.nvidia.com/cuda/cublas/index.html#cublassetmathmode",
+      "https://blogs.nvidia.com/blog/tensorfloat-32-precision-format/",
+      "https://images.nvidia.com/aem-dam/en-zz/Solutions/data-center/nvidia-ampere-architecture-whitepaper.pdf",
+    ],
+  },
+  {
+    id: "gpu-cuda-warp-vote-01",
+    category: "gpu-cuda",
+    difficulty: "hard",
+    title: "Counting above-threshold values in the low 16 lanes of each warp",
+    tags: ["warp-vote", "ballot-sync", "warp-divergence", "independent-thread-scheduling"],
+    type: "trace",
+    prompt:
+      "The intent is to count, for each block, how many of the values held by the low 16 lanes of each " +
+      "warp are above `threshold`. `blockDim.x` is 256 and the grid exactly covers `data`, so every " +
+      "thread reaches the `__syncthreads()`. The kernel runs on a Volta-or-later GPU. What is " +
+      "the status of this code, and what is the right fix?",
+    snippet: {
+      language: "cpp",
+      filename: "kernel.cu",
+      code: `__global__ void countAbove(const float* data, int* blockCounts, float threshold) {
+    __shared__ int warpHits[8];                      // blockDim.x == 256
+    int i    = blockIdx.x * blockDim.x + threadIdx.x;
+    int lane = threadIdx.x & 31;
+    int warp = threadIdx.x >> 5;
+    float v  = data[i];
+
+    if (lane < 16) {
+        unsigned hits = __ballot_sync(0xffffffff, v > threshold);
+        if (lane == 0) warpHits[warp] = __popc(hits);
+    }
+    __syncthreads();
+
+    if (threadIdx.x == 0) {
+        int sum = 0;
+        for (int w = 0; w < 8; ++w) sum += warpHits[w];
+        blockCounts[blockIdx.x] = sum;
+    }
+}`,
+      highlightLines: [9],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Well-defined as written: the mask is ANDed with the lanes that actually reach the call, so bits 16-31 of hits come back zero and __popc counts only the low half of the warp",
+        "Well-defined but slower: the full mask forces lanes 16-31 to rejoin the branch and cast votes, which costs one reconvergence and makes __popc count the whole 32-lane warp",
+        "Undefined: lanes 16-31 are named in the mask but neither reach this __ballot_sync nor exit; pass 0x0000ffff, or hoist the vote above the branch for the whole warp",
+        "Fixable by passing __activemask() as the mask: inside the branch it returns exactly the lanes that took it, which makes it the canonical safe mask for divergent code",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "The `_sync` warp intrinsics introduced in CUDA 9 changed the contract: the mask is not a filter " +
+      "applied to whoever shows up, it is a declaration of which lanes will participate. The " +
+      "programming guide's warp `__sync` constraints say the intrinsic waits for every non-exited lane " +
+      "named in the mask, and that behavior is invalid (a kernel hang, for example) or undefined if a " +
+      "named lane neither eventually exits nor calls the same intrinsic with the same mask. Here lanes " +
+      "16-31 are named but have branched away and are waiting at `__syncthreads()` for lanes 0-15, " +
+      "which are in turn waiting at the vote for them. On Volta-or-later hardware with independent " +
+      "thread scheduling that can hang, or the call can return an arbitrary result; nothing guarantees " +
+      "the 'bits 16-31 are zero' behavior, which is how the deprecated pre-Volta `__ballot()` worked " +
+      "and where that intuition comes from. Nothing forces lanes back into the branch either. The " +
+      "barrier matters: if the kernel simply ended after the branch, lanes 16-31 would exit, the " +
+      "guide's rules ignore exited lanes, and the same line would happen to be legal, which is one way " +
+      "this bug hides in small test kernels. Two correct fixes: since the participants are known " +
+      "statically, pass `0x0000ffff`; or vote with the whole converged warp before branching, `unsigned " +
+      "hits = __ballot_sync(0xffffffff, lane < 16 && v > threshold);`, and let lane 0 write " +
+      "`__popc(hits)`. The second form is usually preferable because it does not depend on getting the " +
+      "mask arithmetic right for every branch shape. `__activemask()` is the trap answer: it reports " +
+      "which lanes happen to be converged and executing together at that instant, and it does not " +
+      "synchronize. Under independent thread scheduling the 16 lanes that took the branch are not " +
+      "guaranteed to be converged when it executes, so the vote can silently cover only a subset and " +
+      "undercount. The guide states " +
+      "outright that `__activemask()` cannot be used to determine which lanes execute a given branch.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#warp-sync-intrinsic-constraints",
+      "https://developer.nvidia.com/blog/using-cuda-warp-level-primitives/",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/03-advanced/advanced-kernel-programming.html#independent-thread-scheduling",
+    ],
+  },
+  {
+    id: "gpu-cuda-grid-sync-01",
+    category: "gpu-cuda",
+    difficulty: "hard",
+    title: "An atomic-counter barrier between two phases of one kernel",
+    tags: ["grid-synchronization", "cooperative-groups", "atomics", "deadlock", "occupancy"],
+    type: "trace",
+    prompt:
+      "To avoid a second kernel launch, an engineer separates two phases with a hand-rolled grid-wide " +
+      "barrier. On an A100 (108 SMs), the occupancy calculator says this kernel fits 8 blocks per SM. " +
+      "Launched with 64 blocks it works every time. Launched with 4096 blocks, the " +
+      "kernel never finishes. Why, and what is the supported way to get this structure?",
+    snippet: {
+      language: "cpp",
+      filename: "kernel.cu",
+      code: `__device__ unsigned int arrived = 0;
+
+__global__ void twoPhase(float* a, int n) {
+    phase1(a, n);
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        __threadfence();
+        atomicAdd(&arrived, 1);
+        while (atomicAdd(&arrived, 0) < gridDim.x) { }   // spin until all blocks arrive
+    }
+    __syncthreads();
+    phase2(a, n);
+}`,
+      highlightLines: [9],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Only 864 blocks fit at once, and CUDA never guarantees the rest get scheduled while those spin; use cudaLaunchCooperativeKernel with grid.sync() sized to co-residency, or two launches",
+        "The spinning blocks never see the increments: atomicAdd(&arrived, 0) is served from each SM's L1, so every block observes only its own arrival; reading the counter as volatile fixes it",
+        "The barrier is fine at any size: when a block spins without progress, the hardware preempts it and swaps in a pending block, so the hang must come from phase2 reading data it overwrites",
+        "A regular launch of a kernel that synchronizes across blocks is capped at one block per SM, so 4096 blocks exceed the limit and the launch fails with cudaErrorCooperativeLaunchTooLarge",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "The CUDA execution model makes no promise that all blocks of a grid are resident at the same " +
+      "time, or about the order in which blocks are scheduled; blocks are expected to be able to run " +
+      "independently. At 8 blocks per SM across 108 SMs, at most 864 of the 4096 blocks are resident. " +
+      "Those 864 reach the barrier and spin, and none of them ever exits, so no SM slot frees up for " +
+      "the remaining 3,232 blocks, which therefore never increment the counter: a deadlock. With 64 " +
+      "blocks everything is co-resident, which is why the bug hides in small tests. The other " +
+      "explanations fail on mechanism. Global atomics are resolved at L2, not in the non-coherent " +
+      "per-SM L1, so the spinners do see each other's increments. The scheduler does not preempt a " +
+      "spinning block to make room for unscheduled blocks of the same grid; compute preemption exists " +
+      "for time-slicing between contexts and debugging, not as a forward-progress guarantee. And an " +
+      "ordinary `<<<>>>` launch knows nothing about what the kernel does, so it neither caps blocks nor " +
+      "fails; `cudaErrorCooperativeLaunchTooLarge` is returned only for cooperative launches. The " +
+      "cooperative launch API is the supported fix: launch with `cudaLaunchCooperativeKernel`, size the " +
+      "grid to at most `cudaOccupancyMaxActiveBlocksPerMultiprocessor` * SM count (switching to a " +
+      "grid-stride loop so that grid covers all of n), and call " +
+      "`cooperative_groups::this_grid().sync()`, which also provides the memory ordering a hand-rolled " +
+      "barrier tends to get subtly wrong. The sketch also has a second bug: `arrived` is never reset, " +
+      "so a second launch would sail straight through. Often the simplest answer is just two kernel " +
+      "launches, since a kernel boundary is a " +
+      "grid-wide barrier with full memory visibility and costs only a few microseconds.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cooperative-groups.html#large-scale-groups",
+      "https://developer.nvidia.com/blog/cooperative-groups/",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#calculating-occupancy",
+    ],
+  },
+  {
+    id: "gpu-cuda-l2-persistence-01",
+    category: "gpu-cuda",
+    difficulty: "hard",
+    title: "A persisting L2 access policy window over a 64 MB weight matrix",
+    tags: ["l2-cache", "access-policy-window", "memory-hierarchy", "bandwidth"],
+    type: "trace",
+    prompt:
+      "A bandwidth-bound GEMV kernel is launched thousands of times on one stream, and every launch " +
+      "reads the same 64 MB weight matrix from start to end. The GPU is a 40 GB A100 (40 MB of L2, not " +
+      "in MIG mode), and the 64 MB window is within its `accessPolicyMaxWindowSize`. The engineer " +
+      "reserves 30 MB of L2 (three quarters of it) for persisting accesses and sets the stream's access " +
+      "policy window as shown, expecting roughly half the matrix to be served from L2 on each launch. " +
+      "Nsight Compute shows the L2 hit rate on the matrix is near zero, no better than with no window " +
+      "at all. What " +
+      "is going on?",
+    snippet: {
+      language: "cpp",
+      filename: "setup.cu",
+      code: `cudaDeviceSetLimit(cudaLimitPersistingL2CacheSize, 30 << 20);
+
+cudaStreamAttrValue attr = {};
+attr.accessPolicyWindow.base_ptr  = d_weights;
+attr.accessPolicyWindow.num_bytes = 64 << 20;     // whole matrix
+attr.accessPolicyWindow.hitRatio  = 1.0f;
+attr.accessPolicyWindow.hitProp   = cudaAccessPropertyPersisting;
+attr.accessPolicyWindow.missProp  = cudaAccessPropertyStreaming;
+cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow, &attr);`,
+      highlightLines: [6],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The window applies only to the next kernel queued on the stream, so the first launch benefits and every later one runs with the default policy unless cudaStreamSetAttribute is called again",
+        "hitRatio 1.0 tags all 64 MB as persisting in a 30 MB set-aside, so an in-order sweep evicts each line before it is reused; a hitRatio near 30/64 keeps a stable subset resident",
+        "Persisting lines are invalidated at every kernel boundary, so a window only helps reuse within a single launch; across launches the matrix must be re-read from HBM regardless of the policy",
+        "Only loads issued through the read-only data path honor hitProp; the GEMV's ordinary global loads bypass the set-aside region, so the matrix pointer has to be const __restrict__ to opt in",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "`hitRatio` is the fraction of accesses inside the window that receive `hitProp`; the hardware " +
+      "picks which accesses those are, at random with probability of about `hitRatio`. With 1.0, all 64 " +
+      "MB is tagged persisting and competes for 30 MB of set-aside. The programming guide spells out " +
+      "the result: when the window exceeds the set-aside, lines are evicted to keep the most recently " +
+      "used data in the persisting region. Under recency-based replacement, a cyclic sweep over a " +
+      "working set larger than capacity is the pathological case: by the time the sweep returns to line " +
+      "k, the 34 MB read since then has evicted it, so nearly every access misses, launch after launch. " +
+      "Meanwhile the set-aside stays full of thrashing matrix lines, leaving everything else the " +
+      "remaining 10 MB of normal L2. Setting `hitRatio` to about 30/64 = 0.47 tags roughly 30 MB of the " +
+      "window as persisting, which fits, so that subset stays resident across launches; the rest gets " +
+      "`missProp` = streaming, which is evict-first and does not displace it. Each launch then pulls " +
+      "about 34 MB from HBM instead of 64 MB, close to a 1.9x reduction in DRAM traffic for a kernel " +
+      "limited by exactly that. The other choices misdescribe the feature: the policy is a stream " +
+      "attribute that applies to every subsequent kernel on that stream (and can be set per kernel node " +
+      "in a CUDA graph); persisting lines survive across kernel launches by design, until reset with " +
+      "`cudaCtxResetPersistingL2Cache` or demoted with `cudaAccessPropertyNormal`; and the policy " +
+      "applies to ordinary global accesses within the address range, not just to the read-only path. " +
+      "The general lesson matches any cache: pinning more than fits does not pin " +
+      "the fraction that fits.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/l2-cache-control.html#l2-policy-for-persisting-accesses",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#l2-cache",
+      "https://docs.nvidia.com/cuda/cuda-runtime-api/structcudaAccessPolicyWindow.html",
+    ],
+  },
 ];

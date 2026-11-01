@@ -1668,4 +1668,584 @@ int main() {
       "formed and the adapter simply evaporates. Holding " +
       "`std::vector<std::unique_ptr<Target>>` keeps the adapters intact.",
   },
+  {
+    id: "design-patterns-composite-copy-31",
+    category: "design-patterns",
+    difficulty: "easy",
+    title: "Copying a Composite menu tree",
+    tags: ["composite", "unique_ptr", "copy-constructor", "compile-error"],
+    type: "trace",
+    prompt: "What happens when this program is built and run?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `struct Component {
+    virtual ~Component() = default;
+    virtual void print() const = 0;
+};
+
+struct Leaf : Component {
+    std::string name;
+    explicit Leaf(std::string n) : name(std::move(n)) {}
+    void print() const override { std::cout << name << "\\n"; }
+};
+
+struct Menu : Component {
+    std::vector<std::unique_ptr<Component>> children;
+    void add(std::unique_ptr<Component> c) { children.push_back(std::move(c)); }
+    void print() const override {
+        for (const auto& c : children) c->print();
+    }
+};
+
+int main() {
+    Menu file;
+    file.add(std::make_unique<Leaf>("Open"));
+    file.add(std::make_unique<Leaf>("Save"));
+
+    Menu recent = file;                          // start from a copy of "file"
+    recent.add(std::make_unique<Leaf>("report.txt"));
+    recent.print();
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Compiles, but recent shares file's children, and both Menus delete them at scope exit",
+        "Compiles and prints Open, Save, report.txt, recent holding deep copies of file's leaves",
+        "Compile error: copying the vector of children requires copying a std::unique_ptr",
+        "Compiles; the copy takes over file's children, leaving file empty, and prints three items",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "`Menu` declares no copy constructor, so `Menu recent = file;` uses the implicit one, which " +
+      "copies each member. Copying `children` means copying a `std::vector<std::unique_ptr<Component>>`, " +
+      "and that means copy-constructing each `std::unique_ptr`, whose copy constructor is deleted. The " +
+      "program does not compile. The error shows up in an odd place, though. `std::vector`'s copy " +
+      "constructor is not constrained on its element type, so `std::is_copy_constructible_v<Menu>` " +
+      "reports `true` and `Menu`'s copy constructor is not itself deleted. The failure appears only when " +
+      "that constructor is instantiated, deep inside the standard library headers. GCC reports \"use of " +
+      "deleted function 'std::unique_ptr<_Tp, _Dp>::unique_ptr(const std::unique_ptr<_Tp, _Dp>&)'\", " +
+      "with \"required from here\" pointing at `struct Menu`. Clang reports \"call to implicitly-deleted " +
+      "copy constructor of 'std::unique_ptr<Component>'\" (in C++20 mode as a note under a \"no matching " +
+      "function for call to '__construct_at'\" error), and its backtrace ends at `Menu recent = file;` " +
+      "with \"in implicit copy constructor for 'Menu' first required here\". None of the other three " +
+      "behaviors can happen: `unique_ptr` " +
+      "does not share ownership, does not deep-copy, and does not move silently out of an lvalue the " +
+      "way `auto_ptr` used to. A Composite built on `unique_ptr` children is a strict ownership tree, so " +
+      "copying one forces a decision about what a copy of a subtree means. The usual answer is to " +
+      "combine it with Prototype: give `Component` a `virtual std::unique_ptr<Component> clone() const` " +
+      "and have `Menu` write a copy constructor that clones each child.",
+    references: ["https://en.cppreference.com/w/cpp/memory/unique_ptr"],
+  },
+  {
+    id: "design-patterns-abstract-factory-covariant-32",
+    category: "design-patterns",
+    difficulty: "medium",
+    title: "Abstract Factory override returning a derived unique_ptr",
+    tags: ["abstract-factory", "covariant-return", "unique_ptr", "compile-error"],
+    type: "trace",
+    prompt: "What happens when this program is built and run?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `struct Button {
+    virtual ~Button() = default;
+    virtual void paint() const = 0;
+};
+
+struct MacButton : Button {
+    void paint() const override { std::cout << "mac button\\n"; }
+};
+
+struct WidgetFactory {
+    virtual ~WidgetFactory() = default;
+    virtual std::unique_ptr<Button> createButton() const = 0;
+};
+
+struct MacFactory : WidgetFactory {
+    // more specific return type, so code holding a MacFactory gets a MacButton
+    std::unique_ptr<MacButton> createButton() const override {
+        return std::make_unique<MacButton>();
+    }
+};
+
+int main() {
+    std::unique_ptr<WidgetFactory> f = std::make_unique<MacFactory>();
+    f->createButton()->paint();
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Compile error: unique_ptr<MacButton> is not a valid covariant return type for the override",
+        "Prints \"mac button\": the override is accepted as a covariant return type",
+        "Prints \"mac button\", but the MacButton it creates is never deleted",
+        "Undefined behavior: the base signature reinterprets the returned unique_ptr<MacButton> object",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "An override must have the same return type as the function it overrides, with one exception: " +
+      "covariant return types, which [class.virtual] permits only when both are pointers or both are " +
+      "lvalue/rvalue references to classes, the derived one's class being derived from the base one's. " +
+      "`std::unique_ptr<MacButton>` and `std::unique_ptr<Button>` are two unrelated class template " +
+      "specializations. One implicitly converts to the other, but convertibility is not covariance. " +
+      "Clang rejects the override with \"virtual function 'createButton' has a different return type " +
+      "('unique_ptr<MacButton>') than the function it overrides (which has return type " +
+      "'unique_ptr<Button>')\", and GCC with \"invalid covariant return type for 'virtual " +
+      "std::unique_ptr<MacButton> MacFactory::createButton() const'\". Even if it compiled, it wouldn't " +
+      "leak: the temporary `unique_ptr` in `f->createButton()->paint()` is destroyed at the end of the " +
+      "full expression and deletes the button. Abstract Factory runs into this often, " +
+      "because a concrete factory naturally wants to advertise which product family it builds, and with " +
+      "raw-pointer returns (`MacButton* createButton()`) covariance would have allowed it. With smart " +
+      "pointers the override has to return `std::unique_ptr<Button>`. If callers really need the " +
+      "concrete type, the usual idiom is a private virtual returning a covariant raw `MacButton*`, wrapped " +
+      "by a non-virtual public `create()` in each class that returns the right `unique_ptr`.",
+    references: ["https://en.cppreference.com/w/cpp/language/virtual#Covariant_return_types"],
+  },
+  {
+    id: "design-patterns-iterator-range-for-33",
+    category: "design-patterns",
+    difficulty: "medium",
+    title: "Appending to a playlist mid-traversal",
+    tags: ["iterator", "range-for", "iterator-invalidation", "containers"],
+    type: "trace",
+    prompt: "What does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `struct Song { std::string title; };
+
+class Playlist {
+public:
+    class Iterator {
+    public:
+        Iterator(const Playlist* pl, std::size_t i) : pl_(pl), i_(i) {}
+        const Song& operator*() const { return pl_->songs_[i_]; }
+        Iterator& operator++() { ++i_; return *this; }
+        bool operator!=(const Iterator& o) const { return i_ != o.i_; }
+    private:
+        const Playlist* pl_;
+        std::size_t i_;
+    };
+
+    void add(std::string t) { songs_.push_back({std::move(t)}); }
+    Iterator begin() const { return {this, 0}; }
+    Iterator end() const { return {this, songs_.size()}; }
+private:
+    std::vector<Song> songs_;
+};
+
+int main() {
+    Playlist pl;
+    pl.add("intro");
+    pl.add("encore");
+    pl.add("outro");
+
+    for (const Song& s : pl) {
+        std::cout << s.title << "\\n";
+        if (s.title == "encore") pl.add("bonus");   // may reallocate songs_
+    }
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Undefined behavior: add() can reallocate songs_, invalidating the iterator the loop holds",
+        "Prints intro, encore, outro, bonus: the loop picks up the song appended mid-traversal",
+        "Undefined behavior: s refers into songs_, and it dangles as soon as add() reallocates",
+        "Prints intro, encore, outro: bonus is appended, but the loop never reaches it",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "Two facts settle this. First, [stmt.ranged] defines the range-based `for` as `auto __begin = " +
+      "pl.begin(); auto __end = pl.end();` followed by a loop on `__begin != __end`, so `end()` is " +
+      "evaluated exactly once, before the first iteration. `__end` holds index 3 permanently, and the " +
+      "loop stops after \"outro\" no matter how many songs get appended. Second, this iterator stores " +
+      "a `Playlist*` and an index and re-reads `pl_->songs_[i_]` on every dereference, so it never " +
+      "holds an address into the vector's buffer and a reallocation can't invalidate it. (With the " +
+      "1, 2, 4 doubling that libstdc++ and libc++ use, the fourth `push_back` doesn't even reallocate.) The reference `s` would " +
+      "dangle after a reallocation, but nothing reads it after `add()` returns, and a dangling " +
+      "reference that is never used is not undefined behavior. So the program is well defined and " +
+      "quietly skips \"bonus\". That is the Iterator pattern's trade-off: it hides the container's " +
+      "representation, which also means callers can no longer reason from `std::vector`'s invalidation " +
+      "rules. Its iterators are exactly as robust as their author made them. Caching `const Song*` " +
+      "instead of an index would have looked identical from the outside and made this loop undefined " +
+      "behavior on any reallocation. A bespoke container should document what mutation during " +
+      "traversal means, or, like `std::vector`, simply forbid it.",
+    references: ["https://en.cppreference.com/w/cpp/language/range-for"],
+  },
+  {
+    id: "design-patterns-proxy-lazy-const-34",
+    category: "design-patterns",
+    difficulty: "medium",
+    title: "Lazy-loading proxy shared by two reader threads",
+    tags: ["proxy", "lazy-initialization", "mutable", "data-race", "thread-safety"],
+    type: "trace",
+    prompt:
+      "Both threads call `size()` on the same `const` proxy, and neither call has happened before. " +
+      "What is the behavior of this program?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+#include <memory>
+#include <string>
+#include <thread>
+#include <vector>
+
+struct Image {
+    explicit Image(const std::string& path) { pixels.resize(1 << 20); }  // expensive decode
+    std::vector<unsigned char> pixels;
+};
+
+class ImageProxy {
+public:
+    explicit ImageProxy(std::string path) : path_(std::move(path)) {}
+
+    std::size_t size() const {
+        if (!real_) real_ = std::make_unique<Image>(path_);   // load on first use
+        return real_->pixels.size();
+    }
+private:
+    std::string path_;
+    mutable std::unique_ptr<Image> real_;
+};
+
+int main() {
+    const ImageProxy proxy("hero.png");
+    std::thread a([&] { std::cout << proxy.size() << "\\n"; });
+    std::thread b([&] { std::cout << proxy.size() << "\\n"; });
+    a.join();
+    b.join();
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Compile error: size() is a const member function, and it assigns to real_",
+        "Well-defined: const member functions on a shared object are safe to call concurrently",
+        "Undefined behavior: both threads can read and write real_ unsynchronized, a data race",
+        "Well-defined but wasteful: both threads may decode the Image, and one copy is discarded",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "`mutable` lets a `const` member function modify `real_`, so the code compiles, and that's " +
+      "how a virtual proxy keeps lazy loading invisible behind a `const` interface. It also " +
+      "hides a write inside what callers see as a read. Both threads can find `real_` empty and each " +
+      "assign a fresh `unique_ptr`, while the other thread may be reading `real_` or dereferencing it. " +
+      "Unsynchronized conflicting accesses to the same object, at least one of them a write, are a data " +
+      "race under [intro.races], and a data race is undefined behavior. The \"benign race\" reading " +
+      "doesn't hold up either: `unique_ptr` assignment is not atomic, and if thread B's assignment " +
+      "destroys the `Image` thread A just installed, A's `real_->pixels.size()` can read a freed " +
+      "object. Testing rarely shows any of this. The decode is fast enough that thread `a` usually " +
+      "finishes before `b` starts, and in 40 local runs built with clang's `-fsanitize=thread`, " +
+      "ThreadSanitizer never reported `real_` at all, because the two calls never actually overlapped. " +
+      "A race that only appears under the right timing is still a race. The reason it surprises people is " +
+      "that the standard library's own rule ([res.on.data.races]) is that `const` member functions may " +
+      "be called concurrently, and most code assumes user types follow the same rule. A lazy proxy " +
+      "that writes in a `const` function breaks that promise unless it synchronizes internally: a " +
+      "`mutable std::once_flag` with `std::call_once`, or a `mutable std::mutex` around the check and " +
+      "the load.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/multithread",
+      "https://en.cppreference.com/w/cpp/thread/call_once",
+    ],
+  },
+  {
+    id: "design-patterns-bridge-temporary-impl-35",
+    category: "design-patterns",
+    difficulty: "medium",
+    title: "Bridge constructed with an inline renderer argument",
+    tags: ["bridge", "reference-member", "temporaries", "lifetime-extension", "dangling-reference"],
+    type: "trace",
+    prompt: "What happens when this program runs?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `struct Renderer {
+    virtual ~Renderer() = default;
+    virtual void drawCircle(double r) const = 0;
+};
+
+struct VectorRenderer : Renderer {
+    void drawCircle(double r) const override {
+        std::cout << "vector circle r=" << r << "\\n";
+    }
+};
+
+class Shape {
+public:
+    explicit Shape(const Renderer& r) : renderer_(r) {}
+    virtual ~Shape() = default;
+    virtual void draw() const = 0;
+protected:
+    const Renderer& renderer_;   // the bridge to the implementation
+};
+
+class Circle : public Shape {
+public:
+    Circle(const Renderer& r, double radius) : Shape(r), radius_(radius) {}
+    void draw() const override { renderer_.drawCircle(radius_); }
+private:
+    double radius_;
+};
+
+int main() {
+    Circle c(VectorRenderer{}, 5.0);
+    c.draw();
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Prints \"vector circle r=5\": binding to a const reference extends the temporary to c's lifetime",
+        "Undefined behavior: the VectorRenderer temporary is destroyed before c.draw() is ever called",
+        "Compile error: a reference member of abstract type Renderer cannot be bound to a temporary",
+        "Undefined behavior: renderer_ binds to a sliced Renderer copy, so draw() calls a pure virtual",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "`VectorRenderer{}` is a temporary bound to the constructor's `const Renderer&` parameter. " +
+      "[class.temporary] says a temporary bound to a reference parameter of a function call lives until " +
+      "the end of the full-expression containing the call, which here is the declaration of `c`. " +
+      "Lifetime extension applies only to a reference bound directly to the temporary in its own " +
+      "initialization; it doesn't carry through the parameter into `Shape::renderer_`. When the " +
+      "declaration finishes, the renderer is destroyed and `renderer_` refers to dead storage, so " +
+      "`c.draw()` makes a virtual call through a dangling reference. That is undefined behavior. No " +
+      "slicing is involved: a `const Renderer&` binds to the `VectorRenderer` object itself, which is " +
+      "also why the abstract type is no obstacle. In practice the outcome depends on the build. With " +
+      "Apple clang the program printed the expected line at `-O0`, crashed at `-O2`, and drew a " +
+      "stack-use-after-scope report from AddressSanitizer. GCC 16 did the reverse: the expected line at " +
+      "`-O2`, and at `-O0` an abort with \"pure virtual method called\", because the destroyed " +
+      "renderer's vtable pointer had been reset to `Renderer`'s by its destructor. Neither compiler " +
+      "warned under `-Wall -Wextra`. Bridge " +
+      "is prone to this because the pattern exists so the abstraction can point at an implementation " +
+      "it doesn't own. With a reference member, the caller is entirely responsible for the " +
+      "implementor's lifetime, and an inline argument is the easiest way to get that wrong. Either store " +
+      "the implementor as a `std::shared_ptr`/`std::unique_ptr`, or reject temporaries outright with a " +
+      "deleted overload such as `Circle(const Renderer&&, double) = delete;`.",
+    references: ["https://en.cppreference.com/w/cpp/language/reference_initialization#Lifetime_of_a_temporary"],
+  },
+  {
+    id: "design-patterns-template-method-ctor-36",
+    category: "design-patterns",
+    difficulty: "hard",
+    title: "Template Method run from the base constructor",
+    tags: ["template-method", "pure-virtual", "constructors", "undefined-behavior"],
+    type: "trace",
+    prompt: "What happens when this program runs?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `class Report {
+public:
+    Report() { generate(); }          // build the report eagerly
+    virtual ~Report() = default;
+
+    void generate() {                 // template method: fixed skeleton
+        header();
+        body();
+        footer();
+    }
+protected:
+    virtual void header() { std::cout << "== report ==\\n"; }
+    virtual void body() = 0;          // the step every report must supply
+    virtual void footer() { std::cout << "== end ==\\n"; }
+};
+
+class SalesReport : public Report {
+protected:
+    void body() override { std::cout << "sales: 42\\n"; }
+};
+
+int main() {
+    SalesReport r;
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Prints the header, \"sales: 42\", and the footer, generate() dispatching to SalesReport::body",
+        "Prints only the header and the footer; the pure hook is skipped while Report is constructed",
+        "Undefined behavior: while Report's constructor runs, body() resolves to the pure Report::body",
+        "Compile error: an abstract class's constructor cannot call a function that reaches a pure virtual",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "While `Report`'s constructor runs, the `SalesReport` part of the object hasn't been constructed " +
+      "yet, and [class.cdtor] says virtual calls made during construction resolve as if the object's " +
+      "dynamic type were the class whose constructor is executing. `header()` therefore runs " +
+      "`Report::header`, which is harmless, but `body()` resolves to `Report::body`, which is pure. " +
+      "[class.abstract] states that making a virtual call to a pure virtual function, directly or " +
+      "indirectly, for the object under construction from its constructor is undefined behavior. The " +
+      "indirection is what lets it compile quietly: clang and GCC both warn by default about a pure " +
+      "virtual call written directly in a constructor, but here the call sits inside the non-virtual " +
+      "`generate()`, and neither says anything even with `-Wall -Wextra`. In practice the vtable slot " +
+      "for `body` holds the runtime's `__cxa_pure_virtual` stub during construction. After printing " +
+      "\"== report ==\", a clang/libc++ build aborts with \"libc++abi: Pure virtual function called!\", " +
+      "and a GCC/libstdc++ build prints \"pure virtual method called\" then \"terminate called without " +
+      "an active exception\" and aborts. Both behave the same at `-O0` and `-O2`. Template Method makes " +
+      "this an easy mistake: " +
+      "the template method is public, non-virtual, and looks like ordinary code you can call from " +
+      "anywhere, which hides the fact that every step in it is a virtual call that doesn't work until " +
+      "construction is complete. Run the skeleton after construction instead, from the caller or from a " +
+      "factory function that builds the object and then calls `generate()`.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/abstract_class",
+      "https://en.cppreference.com/w/cpp/language/virtual#During_construction_and_destruction",
+    ],
+  },
+  {
+    id: "design-patterns-state-self-transition-37",
+    category: "design-patterns",
+    difficulty: "hard",
+    title: "State object that triggers its own transition",
+    tags: ["state", "unique_ptr", "use-after-free", "lifetime"],
+    type: "trace",
+    prompt: "What happens when this program runs?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `class TrafficLight;
+
+struct LightState {
+    virtual ~LightState() = default;
+    virtual void tick(TrafficLight& light) = 0;
+};
+
+class TrafficLight {
+public:
+    explicit TrafficLight(std::unique_ptr<LightState> s) : state_(std::move(s)) {}
+    void setState(std::unique_ptr<LightState> s) { state_ = std::move(s); }
+    void tick() { state_->tick(*this); }
+private:
+    std::unique_ptr<LightState> state_;
+};
+
+struct Yellow : LightState {
+    void tick(TrafficLight&) override { std::cout << "yellow\\n"; }
+};
+
+struct Green : LightState {
+    std::string name = "green";
+    int ticks = 0;
+    void tick(TrafficLight& light) override {
+        if (++ticks == 2) light.setState(std::make_unique<Yellow>());
+        std::cout << name << " tick " << ticks << "\\n";
+    }
+};
+
+int main() {
+    TrafficLight light(std::make_unique<Green>());
+    light.tick();
+    light.tick();
+    light.tick();
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Undefined behavior: setState() destroys the Green whose tick() is still running, then reads it",
+        "Prints \"green tick 1\", \"green tick 2\", \"yellow\": the old state lives until tick() returns",
+        "Compile error: Green::tick calls into TrafficLight, which LightState only forward-declares",
+        "Prints \"green tick 1\", then \"yellow\" twice: the transition takes effect before the second message",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "On the second tick, `Green::tick` calls `light.setState(...)`, and the move assignment `state_ = " +
+      "std::move(s)` behaves like `reset(s.release())`: it installs the `Yellow`, then deletes the " +
+      "object `state_` used to own. That object is the `Green` whose `tick()` is still on the call stack, " +
+      "so it is destroyed before its own member function returns. `unique_ptr` defers nothing. The call " +
+      "itself is allowed to continue, since destroying `*this` mid-call is legal in the same way `delete " +
+      "this` is, but only as long as the function touches no member afterward. The next line reads " +
+      "`name` and `ticks` out of the freed `Green`, a use-after-free and undefined behavior. (The code " +
+      "does compile: a forward declaration is enough for `LightState`'s reference parameter, and " +
+      "`TrafficLight` is complete by the time `Green::tick` calls `setState`.) On macOS, Apple clang and " +
+      "GCC 16 builds both printed \"green tick 1\", then \" tick 0\" (the freed memory had already been " +
+      "reused), then \"yellow\", and exited 0 at `-O0` and `-O2`. AddressSanitizer reports a " +
+      "heap-use-after-free reached from `Green::tick`. The State pattern sets this up structurally: the object best placed to decide on a " +
+      "transition is the current state, and the current state is precisely the object that a " +
+      "transition destroys. Either make the transition the last thing the state does (copy anything " +
+      "needed into locals and return straight after `setState`), or let the context apply it, for " +
+      "example by having `tick()` return the next state, or by keeping the old one alive in a local in " +
+      "`TrafficLight::tick` until the call returns.",
+    references: ["https://en.cppreference.com/w/cpp/memory/unique_ptr/operator%3D"],
+  },
+  {
+    id: "design-patterns-singleton-recursive-init-38",
+    category: "design-patterns",
+    difficulty: "hard",
+    title: "Two Meyer's singletons whose constructors call each other",
+    tags: ["singleton", "magic-statics", "recursive-initialization", "undefined-behavior"],
+    type: "trace",
+    prompt: "What happens when this program runs?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `class Logger {
+public:
+    static Logger& instance() { static Logger l; return l; }
+    void log(const std::string& msg) { std::cout << msg << "\\n"; }
+private:
+    Logger();
+};
+
+class Registry {
+public:
+    static Registry& instance() { static Registry r; return r; }
+    void add(const std::string& name) { names_.push_back(name); }
+private:
+    Registry() { Logger::instance().log("registry up"); }
+    std::vector<std::string> names_;
+};
+
+Logger::Logger() { Registry::instance().add("logger"); }
+
+int main() {
+    Logger::instance().log("hello");
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Prints \"registry up\" then \"hello\": the nested call is handed the partly constructed Logger",
+        "Compile error: constructors that call each other's instance() form a circular class dependency",
+        "Stack overflow: every nested instance() call starts the static's constructor over from the top",
+        "Undefined behavior: control re-enters Logger's static declaration while it's still initializing",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "`main` calls `Logger::instance()`, which begins initializing `l` by running `Logger()`. That " +
+      "constructor calls `Registry::instance()`, which begins initializing `r` by running `Registry()`, " +
+      "and that constructor calls `Logger::instance()` again while `l` is still mid-initialization. " +
+      "[stmt.dcl] covers exactly this: if control re-enters the declaration recursively while the " +
+      "variable is being initialized, the behavior is undefined. The language never hands out a " +
+      "half-built object here, and it doesn't restart the constructor either. The hidden guard " +
+      "variable already says \"initialization in progress\", and the same thread-safety machinery that " +
+      "makes concurrent first use of a Meyer's singleton safe now tells this thread to wait for an " +
+      "initialization that only it can finish. What you see depends on the runtime. With libc++ (Apple " +
+      "clang on macOS), `__cxa_guard_acquire` notices and aborts with \"libc++abi: __cxa_guard_acquire " +
+      "detected recursive initialization: do you have a function-local static variable whose " +
+      "initialization depends on that function?\". libstdc++ (GCC 16 on macOS) does not detect it: the " +
+      "thread waits on the guard's condition variable for itself, and the program hangs with no output. " +
+      "On Linux with glibc 2.32 or later, libstdc++'s guard first checks whether the process is still " +
+      "single-threaded. This program is, so it throws `__gnu_cxx::recursive_init_error`, which escapes " +
+      "`main` and ends in `std::terminate`. Once a second thread has been started, the same guard waits " +
+      "on a futex for itself and deadlocks instead. Nothing at compile time catches it, since each class compiles fine alone and the " +
+      "cycle exists only in runtime call order. Mutually dependent singletons usually come up in terms " +
+      "of *destruction* order, where reverse-construction order often covers for them quietly. The " +
+      "construction side has no such fallback. The fix is to break the cycle: " +
+      "`Logger` shouldn't need `Registry` during its own construction (register lazily on first log, " +
+      "say), or the two should be built in a fixed order by one owner that isn't a singleton.",
+    references: ["https://en.cppreference.com/w/cpp/language/storage_duration#Static_local_variables"],
+  },
 ];
