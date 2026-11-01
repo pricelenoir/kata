@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { ArrowRightIcon, PartyPopperIcon } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { DifficultyLabel } from "@/components/ui/difficulty";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DIFFICULTY_CLASS } from "@/lib/difficulty";
 import { useProgress } from "@/lib/progress-store";
 import { getRecommendedQuestion } from "@/lib/recommendation";
 import { CATEGORY_META } from "@/types/category";
@@ -26,11 +25,11 @@ export function NextQuestionCta({
 
   if (!recommended) {
     return (
-      <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-card/50 px-5 py-4">
+      <div className="flex items-center gap-3 rounded-lg surface px-5 py-4">
         <PartyPopperIcon className="size-5 shrink-0 text-emerald-400" />
         <p className="text-sm text-foreground">
           You&apos;ve answered every question correctly. Nice work — check{" "}
-          <Link href="/progress" className="text-sky-400 hover:text-sky-300">
+          <Link href="/progress" className="text-brand-sky hover:underline underline-offset-4">
             your progress
           </Link>{" "}
           or reset to drill again.
@@ -40,35 +39,25 @@ export function NextQuestionCta({
   }
 
   const { question, reason } = recommended;
-  const meta = CATEGORY_META[question.category];
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-sky-500/30 bg-sky-500/5 px-5 py-4">
-      <div className="space-y-1.5">
-        <p className="font-mono text-xs uppercase tracking-wide text-sky-400">
-          {reason === "retry" ? "Retry — missed last time" : "Up next"}
+    <div className="relative flex h-full flex-wrap items-center justify-between gap-4 overflow-hidden rounded-xl border border-brand-sky/30 bg-brand-sky/[0.05] px-5 py-4">
+      <div className="relative space-y-2">
+        <p className="text-sm font-medium text-brand-sky">
+          {reason === "retry" ? "Missed last time, try it again" : "Up next"}
         </p>
-        <p className="text-sm font-medium text-foreground">{question.title}</p>
-        <div className="flex items-center gap-2">
-          <Badge
-            variant="outline"
-            className={`font-mono text-[10px] ${meta.badgeClassName}`}
-          >
-            {meta.shortLabel}
-          </Badge>
-          <Badge
-            variant="outline"
-            className={`font-mono text-[10px] uppercase ${DIFFICULTY_CLASS[question.difficulty]}`}
-          >
-            {question.difficulty}
-          </Badge>
+        <p className="text-base font-medium text-foreground">{question.title}</p>
+        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <span>{CATEGORY_META[question.category].label}</span>
+          <DifficultyLabel difficulty={question.difficulty} />
         </div>
       </div>
       <Button
         nativeButton={false}
         render={<Link href={`/questions/${question.category}/${question.id}`} />}
+        className="relative glow-sky border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90"
       >
-        Jump in
+        {reason === "retry" ? "Retry" : "Start"}
         <ArrowRightIcon />
       </Button>
     </div>

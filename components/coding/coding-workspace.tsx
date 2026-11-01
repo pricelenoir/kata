@@ -6,11 +6,12 @@ import { LoaderCircleIcon, PlayIcon, RotateCcwIcon, SendIcon } from "lucide-reac
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CodeEditor } from "@/components/coding/code-editor";
-import { SubmissionResult } from "@/components/coding/submission-result";
+import { SubmissionResult, VERDICT_CLASS } from "@/components/coding/submission-result";
 import { useSupabaseUser } from "@/lib/supabase/use-user";
 import { useSubmission } from "@/lib/use-submission";
 import { LANGUAGES, LANGUAGE_META, type ExerciseMode, type Language, type TestCase } from "@/types/coding-exercise";
 import { VERDICT_LABEL } from "@/types/submission";
+import { cn } from "@/lib/utils";
 
 // Client-only (loaded with ssr: false), so reading localStorage while
 // initializing state is safe — there's no server render to mismatch.
@@ -109,75 +110,85 @@ export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate
   const cannotRun = busy || signedOut || !judgeEnabled;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1" role="tablist" aria-label="Language">
-          {LANGUAGES.map((l) => (
+    <div className="space-y-5">
+      <div className="surface overflow-hidden rounded-xl focus-within:ring-1 focus-within:ring-brand-sky/40">
+        <div className="flex items-center justify-between gap-2 border-b border-border px-2 py-1.5">
+          <div className="flex items-center gap-0.5" role="tablist" aria-label="Language">
+            {LANGUAGES.map((l) => (
+              <button
+                key={l}
+                type="button"
+                role="tab"
+                aria-selected={language === l}
+                onClick={() => changeLanguage(l)}
+                className={cn(
+                  "h-7 rounded-md px-2.5 text-sm transition-colors",
+                  language === l ? "bg-foreground/10 text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {LANGUAGE_META[l].label}
+              </button>
+            ))}
+          </div>
+          <Button type="button" size="sm" variant="ghost" onClick={resetCode} className="text-muted-foreground">
+            <RotateCcwIcon />
+            Reset
+          </Button>
+        </div>
+
+        <CodeEditor value={code[language]} language={language} onChange={changeCode} />
+
+        {useCustom && (
+          <div className="space-y-1.5 border-t border-border px-3 py-3">
+            <label htmlFor="custom-input" className="text-xs font-medium text-muted-foreground">
+              Custom input
+            </label>
+            <Textarea
+              id="custom-input"
+              value={customText}
+              onChange={(e) => setCustomText(e.target.value)}
+              rows={3}
+              spellCheck={false}
+              className="font-mono text-xs"
+            />
+            {inputError && <p className="text-sm text-destructive">{inputError}</p>}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-3 py-2.5">
+          <Switch checked={useCustom} onChange={setUseCustom} label="Custom input" />
+          <div className="flex items-center gap-2">
+            <Button type="button" size="sm" variant="outline" disabled={cannotRun} onClick={() => send("run")}>
+              {busy && state.kind === "run" ? <LoaderCircleIcon className="animate-spin" /> : <PlayIcon />}
+              Run
+            </Button>
             <Button
-              key={l}
               type="button"
               size="sm"
-              role="tab"
-              aria-selected={language === l}
-              variant={language === l ? "secondary" : "ghost"}
-              onClick={() => changeLanguage(l)}
-              className="font-mono text-xs"
+              disabled={cannotRun}
+              onClick={() => send("submit")}
+              className="glow-sky border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90 disabled:opacity-40 disabled:shadow-none"
             >
-              {LANGUAGE_META[l].label}
+              {busy && state.kind === "submit" ? <LoaderCircleIcon className="animate-spin" /> : <SendIcon />}
+              Submit
             </Button>
-          ))}
+          </div>
         </div>
-        <Button type="button" size="sm" variant="ghost" onClick={resetCode} className="font-mono text-xs">
-          <RotateCcwIcon />
-          Reset
-        </Button>
       </div>
 
-      <CodeEditor value={code[language]} language={language} onChange={changeCode} />
+      {!judgeEnabled && (
+        <p className="text-sm text-muted-foreground">Running code is coming soon. Your draft is saved in this browser.</p>
+      )}
+      {judgeEnabled && signedOut && (
+        <p className="text-sm text-muted-foreground">
+          <Link href={`/login?next=/coding/${exerciseId}`} className="text-brand-sky underline-offset-4 hover:underline">
+            Log in
+          </Link>{" "}
+          to run your code. Drafts are saved in this browser either way.
+        </p>
+      )}
 
-      <div className="space-y-2">
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          <input type="checkbox" checked={useCustom} onChange={(e) => setUseCustom(e.target.checked)} />
-          Run with custom input too
-        </label>
-        {useCustom && (
-          <Textarea
-            value={customText}
-            onChange={(e) => setCustomText(e.target.value)}
-            rows={4}
-            spellCheck={false}
-            className="font-mono text-xs"
-            aria-label="Custom input"
-          />
-        )}
-        {inputError && <p className="text-sm text-destructive">{inputError}</p>}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="outline" disabled={cannotRun} onClick={() => send("run")}>
-          {busy && state.kind === "run" ? <LoaderCircleIcon className="animate-spin" /> : <PlayIcon />}
-          Run examples
-        </Button>
-        <Button type="button" disabled={cannotRun} onClick={() => send("submit")}>
-          {busy && state.kind === "submit" ? <LoaderCircleIcon className="animate-spin" /> : <SendIcon />}
-          Submit
-        </Button>
-        {!judgeEnabled && (
-          <span className="text-sm text-muted-foreground">
-            Running code is coming soon. Your draft is saved in this browser.
-          </span>
-        )}
-        {judgeEnabled && signedOut && (
-          <span className="text-sm text-muted-foreground">
-            <Link href={`/login?next=/coding/${exerciseId}`} className="text-sky-400 hover:text-sky-300">
-              Log in
-            </Link>{" "}
-            to run your code. Drafts are saved in this browser either way.
-          </span>
-        )}
-      </div>
-
-      <section aria-live="polite" className="min-h-8">
+      <section aria-live="polite" className="empty:hidden">
         {state.phase === "sending" && <p className="text-sm text-muted-foreground">Queuing…</p>}
         {state.phase === "waiting" && (
           <p className="text-sm text-muted-foreground">
@@ -190,18 +201,22 @@ export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate
 
       {history.length > 0 && (
         <section className="space-y-2">
-          <h2 className="font-mono text-xs uppercase tracking-wide text-muted-foreground">Recent</h2>
-          <ul className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60">
+          <h2 className="text-sm font-semibold text-foreground">Recent submissions</h2>
+          <ul className="divide-y divide-border/60 overflow-hidden rounded-xl surface">
             {history.map((row) => (
-              <li key={row.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-                <button type="button" onClick={() => show(row)} className="min-w-0 truncate text-left hover:text-sky-400">
-                  <span className="font-mono text-xs text-muted-foreground">
-                    {new Date(row.created_at).toLocaleTimeString()} · {row.kind} · {LANGUAGE_META[row.language].label}
-                  </span>{" "}
-                  <span className="text-foreground">
-                    {row.verdict ? VERDICT_LABEL[row.verdict] : row.status === "queued" ? "Queued" : "Running"}
-                  </span>
+              <li key={row.id} className="grid grid-cols-[1fr_auto] items-center gap-3 px-3 py-2 text-sm sm:grid-cols-[1fr_4rem_3rem_5.5rem_auto]">
+                <button
+                  type="button"
+                  onClick={() => show(row)}
+                  className={cn("min-w-0 truncate text-left hover:underline underline-offset-4", row.verdict ? VERDICT_CLASS[row.verdict] : "text-muted-foreground")}
+                >
+                  {row.verdict ? VERDICT_LABEL[row.verdict] : row.status === "queued" ? "Queued" : "Running"}
                 </button>
+                <span className="hidden text-muted-foreground capitalize sm:block">{row.kind}</span>
+                <span className="hidden text-muted-foreground sm:block">{LANGUAGE_META[row.language].label}</span>
+                <span className="hidden text-right tabular-nums text-muted-foreground sm:block">
+                  {new Date(row.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                </span>
                 <button
                   type="button"
                   onClick={() => {
@@ -209,9 +224,9 @@ export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate
                     setCode((prev) => ({ ...prev, [row.language]: row.source }));
                     writeStorage(draftKey(exerciseId, row.language), row.source);
                   }}
-                  className="shrink-0 font-mono text-xs text-muted-foreground hover:text-foreground"
+                  className="shrink-0 text-xs text-muted-foreground transition-colors hover:text-foreground"
                 >
-                  load code
+                  Load code
                 </button>
               </li>
             ))}
@@ -219,5 +234,32 @@ export function CodingWorkspace({ exerciseId, mode, starter, customInputTemplate
         </section>
       )}
     </div>
+  );
+}
+
+function Switch({ checked, onChange, label }: { checked: boolean; onChange: (next: boolean) => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="group flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <span
+        className={cn(
+          "relative h-4 w-7 rounded-full transition-colors",
+          checked ? "bg-brand-sky" : "bg-foreground/15",
+        )}
+      >
+        <span
+          className={cn(
+            "absolute top-0.5 left-0.5 size-3 rounded-full bg-background transition-transform",
+            checked ? "translate-x-3" : "bg-foreground/70",
+          )}
+        />
+      </span>
+      {label}
+    </button>
   );
 }

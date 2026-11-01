@@ -46,6 +46,10 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  /* Brand accents. Sky is the everyday interactive color; orange only ever
+   * appears inside the sky-to-orange gradient, for moments of emphasis. */
+  --color-brand-sky: oklch(0.746 0.16 232.661); /* Tailwind sky-400, kata's original blue */
+  --color-brand-orange: oklch(0.73 0.17 38);
 }
 
 :root {
@@ -84,24 +88,26 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  /* Near-black with a whisper of blue, so the sky/orange accents read as
+   * part of the same light rather than stickers on grey. */
+  --background: oklch(0.155 0.006 250);
+  --foreground: oklch(0.97 0.004 250);
+  --card: oklch(0.19 0.008 250);
+  --card-foreground: oklch(0.97 0.004 250);
+  --popover: oklch(0.2 0.008 250);
+  --popover-foreground: oklch(0.97 0.004 250);
+  --primary: oklch(0.96 0.004 250);
+  --primary-foreground: oklch(0.18 0.008 250);
+  --secondary: oklch(0.25 0.01 250);
+  --secondary-foreground: oklch(0.97 0.004 250);
+  --muted: oklch(0.24 0.009 250);
+  --muted-foreground: oklch(0.7 0.012 250);
+  --accent: oklch(0.25 0.01 250);
+  --accent-foreground: oklch(0.97 0.004 250);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: oklch(0.746 0.16 232.661);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -139,3 +145,268 @@
     opacity: 0;
   }
 }
+/* ---- Brand gradient -------------------------------------------------- */
+
+@utility text-brand-gradient {
+  background-image: linear-gradient(100deg, var(--color-brand-sky) 10%, var(--color-brand-orange) 90%);
+  background-clip: text;
+  color: transparent;
+}
+
+@utility bg-brand-gradient {
+  background-image: linear-gradient(100deg, var(--color-brand-sky), var(--color-brand-orange));
+}
+
+/* A 1px gradient edge on top of whatever background the element has. */
+@utility border-brand-gradient {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(color-mix(in oklch, var(--color-card) 72%, transparent), color-mix(in oklch, var(--color-card) 72%, transparent)) padding-box,
+    linear-gradient(120deg, color-mix(in oklch, var(--color-brand-sky) 70%, transparent), color-mix(in oklch, var(--color-brand-orange) 70%, transparent)) border-box;
+}
+
+/* Soft light behind sections (closing CTA, login). */
+
+.hero-glow {
+  background:
+    radial-gradient(60% 55% at 30% 0%, color-mix(in oklch, var(--color-brand-sky) 22%, transparent), transparent 70%),
+    radial-gradient(45% 50% at 85% 20%, color-mix(in oklch, var(--color-brand-orange) 16%, transparent), transparent 70%);
+}
+
+/* The shared panel: slightly frosted, a hairline highlight on the top
+ * edge, soft depth underneath. */
+@utility surface {
+  background: color-mix(in oklch, var(--color-card) 62%, transparent);
+  border: 1px solid var(--color-border);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 5%),
+    0 18px 40px -24px oklch(0 0 0 / 70%);
+  backdrop-filter: blur(12px);
+}
+
+@utility glow-sky {
+  box-shadow: 0 10px 28px -12px color-mix(in oklch, var(--color-brand-sky) 70%, transparent);
+}
+
+@layer base {
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---- Hero backdrop (components/landing/hero-backdrop.tsx) ------------- */
+
+.hero-beam,
+.hero-flare,
+.hero-circuit,
+.hero-grain {
+  position: absolute;
+  inset: 0;
+}
+
+/* Oversized so the drifting blobs never reveal an edge. No blur filter:
+ * the radial gradients are already soft, and a filter over a moving layer
+ * forces a full repaint every frame (which the browser drops while
+ * scrolling). */
+.hero-aurora {
+  position: absolute;
+  inset: -40%;
+}
+
+.hero-blob {
+  position: absolute;
+  border-radius: 9999px;
+  mix-blend-mode: screen;
+}
+
+.hero-blob-1 {
+  width: 60vmax;
+  height: 60vmax;
+  left: 14%;
+  top: 4%;
+  background: radial-gradient(circle, var(--color-brand-sky), transparent 62%);
+  opacity: 0.38;
+}
+
+.hero-blob-2 {
+  width: 50vmax;
+  height: 50vmax;
+  left: 46%;
+  top: 8%;
+  background: radial-gradient(circle, oklch(0.55 0.19 262), transparent 62%);
+  opacity: 0.4;
+}
+
+.hero-blob-3 {
+  width: 58vmax;
+  height: 42vmax;
+  right: 12%;
+  bottom: 10%;
+  background: radial-gradient(ellipse, var(--color-brand-orange), transparent 62%);
+  opacity: 0.32;
+}
+
+.hero-blob-4 {
+  width: 34vmax;
+  height: 34vmax;
+  right: 32%;
+  top: 36%;
+  background: radial-gradient(circle, oklch(0.68 0.16 15), transparent 62%);
+  opacity: 0.18;
+}
+
+
+.hero-grain {
+  opacity: 0.09;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/* A band of light rising from the horizon across the whole hero: deep
+ * blue overhead, brightening to a white-hot line just above the horizon,
+ * warm at the base. The dark vertical lines give the streaked,
+ * light-through-blinds look and drift slowly sideways. */
+.hero-beam {
+  background:
+    linear-gradient(
+      to bottom,
+      transparent 0%,
+      oklch(0.3 0.12 266 / 35%) 22%,
+      oklch(0.38 0.15 260 / 50%) 48%,
+      oklch(0.52 0.17 250 / 80%) 66%,
+      var(--color-brand-sky) 74%,
+      oklch(0.92 0.05 215) 82%,
+      oklch(0.98 0.012 90) 86%,
+      oklch(0.84 0.12 58) 90%,
+      var(--color-brand-orange) 94%,
+      oklch(0.55 0.17 30) 100%
+    );
+  /* Fade only at the sides and the very top, so it reads as a band. */
+  mask-image:
+    linear-gradient(to right, transparent 0%, black 18%, black 82%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, black 45%);
+  mask-composite: intersect;
+  opacity: 0.8;
+  will-change: opacity;
+  animation: hero-breathe 11s ease-in-out infinite;
+}
+
+/* Dark vertical lines over the band. */
+.hero-streaks-mask {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  mask-image:
+    linear-gradient(to right, transparent 0%, black 18%, black 82%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, black 45%);
+  mask-composite: intersect;
+}
+
+.hero-streaks {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, oklch(0.12 0.02 255 / 55%) 0 1px, transparent 1px 3px, oklch(0.12 0.02 255 / 25%) 3px 4px, transparent 4px 7px);
+}
+
+/* Keeps the headline column readable over the light. */
+.hero-scrim {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 42% 50% at 24% 52%, oklch(0.155 0.006 250 / 60%), transparent 72%);
+}
+
+/* Hottest at the center of the horizon. */
+.hero-flare {
+  background:
+    radial-gradient(ellipse 30% 10% at 60% 88%, oklch(0.99 0.01 90 / 75%), transparent 70%),
+    radial-gradient(ellipse 60% 22% at 60% 100%, color-mix(in oklch, var(--color-brand-orange) 50%, transparent), transparent 70%);
+  mix-blend-mode: screen;
+  will-change: opacity;
+  animation: hero-breathe 11s ease-in-out infinite;
+}
+
+@keyframes hero-breathe {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 0.95; }
+}
+
+/* ---- Circuit overlay ---- */
+
+/* Fades out toward the top and clears a soft hole around the headline
+ * column so traces never run through the text. */
+.hero-circuit {
+  width: 100%;
+  height: 100%;
+  mask-image:
+    linear-gradient(to bottom, transparent 0%, black 45%),
+    radial-gradient(ellipse 38% 50% at 26% 48%, transparent 55%, black 92%);
+  mask-composite: intersect;
+}
+
+.hero-circuit-traces {
+  stroke: oklch(1 0 0 / 9%);
+  stroke-width: 1.4;
+}
+
+.hero-circuit-vias circle {
+  fill: oklch(0.155 0.006 250 / 60%);
+  stroke: oklch(1 0 0 / 16%);
+  stroke-width: 1.2;
+}
+
+.hero-circuit-parts rect {
+  fill: oklch(1 0 0 / 10%);
+}
+
+.hero-circuit-packages rect {
+  stroke: oklch(1 0 0 / 18%);
+  stroke-width: 1.4;
+}
+
+.hero-circuit-packages .hero-circuit-die {
+  stroke: oklch(0.98 0.012 90 / 35%);
+  fill: oklch(0.98 0.012 90 / 6%);
+}
+
+.hero-circuit-packages circle {
+  fill: oklch(1 0 0 / 12%);
+}
+
+.hero-signal {
+  stroke: var(--color-brand-sky);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 36 964;
+  animation: hero-signal linear infinite;
+}
+
+.hero-signal-warm {
+  stroke: oklch(0.88 0.11 65);
+}
+
+/* A wide, faint copy under each pulse stands in for a glow filter. */
+.hero-signal-glow {
+  stroke-width: 7;
+  opacity: 0.25;
+}
+
+@keyframes hero-signal {
+  from { stroke-dashoffset: 1000; }
+  to { stroke-dashoffset: 0; }
+}
+

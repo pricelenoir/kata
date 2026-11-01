@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { useSupabaseUser } from "@/lib/supabase/use-user";
 
@@ -10,34 +11,44 @@ export function AuthStatus() {
   const router = useRouter();
 
   if (user === undefined) {
-    // Auth state not resolved yet — reserve no space, avoids a flash.
-    return null;
+    // Auth state not resolved yet: hold the space so the header doesn't jump.
+    return <div className="h-8 w-16" aria-hidden />;
   }
 
   if (user === null) {
     return (
-      <Link href="/login" className="transition-colors hover:text-foreground">
+      <Button size="sm" nativeButton={false} render={<Link href="/login" />}>
         Log in
-      </Link>
+      </Button>
     );
   }
 
   async function handleSignOut() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
+    await createClient().auth.signOut();
     router.push("/");
   }
 
+  const initial = (user.email ?? "?").charAt(0).toUpperCase();
+
   return (
-    <div className="flex items-center gap-3">
-      <Link href="/account" className="transition-colors hover:text-foreground">
-        <span className="hidden font-mono text-xs sm:inline">{user.email}</span>
+    <div className="flex items-center gap-2 text-sm">
+      <Link
+        href="/account"
+        className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2.5 text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
+      >
+        <span
+          aria-hidden
+          className="grid size-6 place-items-center rounded-full bg-brand-sky text-[11px] font-semibold text-background"
+        >
+          {initial}
+        </span>
+        <span className="hidden max-w-40 truncate sm:inline">{user.email}</span>
         <span className="sm:hidden">Account</span>
       </Link>
       <button
         type="button"
         onClick={handleSignOut}
-        className="transition-colors hover:text-foreground"
+        className="rounded-md px-2 py-1.5 text-muted-foreground transition-colors hover:text-foreground"
       >
         Log out
       </button>

@@ -60,15 +60,15 @@ export function FillInBlankInteractive({
             : `${correctCount} of ${question.blanks.length} blanks correct.`)}
       </p>
 
-      <div className="overflow-hidden rounded-lg border border-border/60 bg-[#121212]">
+      <div className="overflow-hidden rounded-xl border border-border bg-[oklch(0.13_0.006_250)]">
         {question.snippet.filename && (
-          <div className="border-b border-border/60 px-4 py-2 font-mono text-xs text-muted-foreground">
+          <div className="border-b border-border px-4 py-2 font-mono text-xs text-muted-foreground">
             {question.snippet.filename}
           </div>
         )}
         <pre
           tabIndex={0}
-          className="overflow-x-auto p-4 font-mono text-[13px] leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400 focus-visible:-outline-offset-2"
+          className="overflow-x-auto p-4 font-mono text-[13px] leading-relaxed focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-sky focus-visible:-outline-offset-2"
         >
           <code>
             {templateTokens.map((line, lineIdx) => (
@@ -92,7 +92,7 @@ export function FillInBlankInteractive({
                     question.blanks.findIndex((b) => b.id === id) + 1;
                   const stateClass =
                     correct === null
-                      ? "border-dashed border-sky-400/60 bg-sky-500/10 text-sky-300 placeholder:text-sky-400/40 focus:border-solid focus:border-sky-400 focus:ring-1 focus:ring-sky-400"
+                      ? "border-dashed border-brand-sky/60 bg-brand-sky/10 text-brand-sky placeholder:text-brand-sky/40 focus:border-solid focus:border-sky-400 focus:ring-1 focus:ring-sky-400"
                       : correct
                         ? "border-emerald-500/60 bg-emerald-500/10 text-emerald-300"
                         : "border-red-500/60 bg-red-500/10 text-red-300";
@@ -130,13 +130,13 @@ export function FillInBlankInteractive({
       </div>
 
       {!checked ? (
-        <Button type="button" variant="secondary" onClick={handleCheck}>
+        <Button type="button" onClick={handleCheck} className="glow-sky border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90">
           Check Answer
         </Button>
       ) : (
         <div className="space-y-5">
           <div className="space-y-2">
-            <p className="font-mono text-xs text-muted-foreground">
+            <p className="text-sm font-medium text-foreground">
               Reference solution
             </p>
             {canonicalBlock}

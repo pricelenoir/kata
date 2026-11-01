@@ -1,8 +1,8 @@
 "use client";
 
 import { NextQuestionCta } from "@/components/question/next-question-cta";
-import { QuestionsTable } from "@/components/question/questions-table";
-import { StatsSummary } from "@/components/progress/stats-summary";
+import { QuestionsTable, type StatusFilter } from "@/components/question/questions-table";
+import { CompactStats } from "@/components/progress/compact-stats";
 import type { Category } from "@/types/category";
 import type { QuestionSummary } from "@/types/question";
 
@@ -11,21 +11,20 @@ import type { QuestionSummary } from "@/types/question";
 export function QuestionsBrowser({
   questions,
   initialCategory,
+  initialStatus,
 }: {
   questions: QuestionSummary[];
   initialCategory: Category | "all";
+  initialStatus: StatusFilter;
 }) {
   return (
     <>
-      <div className="mb-6">
+      <div className="mb-10 grid gap-4 lg:grid-cols-[1fr_auto]">
         <NextQuestionCta questions={questions} />
+        <CompactStats />
       </div>
 
-      <div className="mb-8">
-        <StatsSummary />
-      </div>
-
-      <QuestionsTable questions={questions} initialCategory={initialCategory} />
+      <QuestionsTable questions={questions} initialCategory={initialCategory} initialStatus={initialStatus} />
     </>
   );
 }

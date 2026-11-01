@@ -1,126 +1,179 @@
 import Link from "next/link";
+import { ArrowRightIcon, BarChart3Icon, BrainCircuitIcon, TerminalSquareIcon } from "lucide-react";
 import { SiteHeader } from "@/components/layout/site-header";
+import { HeroBackdrop } from "@/components/landing/hero-backdrop";
 import { CodeBlock } from "@/components/question/code-block";
-import { getQuestionById, getTotalQuestionCount } from "@/lib/questions";
-import { getAllCodingExercises } from "@/lib/coding-exercises";
-import { CATEGORIES } from "@/types/category";
+import { Button } from "@/components/ui/button";
+import { getQuestionById, getQuestionsByCategory } from "@/lib/questions";
+import { CATEGORIES, CATEGORY_META } from "@/types/category";
 
 const FEATURED_QUESTION_ID = "cpp-const-pointer-02";
 
+const FEATURES = [
+  {
+    icon: BrainCircuitIcon,
+    title: "Trace the code",
+    body: "Read a snippet and predict what really happens: object lifetimes, memory ordering, syscalls, cache behavior. Every answer comes with a full explanation.",
+    href: "/questions",
+  },
+  {
+    icon: TerminalSquareIcon,
+    title: "Write real solutions",
+    body: "Implement locks, queues, and data structures in C++ or Rust, then run them against hidden tests in a sandbox.",
+    href: "/coding",
+  },
+  {
+    icon: BarChart3Icon,
+    title: "Know where you stand",
+    body: "Accuracy by topic, a review queue of the questions you missed, and a streak to keep you coming back.",
+    href: "/progress",
+  },
+] as const;
+
 export default function LandingPage() {
-  const questionCount = getTotalQuestionCount();
-  const codingCount = getAllCodingExercises().length;
   const featured = getQuestionById(FEATURED_QUESTION_ID);
 
   return (
     <div className="flex flex-1 flex-col">
       <SiteHeader />
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-16">
-        <section className="mb-16 grid grid-cols-1 items-center gap-12 lg:grid-cols-2">
-          <div className="space-y-6">
-            <div
-              aria-hidden
-              className="animate-in fade-in-0 slide-in-from-bottom-3 fill-mode-both font-mono text-6xl font-semibold tracking-tight text-foreground duration-700 sm:text-7xl"
-            >
-              kata
-              <span
-                className="text-sky-400"
-                style={{ animation: "cursor-blink 1s step-end 0.7s infinite" }}
-              >
-                /
-              </span>
-            </div>
-            <h1 className="animate-in fade-in-0 slide-in-from-bottom-3 fill-mode-both text-4xl font-semibold tracking-tight text-foreground delay-150 duration-700">
-              Train like it&apos;s the interview.
-            </h1>
-            <p className="animate-in fade-in-0 slide-in-from-bottom-3 fill-mode-both text-base leading-relaxed text-muted-foreground delay-300 duration-700">
-              A personal prep ground for deep C++ and systems interviews.
-              Trace code like the compiler would, then write and run real
-              solutions.
-            </p>
-          </div>
-
-          {featured?.snippet && (
-            <div className="animate-in fade-in-0 slide-in-from-bottom-3 fill-mode-both space-y-2 delay-500 duration-700">
-              <p className="font-mono text-xs text-muted-foreground">
-                {featured.prompt}
+      <main className="flex-1">
+        {/* ---- Hero ---- */}
+        <section className="relative overflow-hidden">
+          <HeroBackdrop />
+          <div className="relative mx-auto grid max-w-6xl grid-cols-1 items-center gap-14 px-4 pb-20 pt-16 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pb-28 lg:pt-24">
+            <div className="space-y-7 animate-in fade-in-0 slide-in-from-bottom-2 duration-700">
+              <h1 className="text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl">
+                Train like it&apos;s
+                <br />
+                the interview.
+              </h1>
+              <p className="max-w-lg text-lg leading-relaxed text-muted-foreground">
+                Deep C++ and systems practice for engineers who want to understand what the machine is actually
+                doing, not memorize answers.
               </p>
-              <CodeBlock snippet={featured.snippet} />
-              <Link
-                href={`/questions/${featured.category}/${featured.id}`}
-                className="inline-flex items-center gap-1 font-mono text-xs text-sky-400 transition-colors hover:text-sky-300"
-              >
-                trace it yourself &rarr;
-              </Link>
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  size="lg"
+                  nativeButton={false}
+                  render={<Link href="/questions" />}
+                  className="h-11 border-0 bg-white px-5 text-[15px] font-semibold text-[oklch(0.17_0.01_250)] shadow-[0_0_44px_-10px] shadow-brand-sky/80 hover:bg-white/90 active:translate-y-px"
+                >
+                  Start practicing
+                  <ArrowRightIcon />
+                </Button>
+                <Button size="lg" variant="outline" nativeButton={false} render={<Link href="/coding" />} className="h-11 border-white/15 !bg-[oklch(0.16_0.008_250/0.92)] px-5 text-[15px] font-medium text-foreground backdrop-blur hover:!bg-[oklch(0.21_0.01_250/0.95)]">
+                  Try a coding exercise
+                </Button>
+              </div>
             </div>
-          )}
+
+            {featured?.snippet && (
+              <div className="relative animate-in fade-in-0 slide-in-from-bottom-3 duration-700 delay-150 fill-mode-both">
+                <div
+                  aria-hidden
+                  className="absolute -inset-6 rounded-[2rem] bg-brand-gradient opacity-[0.12] blur-3xl"
+                />
+                <figure className="border-brand-gradient relative overflow-hidden rounded-2xl shadow-2xl shadow-black/40 backdrop-blur-xl">
+                  <div className="flex items-center gap-2 border-b border-border/70 px-4 py-3">
+                    <span aria-hidden className="flex gap-1.5">
+                      <span className="size-2.5 rounded-full bg-foreground/15" />
+                      <span className="size-2.5 rounded-full bg-foreground/15" />
+                      <span className="size-2.5 rounded-full bg-foreground/15" />
+                    </span>
+                    <span className="ml-2 text-xs text-muted-foreground">{CATEGORY_META[featured.category].label}</span>
+                  </div>
+                  <div className="space-y-4 p-5">
+                    <figcaption className="text-[15px] font-medium text-foreground">{featured.prompt}</figcaption>
+                    <CodeBlock snippet={featured.snippet} />
+                    <Link
+                      href={`/questions/${featured.category}/${featured.id}`}
+                      className="group inline-flex items-center gap-1.5 text-sm font-medium text-brand-sky"
+                    >
+                      Answer this question
+                      <ArrowRightIcon className="size-4 transition-transform group-hover:translate-x-0.5" />
+                    </Link>
+                  </div>
+                </figure>
+              </div>
+            )}
+          </div>
         </section>
 
-        <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <NavCard
-            href="/questions"
-            accent="text-sky-400"
-            title="Questions"
-            description="Predict-the-output trace questions across C++, OS, concurrency, networking, and more."
-            meta={`${questionCount} questions · ${CATEGORIES.length} categories`}
-            delay="delay-500"
-          />
-          <NavCard
-            href="/coding"
-            accent="text-emerald-400"
-            title="Coding Exercises"
-            description="Write and run real solutions, judged against test cases. Filter by language, difficulty, or topic."
-            meta={`${codingCount} exercises`}
-            delay="delay-700"
-          />
-          <NavCard
-            href="/progress"
-            accent="text-amber-400"
-            title="Progress"
-            description="Track your accuracy, your streak, and what to review next."
-            meta="Your stats"
-            delay="delay-1000"
-          />
+        {/* ---- What you do here ---- */}
+        <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+          <h2 className="max-w-xl text-3xl font-semibold tracking-tight text-foreground">
+            Practice the parts of an interview that are hard to fake.
+          </h2>
+          <div className="mt-12 grid gap-10 md:grid-cols-3">
+            {FEATURES.map(({ icon: Icon, title, body, href }) => (
+              <Link key={title} href={href} className="group space-y-3 rounded-lg">
+                <span className="grid size-10 place-items-center rounded-lg border border-border bg-card text-brand-sky transition-colors group-hover:border-brand-sky/40">
+                  <Icon className="size-5" />
+                </span>
+                <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+                <p className="text-sm leading-relaxed text-muted-foreground">{body}</p>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        {/* ---- Topics ---- */}
+        <section className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="space-y-2">
+              <h2 className="text-3xl font-semibold tracking-tight text-foreground">Topics</h2>
+              <p className="text-muted-foreground">Pick one to focus on, or mix them all.</p>
+            </div>
+            <Link href="/questions" className="text-sm font-medium text-brand-sky hover:underline underline-offset-4">
+              Browse all questions
+            </Link>
+          </div>
+          <ul className="mt-8 grid overflow-hidden rounded-2xl surface sm:grid-cols-2">
+            {CATEGORIES.map((id) => {
+              const meta = CATEGORY_META[id];
+              return (
+                <li key={id} className="border-border/70 [&:not(:last-child)]:border-b sm:[&:nth-child(odd)]:border-r sm:[&:nth-last-child(2):nth-child(odd)]:border-b-0">
+                  <Link
+                    href={`/questions?category=${id}`}
+                    className="group flex h-full items-start justify-between gap-6 px-6 py-5 transition-colors hover:bg-foreground/[0.03]"
+                  >
+                    <span className="space-y-1">
+                      <span className="block font-medium text-foreground">{meta.label}</span>
+                      <span className="block text-sm leading-relaxed text-muted-foreground">{meta.description}</span>
+                    </span>
+                    <span className="shrink-0 pt-0.5 text-sm tabular-nums text-muted-foreground transition-colors group-hover:text-foreground">
+                      {getQuestionsByCategory(id).length}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+
+        {/* ---- Closing CTA ---- */}
+        <section className="mx-auto max-w-6xl px-4 pt-32 pb-8 sm:px-6">
+          <div className="mx-auto max-w-2xl text-center">
+            <div className="space-y-6">
+              <h2 className="text-3xl font-semibold tracking-tight text-foreground sm:text-[2.5rem] sm:leading-[1.1]">
+                Your next interview won&apos;t be multiple choice.
+              </h2>
+              <p className="mx-auto max-w-md text-pretty text-muted-foreground">
+                Knowing why every wrong answer is wrong is how you get ready for it. Start with one question.
+              </p>
+              <Button
+                size="lg"
+                nativeButton={false}
+                render={<Link href="/questions" />}
+                className="h-11 px-5 text-[15px] glow-sky border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90"
+              >
+                Start practicing
+                <ArrowRightIcon />
+              </Button>
+            </div>
+          </div>
         </section>
       </main>
     </div>
-  );
-}
-
-function NavCard({
-  href,
-  accent,
-  title,
-  description,
-  meta,
-  delay,
-}: {
-  href: string;
-  accent: string;
-  title: string;
-  description: string;
-  meta: string;
-  delay: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className={`group flex h-full flex-col justify-between gap-6 rounded-xl bg-card p-5 ring-1 ring-foreground/10 transition-colors animate-in fade-in-0 slide-in-from-bottom-3 fill-mode-both duration-700 ${delay} hover:ring-foreground/20`}
-    >
-      <div className="space-y-2">
-        <h2 className={`font-mono text-sm font-medium ${accent}`}>
-          {title}
-        </h2>
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          {description}
-        </p>
-      </div>
-      <div className="flex items-center justify-between font-mono text-xs text-muted-foreground">
-        <span>{meta}</span>
-        <span className="transition-transform group-hover:translate-x-0.5">
-          &rarr;
-        </span>
-      </div>
-    </Link>
   );
 }

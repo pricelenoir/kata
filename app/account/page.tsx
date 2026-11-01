@@ -14,7 +14,7 @@ import { useSupabaseUser } from "@/lib/supabase/use-user";
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-3 border-t border-border/60 pt-6">
-      <h2 className="font-mono text-xs uppercase tracking-wide text-muted-foreground">{title}</h2>
+      <h2 className="text-base font-semibold text-foreground">{title}</h2>
       {children}
     </section>
   );
@@ -40,7 +40,7 @@ export default function AccountPage() {
 
         {user === null && (
           <p className="text-sm text-muted-foreground">
-            <Link href="/login?next=/account" className="text-sky-400 hover:text-sky-300">
+            <Link href="/login?next=/account" className="text-brand-sky hover:underline underline-offset-4">
               Log in
             </Link>{" "}
             to manage your account.

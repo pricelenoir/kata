@@ -10,7 +10,7 @@ const CodingWorkspace = dynamic(
   () => import("@/components/coding/coding-workspace").then((m) => m.CodingWorkspace),
   {
     ssr: false,
-    loading: () => <Skeleton className="h-[34rem] w-full rounded-lg" />,
+    loading: () => <Skeleton className="h-[max(34rem,calc(100dvh-10rem))] w-full rounded-xl" />,
   },
 );
 

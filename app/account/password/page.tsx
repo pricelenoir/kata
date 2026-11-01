@@ -22,7 +22,7 @@ export default function NewPasswordPage() {
         {user === null && (
           <p className="text-sm text-muted-foreground">
             This reset link has expired.{" "}
-            <Link href="/login" className="text-sky-400 hover:text-sky-300">
+            <Link href="/login" className="text-brand-sky hover:underline underline-offset-4">
               Request a new one
             </Link>
             .

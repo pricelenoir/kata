@@ -4,7 +4,7 @@ import { CheckIcon, LockIcon, XIcon } from "lucide-react";
 import type { JsonValue, TestCase } from "@/types/coding-exercise";
 import { VERDICT_LABEL, type JudgeResult, type TestOutcome, type Verdict } from "@/types/submission";
 
-const VERDICT_CLASS: Record<Verdict, string> = {
+export const VERDICT_CLASS: Record<Verdict, string> = {
   accepted: "text-emerald-400",
   wrong_answer: "text-red-400",
   time_limit: "text-amber-400",
@@ -29,8 +29,8 @@ function inputText(input: TestCase | undefined): string {
 function Pre({ label, text }: { label: string; text: string }) {
   return (
     <div className="space-y-1">
-      <div className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
-      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md border border-border/60 bg-[#121212] px-3 py-2 font-mono text-xs text-foreground">
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded-md border border-border/60 bg-[oklch(0.13_0.006_250)] px-3 py-2 font-mono text-xs text-foreground">
         {text === "" ? <span className="text-muted-foreground">(empty)</span> : text}
       </pre>
     </div>
@@ -39,7 +39,7 @@ function Pre({ label, text }: { label: string; text: string }) {
 
 function testTitle(t: TestOutcome, exampleNumber: number): string {
   if (t.custom) return "Custom input";
-  if (t.hidden) return t.label ? `Hidden test — ${t.label}` : "Hidden test";
+  if (t.hidden) return t.label ? `Hidden test: ${t.label}` : "Hidden test";
   return `Example ${exampleNumber}`;
 }
 
@@ -53,9 +53,10 @@ function TestRow({ test, exampleNumber }: { test: TestOutcome; exampleNumber: nu
         <Icon className={`size-3.5 shrink-0 ${passed ? "text-emerald-400" : VERDICT_CLASS[test.verdict]}`} />
         <span className="truncate text-foreground">{testTitle(test, exampleNumber)}</span>
       </span>
-      <span className="shrink-0 font-mono text-xs text-muted-foreground">
-        {!passed && <span className={`mr-2 ${VERDICT_CLASS[test.verdict]}`}>{VERDICT_LABEL[test.verdict]}</span>}
-        {test.timeMs} ms · {(test.memoryKb / 1024).toFixed(1)} MB
+      <span className="flex shrink-0 items-center gap-3 text-xs tabular-nums text-muted-foreground">
+        {!passed && <span className={VERDICT_CLASS[test.verdict]}>{VERDICT_LABEL[test.verdict]}</span>}
+        <span>{test.timeMs} ms</span>
+        <span>{(test.memoryKb / 1024).toFixed(1)} MB</span>
       </span>
     </div>
   );
@@ -87,8 +88,12 @@ export function SubmissionResult({ result }: { result: JudgeResult }) {
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className={`text-lg font-semibold ${VERDICT_CLASS[result.verdict]}`}>{VERDICT_LABEL[result.verdict]}</h3>
         {result.verdict !== "compile_error" && result.total > 0 && (
-          <span className="font-mono text-xs text-muted-foreground">
-            {result.passed}/{result.total} passed · {result.timeMs} ms · {(result.memoryKb / 1024).toFixed(1)} MB
+          <span className="flex items-center gap-3 text-xs tabular-nums text-muted-foreground">
+            <span>
+              {result.passed}/{result.total} passed
+            </span>
+            <span>{result.timeMs} ms</span>
+            <span>{(result.memoryKb / 1024).toFixed(1)} MB</span>
           </span>
         )}
       </div>
@@ -100,7 +105,7 @@ export function SubmissionResult({ result }: { result: JudgeResult }) {
       )}
 
       {result.tests.length > 0 && (
-        <ul className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60">
+        <ul className="divide-y divide-border/60 overflow-hidden rounded-xl surface">
           {result.tests.map((t) => (
             <TestRow key={t.index} test={t} exampleNumber={!t.hidden && !t.custom ? ++example : 0} />
           ))}

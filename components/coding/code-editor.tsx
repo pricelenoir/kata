@@ -12,14 +12,14 @@ import type { Language } from "@/types/coding-exercise";
 const kataTheme = createTheme({
   theme: "dark",
   settings: {
-    background: "#121212",
+    background: "oklch(0.13 0.006 250)",
     foreground: "#e4e4e7",
     caret: "#38bdf8",
     selection: "#38bdf833",
     selectionMatch: "#38bdf822",
     lineHighlight: "#ffffff08",
-    gutterBackground: "#121212",
-    gutterForeground: "#52525b",
+    gutterBackground: "oklch(0.13 0.006 250)",
+    gutterForeground: "#4b5563",
     gutterBorder: "transparent",
     fontFamily: "var(--font-mono)",
   },
@@ -55,10 +55,12 @@ export function CodeEditor({
       onChange={onChange}
       theme={kataTheme}
       extensions={LANGUAGE_EXTENSIONS[language]}
-      height="28rem"
+      // Fill the screen below the toolbar, then keep growing with the code
+      // so a long solution is never trapped in an inner scroll box.
+      minHeight="max(28rem, calc(100dvh - 15rem))"
       basicSetup={{ tabSize: 4, foldGutter: false }}
       indentWithTab
-      className="overflow-hidden rounded-lg border border-border/60 text-[13px]"
+      className="text-[13px] [&_.cm-editor]:outline-none! [&_.cm-gutters]:pr-1"
       aria-label="Solution editor"
     />
   );

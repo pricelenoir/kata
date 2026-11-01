@@ -3,13 +3,11 @@ import { notFound } from "next/navigation";
 import { SiteHeader } from "@/components/layout/site-header";
 import { CodeBlock } from "@/components/question/code-block";
 import { FillInBlankInteractive } from "@/components/question/fill-in-blank-interactive";
-import { InlineText } from "@/components/question/inline-code";
 import { QuestionInteractive } from "@/components/question/question-interactive";
 import { QuestionNav } from "@/components/question/question-nav";
-import { Badge } from "@/components/ui/badge";
+import { DetailHeader } from "@/components/layout/detail-header";
 import { CATEGORIES, CATEGORY_META, type Category } from "@/types/category";
 import { getAllQuestions, getQuestionById } from "@/lib/questions";
-import { DIFFICULTY_CLASS } from "@/lib/difficulty";
 import { tokenizeCode } from "@/lib/code-highlight";
 import type { FillInBlankQuestion } from "@/types/question";
 
@@ -53,36 +51,20 @@ export default async function QuestionPage({ params }: { params: Params }) {
   if (!question) notFound();
   const category = question.category;
 
-  const meta = CATEGORY_META[category];
 
   return (
     <div className="flex flex-1 flex-col">
       <SiteHeader />
-      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-10">
-        <div className="mb-6 space-y-3">
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="outline"
-              className={`font-mono text-xs ${meta.badgeClassName}`}
-            >
-              {meta.label}
-            </Badge>
-            <Badge
-              variant="outline"
-              className={`font-mono text-[10px] uppercase ${DIFFICULTY_CLASS[question.difficulty]}`}
-            >
-              {question.difficulty}
-            </Badge>
-          </div>
-          <h1 className="text-xl font-semibold tracking-tight text-foreground">
-            {question.title}
-          </h1>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            <InlineText text={question.prompt} />
-          </p>
-        </div>
+      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-10 sm:px-6">
+        <DetailHeader
+          section={{ label: "Questions", href: "/questions" }}
+          category={category}
+          difficulty={question.difficulty}
+          title={question.title}
+          prompt={question.prompt}
+        />
 
-        <div className="space-y-6">
+        <div className="mt-8 space-y-6">
           {question.type === "fill-in-blank" ? (
             <FillInBlankQuestionBlock question={question} />
           ) : (
@@ -93,7 +75,7 @@ export default async function QuestionPage({ params }: { params: Params }) {
           )}
         </div>
 
-        <div className="mt-8">
+        <div className="mt-10">
           <QuestionNav category={category} questionId={question.id} />
         </div>
       </main>

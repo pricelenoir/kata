@@ -1,34 +1,33 @@
 import type { Metadata } from "next";
+import { PageHeader } from "@/components/layout/page-header";
 import { SiteHeader } from "@/components/layout/site-header";
 import { CodingExerciseTable } from "@/components/coding/coding-exercise-table";
-import { StatsSummary } from "@/components/progress/stats-summary";
 import { getAllCodingExerciseSummaries } from "@/lib/coding-exercises";
+import { CATEGORIES, type Category } from "@/types/category";
 
 export const metadata: Metadata = {
   title: "Coding",
 };
 
-export default function CodingExercisesPage() {
+export default async function CodingExercisesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ category?: string }>;
+}) {
   const exercises = getAllCodingExerciseSummaries();
+  const { category } = await searchParams;
+  const initialCategory = CATEGORIES.includes(category as Category) ? (category as Category) : "all";
 
   return (
     <div className="flex flex-1 flex-col animate-in fade-in-0 duration-300">
       <SiteHeader />
-      <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
-        <div className="mb-10 space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Write it. Run it.
-          </h1>
-          <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
-            Write and run real solutions, judged against test cases.
-          </p>
-        </div>
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-12 sm:px-6">
+        <PageHeader
+          title="Coding"
+          description="Implement real systems primitives and run them against hidden tests in a sandbox."
+        />
 
-        <div className="mb-8">
-          <StatsSummary />
-        </div>
-
-        <CodingExerciseTable exercises={exercises} />
+        <CodingExerciseTable exercises={exercises} initialCategory={initialCategory} />
       </main>
     </div>
   );

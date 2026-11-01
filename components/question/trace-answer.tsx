@@ -54,16 +54,16 @@ function MultipleChoiceAnswer({
         const isCorrect = idx === format.correctIndex;
         const isPicked = idx === selected;
 
-        let stateClass = "border-border/60 hover:border-border hover:bg-muted/50";
-        let letterClass = "text-muted-foreground";
+        let stateClass = "border-border bg-card/60 hover:border-brand-sky/50 hover:bg-foreground/[0.04]";
+        let letterClass = "border-border text-muted-foreground";
         if (locked && isCorrect) {
-          stateClass = "!border-emerald-500 !bg-emerald-500/20 text-emerald-200";
-          letterClass = "text-emerald-200";
+          stateClass = "!border-emerald-500/70 !bg-emerald-500/10 text-foreground";
+          letterClass = "border-emerald-500/60 bg-emerald-500/15 text-emerald-300";
         } else if (locked && isPicked && !isCorrect) {
-          stateClass = "!border-red-500 !bg-red-500/20 text-red-200";
-          letterClass = "text-red-200";
+          stateClass = "!border-red-500/70 !bg-red-500/10 text-foreground";
+          letterClass = "border-red-500/60 bg-red-500/15 text-red-300";
         } else if (locked) {
-          stateClass = "border-border/40 opacity-50";
+          stateClass = "border-border/60 bg-card/30 opacity-55";
         }
 
         return (
@@ -73,9 +73,9 @@ function MultipleChoiceAnswer({
             variant="outline"
             onClick={() => pick(idx)}
             disabled={locked}
-            className={`h-auto w-full justify-start whitespace-normal rounded-lg border px-4 py-3 text-left text-sm font-normal disabled:opacity-100 ${stateClass}`}
+            className={`h-auto w-full justify-start gap-3 whitespace-normal rounded-xl border px-4 py-3.5 text-left text-[15px] font-normal transition-colors disabled:opacity-100 ${stateClass}`}
           >
-            <span className={`mr-2 font-mono text-xs ${letterClass}`}>
+            <span className={`grid size-6 shrink-0 place-items-center rounded-md border text-xs font-medium ${letterClass}`}>
               {String.fromCharCode(65 + idx)}
             </span>
             <span className="flex-1">{choice}</span>
@@ -117,7 +117,7 @@ function SelfAssessedAnswer({
 
   if (judged) {
     return (
-      <p className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+      <p className="surface rounded-xl px-4 py-3 text-sm text-muted-foreground">
         Recorded.
       </p>
     );
@@ -133,12 +133,12 @@ function SelfAssessedAnswer({
         rows={3}
       />
       {!revealed ? (
-        <Button type="button" variant="secondary" onClick={() => setRevealed(true)}>
+        <Button type="button" onClick={() => setRevealed(true)} className="glow-sky border-0 bg-brand-sky font-semibold text-background hover:bg-brand-sky/90">
           Reveal Answer
         </Button>
       ) : (
         <div className="space-y-3">
-          <div className="rounded-lg border border-border/60 bg-muted/30 px-4 py-3 text-sm">
+          <div className="surface rounded-xl px-4 py-3 text-sm">
             <InlineText text={format.canonicalAnswer} />
           </div>
           <div className="flex gap-2">

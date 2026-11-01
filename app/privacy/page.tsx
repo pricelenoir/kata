@@ -49,7 +49,7 @@ export default function PrivacyPage() {
         <h2>Questions</h2>
         <p>
           Open an issue on{" "}
-          <a href="https://github.com/pricelenoir/kata/issues" className="text-sky-400 hover:text-sky-300">
+          <a href="https://github.com/pricelenoir/kata/issues" className="text-brand-sky hover:underline underline-offset-4">
             GitHub
           </a>
           .
