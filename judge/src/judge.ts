@@ -225,24 +225,36 @@ export async function judge(req: JudgeRequest, opts: JudgeOptions): Promise<Judg
       return ok;
     };
 
+    // The compile sandbox is the biggest one; it's only kept through the
+    // regular tests when instrumented builds may still be needed.
+    if (checks.length === 0) await compileBox.destroy().catch(() => {});
     const passed = await runPhase(binary, req.tests, limits, {});
 
     // ---- sanitizers ----
     // Only once the regular tests pass: a sanitizer report about a solution
-    // that's already wrong is noise.
-    if (passed) {
-      for (const { check, build, tests } of checks) {
-        const built = await unlessKilled(compileBox, () => compileBox.runOnce(build.compile, COMPILE_LIMITS));
+    // that's already wrong is noise. Every instrumented build is made first,
+    // so the compile sandbox is gone before any instrumented run starts.
+    if (passed && checks.length > 0) {
+      const builds: { check: PlannedCheck; binary: Buffer }[] = [];
+      for (const planned of checks) {
+        const built = await unlessKilled(compileBox, () => compileBox.runOnce(planned.build.compile, COMPILE_LIMITS));
         if ("killed" in built || built.value.timedOut || built.value.exit !== 0) {
-          const output = "killed" in built ? "" : [built.value.stdout.toString("utf8"), built.value.stderr.toString("utf8")].join("\n").trim();
+          // The same source already compiled, so this is the judge's problem
+          // (instrumented builds are slower and bigger), not the user's.
+          const output =
+            "killed" in built ? "the compiler ran out of resources" : built.value.timedOut ? "timed out" : built.value.stderr.toString("utf8");
           return {
-            ...summarize(outcomes, total),
-            verdict: "compile_error",
-            compileOutput: truncate(`The ${SANITIZER_LABEL[check.sanitizer]} build failed.\n${output}`, 16 * 1024),
+            ...internalError(`The ${SANITIZER_LABEL[planned.check.sanitizer]} build failed: ${truncate(output.trim(), 2048)}`, total),
+            passed: outcomes.filter((t) => !t.custom && t.verdict === "accepted").length,
+            tests: outcomes,
           };
         }
-        const instrumented = await compileBox.readFile(build.compile[build.compile.indexOf("-o") + 1]);
-        const ok = await runPhase(instrumented, tests, sanitizerLimits(exercise, check), build.env);
+        builds.push({ check: planned, binary: await compileBox.readFile(planned.build.compile[planned.build.compile.indexOf("-o") + 1]) });
+      }
+      await compileBox.destroy().catch(() => {});
+
+      for (const { check, binary: instrumented } of builds) {
+        const ok = await runPhase(instrumented, check.tests, sanitizerLimits(exercise, check.check), check.build.env);
         if (!ok && req.stopOnFirstFailure) break;
       }
     }
