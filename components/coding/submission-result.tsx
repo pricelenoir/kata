@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckIcon, LockIcon, XIcon } from "lucide-react";
-import type { JsonValue, TestCase } from "@/types/coding-exercise";
+import { SANITIZER_LABEL, type JsonValue, type TestCase } from "@/types/coding-exercise";
 import { VERDICT_LABEL, type JudgeResult, type TestOutcome, type Verdict } from "@/types/submission";
 
 export const VERDICT_CLASS: Record<Verdict, string> = {
@@ -10,6 +10,7 @@ export const VERDICT_CLASS: Record<Verdict, string> = {
   time_limit: "text-amber-400",
   memory_limit: "text-amber-400",
   output_limit: "text-amber-400",
+  sanitizer: "text-red-400",
   runtime_error: "text-red-400",
   compile_error: "text-red-400",
   internal_error: "text-muted-foreground",
@@ -39,6 +40,7 @@ function Pre({ label, text }: { label: string; text: string }) {
 
 function testTitle(t: TestOutcome, exampleNumber: number): string {
   if (t.custom) return "Custom input";
+  if (t.sanitizer) return `${SANITIZER_LABEL[t.sanitizer]} ${exampleNumber}`;
   if (t.hidden) return t.label ? `Hidden test: ${t.label}` : "Hidden test";
   return `Example ${exampleNumber}`;
 }
@@ -46,7 +48,7 @@ function testTitle(t: TestOutcome, exampleNumber: number): string {
 function TestRow({ test, exampleNumber }: { test: TestOutcome; exampleNumber: number }) {
   const passed = test.verdict === "accepted";
   const Icon = test.hidden && passed ? LockIcon : passed ? CheckIcon : XIcon;
-  const hasDetails = !test.hidden && (test.input || test.stdout || test.stderr || test.actual !== undefined);
+  const hasDetails = !test.hidden && (test.input || test.stdout || test.stderr || test.report || test.actual !== undefined);
   const summary = (
     <div className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
       <span className="flex min-w-0 items-center gap-2">
@@ -68,6 +70,17 @@ function TestRow({ test, exampleNumber }: { test: TestOutcome; exampleNumber: nu
         <summary className="cursor-pointer list-none hover:bg-muted/40">{summary}</summary>
         <div className="space-y-3 px-3 pb-3">
           {test.message && <p className="text-xs text-muted-foreground">{test.message}</p>}
+          {test.report && (
+            <>
+              <Pre label={`${test.sanitizer ? SANITIZER_LABEL[test.sanitizer] : "Sanitizer"} report`} text={test.report} />
+              {test.report.includes("kata_driver.") && (
+                <p className="text-xs text-muted-foreground">
+                  <code className="font-mono">kata_driver</code> lines are in the test driver, shown under &ldquo;How
+                  your code is tested&rdquo;. A race there is usually on data your code was meant to protect.
+                </p>
+              )}
+            </>
+          )}
           <Pre label="Input" text={inputText(test.input)} />
           {!test.custom && <Pre label="Expected" text={show(test.expected)} />}
           {test.actual !== undefined && <Pre label={test.custom ? "Output" : "Your output"} text={show(test.actual)} />}
@@ -81,6 +94,7 @@ function TestRow({ test, exampleNumber }: { test: TestOutcome; exampleNumber: nu
 
 export function SubmissionResult({ result }: { result: JudgeResult }) {
   let example = 0;
+  let sanitized = 0;
   const notRun = result.total - result.tests.filter((t) => !t.custom).length;
 
   return (
@@ -107,7 +121,11 @@ export function SubmissionResult({ result }: { result: JudgeResult }) {
       {result.tests.length > 0 && (
         <ul className="divide-y divide-border/60 overflow-hidden rounded-xl surface">
           {result.tests.map((t) => (
-            <TestRow key={t.index} test={t} exampleNumber={!t.hidden && !t.custom ? ++example : 0} />
+            <TestRow
+              key={t.index}
+              test={t}
+              exampleNumber={t.sanitizer ? ++sanitized : !t.hidden && !t.custom ? ++example : 0}
+            />
           ))}
         </ul>
       )}

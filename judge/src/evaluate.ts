@@ -1,7 +1,9 @@
-import type { CodingExercise, JsonValue, TestCase } from "@/types/coding-exercise";
+import type { CodingExercise, JsonValue, Limits, Sanitizer, TestCase } from "@/types/coding-exercise";
 import type { TestOutcome, Verdict } from "@/types/submission";
 import { outputsMatch } from "./checker";
+import { SANITIZER_EXIT } from "./languages";
 import type { RunRecord } from "./sandbox";
+import { parseSanitizerReport } from "./sanitizer";
 import { decodeTestOutput } from "./wire";
 
 const SIGNAL_NAMES: Record<number, string> = {
@@ -32,6 +34,9 @@ export interface ClassifyOptions {
    * counts untouched thread stack reservations, so there the sandbox's
    * cgroup limit decides MLE instead. */
   rssReliable: boolean;
+  /** Limits the run was held to, when not the exercise's own (sanitizer
+   * builds get their own). */
+  limits?: Limits;
 }
 
 export function classifyRun(
@@ -81,6 +86,8 @@ export interface PlannedTest {
   test: TestCase;
   hidden: boolean;
   custom?: boolean;
+  /** Run against this sanitizer's instrumented build. */
+  sanitizer?: Sanitizer;
   label?: string;
 }
 
@@ -95,6 +102,7 @@ export function evaluateTest(
     index,
     hidden: planned.hidden,
     ...(planned.custom ? { custom: true } : {}),
+    ...(planned.sanitizer ? { sanitizer: planned.sanitizer } : {}),
     ...(planned.label ? { label: planned.label } : {}),
     timeMs: record.cpuMs,
     memoryKb: record.rssKb,
@@ -106,8 +114,21 @@ export function evaluateTest(
     return { ...base, ...outcome };
   };
 
-  const stderr = truncate(record.stderr.toString("utf8"));
-  const failure = classifyRun(record, exercise.limits, options);
+  const rawStderr = record.stderr.toString("utf8");
+  // A sanitizer report wins over everything but the hard limits: the
+  // program stopped because of it, not because its output was wrong.
+  const report =
+    planned.sanitizer && record.exit === SANITIZER_EXIT && !record.timedOut && !record.outputLimit
+      ? parseSanitizerReport(rawStderr)
+      : null;
+  const stderr = truncate(report ? report.rest : rawStderr);
+  const failure = report
+    ? {
+        // ASan reports running out of memory itself; that's still MLE.
+        verdict: /out[- ]of[- ]memory|rss-limit-exceeded/.test(report.summary) ? ("memory_limit" as const) : ("sanitizer" as const),
+        message: report.summary,
+      }
+    : classifyRun(record, options.limits ?? exercise.limits, options);
   if (record.exit === DRIVER_BAD_INPUT && exercise.mode !== "stdio" && exercise.mode !== "harness") {
     return { ...base, verdict: "internal_error", message: "the test driver couldn't read this test's input" };
   }
@@ -121,6 +142,7 @@ export function evaluateTest(
     ...(planned.custom ? {} : { expected }),
     ...(stdout ? { stdout } : {}),
     ...(stderr ? { stderr } : {}),
+    ...(report ? { report: report.report } : {}),
   };
 
   if (failure) {

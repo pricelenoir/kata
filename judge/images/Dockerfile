@@ -26,8 +26,18 @@ FROM base AS cpp
 RUN apt-get update \
  && apt-get install -y --no-install-recommends g++ libc6-dev \
  && rm -rf /var/lib/apt/lists/*
+# One precompiled header per build flavor, in a .gch directory: GCC uses the
+# first one whose flags match the compile (see `cppFlags` in
+# judge/src/languages.ts, which these must match exactly). Without a match
+# GCC silently falls back to parsing every header, ~1.5 s per compile.
 COPY kata_prelude.h /opt/kata/kata_prelude.h
-RUN g++ -std=gnu++23 -O2 -x c++-header /opt/kata/kata_prelude.h -o /opt/kata/kata_prelude.h.gch
+RUN mkdir /opt/kata/kata_prelude.h.gch \
+ && cd /opt/kata \
+ && g++ -std=gnu++23 -O2 -x c++-header kata_prelude.h -o kata_prelude.h.gch/plain.gch \
+ && g++ -std=gnu++23 -O2 -g -fno-omit-frame-pointer -fsanitize=thread \
+        -x c++-header kata_prelude.h -o kata_prelude.h.gch/thread.gch \
+ && g++ -std=gnu++23 -O2 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=all \
+        -x c++-header kata_prelude.h -o kata_prelude.h.gch/address.gch
 
 FROM base AS rust
 RUN apt-get update \

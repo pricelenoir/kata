@@ -20,6 +20,17 @@ Spinning burns CPU, and the holder can be preempted while everyone else spins. T
     "The program gets 2 CPUs; CPU time is summed across all threads",
   ],
   limits: { timeMs: 4000, memoryMb: 256, cpus: 2 },
+  // On x86, a lock built from relaxed operations still produces the right
+  // count (the hardware orders stores anyway); ThreadSanitizer checks the
+  // C++ memory model instead, so a missing acquire/release is a data race
+  // on the counter.
+  sanitizers: [
+    {
+      sanitizer: "thread",
+      tests: [{ stdin: "4 2000\n", expected: "try_lock 101\ncounter 8000\noverlaps none\n" }],
+      limits: { timeMs: 10_000 },
+    },
+  ],
   starterCode: {
     cpp: `// Every standard header is already included; nothing is \`using\`-imported.
 

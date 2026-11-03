@@ -1,4 +1,4 @@
-import type { JsonValue, Language, TestCase } from "./coding-exercise";
+import type { JsonValue, Language, Sanitizer, TestCase } from "./coding-exercise";
 
 /** Matches the check constraint on public.submissions.source. */
 export const MAX_SOURCE_BYTES = 64 * 1024;
@@ -11,6 +11,7 @@ export const VERDICTS = [
   "runtime_error",
   "compile_error",
   "output_limit",
+  "sanitizer",
   "internal_error",
 ] as const;
 
@@ -24,6 +25,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   runtime_error: "Runtime error",
   compile_error: "Compile error",
   output_limit: "Output limit exceeded",
+  sanitizer: "Sanitizer error",
   internal_error: "Judge error",
 };
 
@@ -40,6 +42,8 @@ export interface TestOutcome {
   hidden: boolean;
   /** Custom input supplied by the user on a run (no expected output). */
   custom?: boolean;
+  /** Set on tests run against an instrumented build (see SanitizerCheck). */
+  sanitizer?: Sanitizer;
   label?: string;
   verdict: Verdict;
   timeMs: number;
@@ -51,6 +55,8 @@ export interface TestOutcome {
    * from the result). */
   stdout?: string;
   stderr?: string;
+  /** The sanitizer's report, trimmed to the frames that matter. */
+  report?: string;
   message?: string;
 }
 

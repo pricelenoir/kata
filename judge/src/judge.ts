@@ -1,7 +1,7 @@
-import type { CodingExercise, Language } from "@/types/coding-exercise";
+import { SANITIZER_LABEL, type CodingExercise, type Language, type Limits, type SanitizerCheck } from "@/types/coding-exercise";
 import { MAX_SOURCE_BYTES, type JudgeResult, type TestOutcome } from "@/types/submission";
 import { evaluateTest, truncate, type PlannedTest } from "./evaluate";
-import { RUNTIMES } from "./languages";
+import { RUNTIMES, type LanguageRuntime, type SanitizerBuild } from "./languages";
 import { Sandbox, SandboxError, type SandboxState } from "./sandbox";
 import { encodeTestInput } from "./wire";
 
@@ -27,6 +27,34 @@ const MAX_BINARY_BYTES = 64 << 20;
 
 /** Sizes every thread's default stack at 8 MB (see judge/images/kata-threads.c). */
 const THREAD_STACK_PRELOAD = "/usr/local/lib/libkata_threads.so";
+
+/** Instrumented builds run several times slower and use several times the
+ * memory (shadow memory, redzones, quarantine), so unless a check sets its
+ * own limits they scale the exercise's. */
+export function sanitizerLimits(exercise: CodingExercise, check: SanitizerCheck): Limits {
+  const base = exercise.limits;
+  return {
+    timeMs: check.limits?.timeMs ?? base.timeMs * 4,
+    memoryMb: check.limits?.memoryMb ?? Math.min(2048, Math.max(1024, base.memoryMb * 4)),
+    cpus: check.limits?.cpus ?? base.cpus,
+  };
+}
+
+export interface PlannedCheck {
+  check: SanitizerCheck;
+  build: SanitizerBuild;
+  tests: PlannedTest[];
+}
+
+/** The exercise's sanitizer checks that this language can build. Their
+ * tests are public, so they run on both runs and submits. */
+export function plannedChecks(exercise: CodingExercise, runtime: LanguageRuntime): PlannedCheck[] {
+  return (exercise.sanitizers ?? []).flatMap((check) => {
+    const build = runtime.sanitize?.[check.sanitizer];
+    if (!build) return [];
+    return [{ check, build, tests: check.tests.map((test) => ({ test, hidden: false, sanitizer: check.sanitizer })) }];
+  });
+}
 
 export interface JudgeRequest {
   exercise: CodingExercise;
@@ -74,6 +102,7 @@ function sandboxKilled(planned: PlannedTest, index: number, state: SandboxState)
     index,
     hidden: planned.hidden,
     ...(planned.custom ? { custom: true } : {}),
+    ...(planned.sanitizer ? { sanitizer: planned.sanitizer } : {}),
     ...(planned.label ? { label: planned.label } : {}),
     verdict,
     timeMs: 0,
@@ -110,7 +139,8 @@ async function unlessKilled<T>(sandbox: Sandbox, op: () => Promise<T>): Promise<
 export async function judge(req: JudgeRequest, opts: JudgeOptions): Promise<JudgeResult> {
   const { exercise, language } = req;
   const runtime = RUNTIMES[language];
-  const total = req.tests.filter((t) => !t.custom).length;
+  const checks = plannedChecks(exercise, runtime);
+  const total = req.tests.filter((t) => !t.custom).length + checks.reduce((n, c) => n + c.tests.length, 0);
   const limits = exercise.limits;
 
   if (Buffer.byteLength(req.source, "utf8") > MAX_SOURCE_BYTES) {
@@ -144,34 +174,77 @@ export async function judge(req: JudgeRequest, opts: JudgeOptions): Promise<Judg
     const binary = await compileBox.readFile(BINARY_PATH);
 
     // ---- run ----
-    const runBox = await open(limits.memoryMb + RUN_OVERHEAD_MB, limits.cpus ?? 1);
-    await runBox.putFile(BINARY_PATH, binary, MAX_BINARY_BYTES, "0755");
-    const session = runBox.batch(runtime.run, {
-      cpuMs: limits.timeMs,
-      wallMs: Math.ceil((limits.timeMs * 3) / Math.max(1, limits.cpus ?? 1)) + 1000,
-      memoryMb: limits.memoryMb,
-      stdoutMax: 16 << 20,
-      stderrMax: 64 << 10,
-      env: { RUST_BACKTRACE: "0", LD_PRELOAD: THREAD_STACK_PRELOAD },
-    });
     // gVisor reports thread stack reservations as resident memory, so peak
     // RSS can't decide MLE there; the run sandbox's cgroup limit does.
     const rssReliable = opts.runtime !== "runsc";
-
     const outcomes: TestOutcome[] = [];
-    try {
-      for (const [index, planned] of req.tests.entries()) {
-        const ran = await unlessKilled(runBox, () => session.run(encodeTestInput(exercise, planned.test)));
-        if ("killed" in ran) {
-          outcomes.push(sandboxKilled(planned, index, ran.killed));
-          break;
+
+    /** Runs `tests` against `binary` in a fresh sandbox sized for `limits`,
+     * appending to `outcomes`. Returns false if a graded test failed. */
+    const runPhase = async (
+      bin: Buffer,
+      tests: PlannedTest[],
+      runLimits: Limits,
+      env: Record<string, string>,
+    ): Promise<boolean> => {
+      const box = await open(runLimits.memoryMb + RUN_OVERHEAD_MB, runLimits.cpus ?? 1);
+      let ok = true;
+      try {
+        await box.putFile(BINARY_PATH, bin, MAX_BINARY_BYTES, "0755");
+        const session = box.batch(runtime.run, {
+          cpuMs: runLimits.timeMs,
+          wallMs: Math.ceil((runLimits.timeMs * 3) / Math.max(1, runLimits.cpus ?? 1)) + 1000,
+          memoryMb: runLimits.memoryMb,
+          stdoutMax: 16 << 20,
+          stderrMax: 64 << 10,
+          env: { RUST_BACKTRACE: "0", LD_PRELOAD: THREAD_STACK_PRELOAD, ...env },
+        });
+        try {
+          for (const planned of tests) {
+            const index = outcomes.length;
+            const ran = await unlessKilled(box, () => session.run(encodeTestInput(exercise, planned.test)));
+            if ("killed" in ran) {
+              outcomes.push(sandboxKilled(planned, index, ran.killed));
+              if (!planned.custom) ok = false;
+              break;
+            }
+            const outcome = evaluateTest(exercise, planned, index, ran.value, { rssReliable, limits: runLimits });
+            outcomes.push(outcome);
+            if (outcome.verdict !== "accepted" && !planned.custom) {
+              ok = false;
+              if (req.stopOnFirstFailure) break;
+            }
+          }
+        } finally {
+          session.close();
         }
-        const outcome = evaluateTest(exercise, planned, index, ran.value, { rssReliable });
-        outcomes.push(outcome);
-        if (req.stopOnFirstFailure && outcome.verdict !== "accepted") break;
+      } finally {
+        // Sandboxes are heavy; don't hold this one while the next phase runs.
+        await box.destroy().catch(() => {});
       }
-    } finally {
-      session.close();
+      return ok;
+    };
+
+    const passed = await runPhase(binary, req.tests, limits, {});
+
+    // ---- sanitizers ----
+    // Only once the regular tests pass: a sanitizer report about a solution
+    // that's already wrong is noise.
+    if (passed) {
+      for (const { check, build, tests } of checks) {
+        const built = await unlessKilled(compileBox, () => compileBox.runOnce(build.compile, COMPILE_LIMITS));
+        if ("killed" in built || built.value.timedOut || built.value.exit !== 0) {
+          const output = "killed" in built ? "" : [built.value.stdout.toString("utf8"), built.value.stderr.toString("utf8")].join("\n").trim();
+          return {
+            ...summarize(outcomes, total),
+            verdict: "compile_error",
+            compileOutput: truncate(`The ${SANITIZER_LABEL[check.sanitizer]} build failed.\n${output}`, 16 * 1024),
+          };
+        }
+        const instrumented = await compileBox.readFile(build.compile[build.compile.indexOf("-o") + 1]);
+        const ok = await runPhase(instrumented, tests, sanitizerLimits(exercise, check), build.env);
+        if (!ok && req.stopOnFirstFailure) break;
+      }
     }
 
     const result = summarize(outcomes, total);

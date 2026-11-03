@@ -1,0 +1,57 @@
+=================================================================
+==26==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x502000000020 at pc 0xaaaadf4c1a9c bp 0xfffffb237530 sp 0xfffffb237548
+WRITE of size 4 at 0x502000000020 thread T0
+    #0 0xaaaadf4c1a98 in main /work/solution.cpp:6
+    #1 0xffff95dd2258  (/lib/aarch64-linux-gnu/libc.so.6+0x22258) (BuildId: 5f3926d9963ff284b8173bf3601bbb00c3abad16)
+    #2 0xffff95dd2338 in __libc_start_main (/lib/aarch64-linux-gnu/libc.so.6+0x22338) (BuildId: 5f3926d9963ff284b8173bf3601bbb00c3abad16)
+    #3 0xaaaadf4c1c2c in _start (/work/main-address+0x1c2c) (BuildId: bdb2af8e5454600e51d986854ad4076eb07a4fbe)
+
+0x502000000020 is located 0 bytes after 16-byte region [0x502000000010,0x502000000020)
+allocated by thread T0 here:
+    #0 0xffff96a1af44 in operator new(unsigned long) ../../../../src/libsanitizer/asan/asan_new_delete.cpp:95
+    #1 0xaaaadf4c1868 in std::__new_allocator<int>::allocate(unsigned long, void const*) /usr/include/c++/14/bits/new_allocator.h:151
+    #2 0xaaaadf4c1868 in std::allocator<int>::allocate(unsigned long) /usr/include/c++/14/bits/allocator.h:196
+    #3 0xaaaadf4c1868 in std::allocator_traits<std::allocator<int> >::allocate(std::allocator<int>&, unsigned long) /usr/include/c++/14/bits/alloc_traits.h:515
+    #4 0xaaaadf4c1868 in std::_Vector_base<int, std::allocator<int> >::_M_allocate(unsigned long) /usr/include/c++/14/bits/stl_vector.h:380
+    #5 0xaaaadf4c1868 in std::_Vector_base<int, std::allocator<int> >::_M_allocate(unsigned long) /usr/include/c++/14/bits/stl_vector.h:377
+    #6 0xaaaadf4c1868 in std::_Vector_base<int, std::allocator<int> >::_M_create_storage(unsigned long) /usr/include/c++/14/bits/stl_vector.h:398
+    #7 0xaaaadf4c1868 in std::_Vector_base<int, std::allocator<int> >::_Vector_base(unsigned long, std::allocator<int> const&) /usr/include/c++/14/bits/stl_vector.h:334
+    #8 0xaaaadf4c1868 in std::vector<int, std::allocator<int> >::vector(unsigned long, std::allocator<int> const&) /usr/include/c++/14/bits/stl_vector.h:557
+    #9 0xaaaadf4c1868 in main /work/solution.cpp:4
+    #10 0xffff95dd2258  (/lib/aarch64-linux-gnu/libc.so.6+0x22258) (BuildId: 5f3926d9963ff284b8173bf3601bbb00c3abad16)
+    #11 0xffff95dd2338 in __libc_start_main (/lib/aarch64-linux-gnu/libc.so.6+0x22338) (BuildId: 5f3926d9963ff284b8173bf3601bbb00c3abad16)
+    #12 0xaaaadf4c1c2c in _start (/work/main-address+0x1c2c) (BuildId: bdb2af8e5454600e51d986854ad4076eb07a4fbe)
+
+SUMMARY: AddressSanitizer: heap-buffer-overflow /work/solution.cpp:6 in main
+Shadow bytes around the buggy address:
+  0x501ffffffd80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x501ffffffe00: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x501ffffffe80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x501fffffff00: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x501fffffff80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+=>0x502000000000: fa fa 00 00[fa]fa fa fa fa fa fa fa fa fa fa fa
+  0x502000000080: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x502000000100: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x502000000180: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x502000000200: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x502000000280: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==26==ABORTING

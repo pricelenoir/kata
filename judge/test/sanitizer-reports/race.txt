@@ -1,0 +1,34 @@
+==================
+WARNING: ThreadSanitizer: data race (pid=14)
+  Read of size 8 at 0xaaaab4d200c0 by thread T2:
+    #0 work() /work/solution.cpp:8 (main-thread+0x1128) (BuildId: 8f39de7f4c6162c04a791151c7f0305e3097c206)
+    #1 void std::__invoke_impl<void, void (*)()>(std::__invoke_other, void (*&&)()) /usr/include/c++/14/bits/invoke.h:61 (main-thread+0x11a8) (BuildId: 8f39de7f4c6162c04a791151c7f0305e3097c206)
+    #2 std::__invoke_result<void (*)()>::type std::__invoke<void (*)()>(void (*&&)()) /usr/include/c++/14/bits/invoke.h:96 (main-thread+0x11a8)
+    #3 void std::thread::_Invoker<std::tuple<void (*)()> >::_M_invoke<0ul>(std::_Index_tuple<0ul>) /usr/include/c++/14/bits/std_thread.h:301 (main-thread+0x11a8)
+    #4 std::thread::_Invoker<std::tuple<void (*)()> >::operator()() /usr/include/c++/14/bits/std_thread.h:308 (main-thread+0x11a8)
+    #5 std::thread::_State_impl<std::thread::_Invoker<std::tuple<void (*)()> > >::_M_run() /usr/include/c++/14/bits/std_thread.h:253 (main-thread+0x11a8)
+    #6 <null> <null> (libstdc++.so.6+0xdb4dc) (BuildId: 42f7f063581c06d0944bac51464a918ebb9a54d8)
+
+  Previous write of size 8 at 0xaaaab4d200c0 by thread T1:
+    #0 work() /work/solution.cpp:8 (main-thread+0x1134) (BuildId: 8f39de7f4c6162c04a791151c7f0305e3097c206)
+    #1 void std::__invoke_impl<void, void (*)()>(std::__invoke_other, void (*&&)()) /usr/include/c++/14/bits/invoke.h:61 (main-thread+0x11a8) (BuildId: 8f39de7f4c6162c04a791151c7f0305e3097c206)
+    #2 std::__invoke_result<void (*)()>::type std::__invoke<void (*)()>(void (*&&)()) /usr/include/c++/14/bits/invoke.h:96 (main-thread+0x11a8)
+    #3 void std::thread::_Invoker<std::tuple<void (*)()> >::_M_invoke<0ul>(std::_Index_tuple<0ul>) /usr/include/c++/14/bits/std_thread.h:301 (main-thread+0x11a8)
+    #4 std::thread::_Invoker<std::tuple<void (*)()> >::operator()() /usr/include/c++/14/bits/std_thread.h:308 (main-thread+0x11a8)
+    #5 std::thread::_State_impl<std::thread::_Invoker<std::tuple<void (*)()> > >::_M_run() /usr/include/c++/14/bits/std_thread.h:253 (main-thread+0x11a8)
+    #6 <null> <null> (libstdc++.so.6+0xdb4dc) (BuildId: 42f7f063581c06d0944bac51464a918ebb9a54d8)
+
+  Location is global 'counter' of size 8 at 0xaaaab4d200c0 (main-thread+0x200c0)
+
+  Thread T2 (tid=17, running) created by main thread at:
+    #0 pthread_create ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1022 (libtsan.so.2+0x5bbbc) (BuildId: 2dd156cb895feaf9fce7da0e39cec54260a6a40d)
+    #1 std::thread::_M_start_thread(std::unique_ptr<std::thread::_State, std::default_delete<std::thread::_State> >, void (*)()) <null> (libstdc++.so.6+0xdb664) (BuildId: 42f7f063581c06d0944bac51464a918ebb9a54d8)
+    #2 main /work/solution.cpp:17 (main-thread+0xefc) (BuildId: 8f39de7f4c6162c04a791151c7f0305e3097c206)
+
+  Thread T1 (tid=16, finished) created by main thread at:
+    #0 pthread_create ../../../../src/libsanitizer/tsan/tsan_interceptors_posix.cpp:1022 (libtsan.so.2+0x5bbbc) (BuildId: 2dd156cb895feaf9fce7da0e39cec54260a6a40d)
+    #1 std::thread::_M_start_thread(std::unique_ptr<std::thread::_State, std::default_delete<std::thread::_State> >, void (*)()) <null> (libstdc++.so.6+0xdb664) (BuildId: 42f7f063581c06d0944bac51464a918ebb9a54d8)
+    #2 main /work/solution.cpp:17 (main-thread+0xeec) (BuildId: 8f39de7f4c6162c04a791151c7f0305e3097c206)
+
+SUMMARY: ThreadSanitizer: data race /work/solution.cpp:8 in work()
+==================

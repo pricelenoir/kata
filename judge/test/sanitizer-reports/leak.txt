@@ -1,0 +1,13 @@
+
+=================================================================
+==35==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 64 byte(s) in 1 object(s) allocated from:
+    #0 0xffffbbbab090 in operator new[](unsigned long) ../../../../src/libsanitizer/asan/asan_new_delete.cpp:98
+    #1 0xaaaad7e70d2c in make() /work/solution.cpp:3
+    #2 0xaaaad7e70d2c in main /work/solution.cpp:6
+    #3 0xffffbaf62258  (/lib/aarch64-linux-gnu/libc.so.6+0x22258) (BuildId: 5f3926d9963ff284b8173bf3601bbb00c3abad16)
+    #4 0xffffbaf62338 in __libc_start_main (/lib/aarch64-linux-gnu/libc.so.6+0x22338) (BuildId: 5f3926d9963ff284b8173bf3601bbb00c3abad16)
+    #5 0xaaaad7e70dec in _start (/work/main-address+0xdec) (BuildId: 635c0000fb840fc5474831ecca2f4702cf0fd6e5)
+
+SUMMARY: AddressSanitizer: 64 byte(s) leaked in 1 allocation(s).

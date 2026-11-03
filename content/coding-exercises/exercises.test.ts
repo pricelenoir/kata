@@ -19,6 +19,18 @@ describe("coding exercise statements", () => {
     expect(problems).toEqual([]);
   });
 
+  it.each(CODING_EXERCISES.map((e) => [e.id, e] as const))("%s has valid sanitizer checks", (_id, exercise) => {
+    const checks = exercise.sanitizers ?? [];
+    expect(new Set(checks.map((c) => c.sanitizer)).size, "one check per sanitizer").toBe(checks.length);
+    const problems = checks.flatMap((check) => [
+      ...(check.tests.length === 0 ? [`${check.sanitizer}: no tests`] : []),
+      ...check.tests.flatMap((t, i) =>
+        validateTest(exercise, t, { requireExpected: true }).map((p) => `${check.sanitizer} test ${i}: ${p}`),
+      ),
+    ]);
+    expect(problems).toEqual([]);
+  });
+
   it.each(CODING_EXERCISES.map((e) => [e.id, e] as const))("%s has starter code (and a driver) for every language", (_id, exercise) => {
     for (const language of LANGUAGES) {
       expect(starterCode(exercise, language).trim(), language).not.toBe("");

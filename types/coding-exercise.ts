@@ -109,6 +109,36 @@ export interface Limits {
   cpus?: number;
 }
 
+// ---- Sanitizers ----
+
+/** "thread": ThreadSanitizer (data races, lock misuse). "address":
+ * AddressSanitizer + UndefinedBehaviorSanitizer + LeakSanitizer
+ * (out-of-bounds, use-after-free, double free, leaks, UB). */
+export const SANITIZERS = ["thread", "address"] as const;
+export type Sanitizer = (typeof SANITIZERS)[number];
+
+export const SANITIZER_LABEL: Record<Sanitizer, string> = {
+  thread: "ThreadSanitizer",
+  address: "AddressSanitizer",
+};
+
+/** A second, instrumented build of the solution, run on its own small
+ * tests once the regular tests pass. Catches bugs that happen to produce
+ * the right output on this hardware — a missing release fence on x86, a
+ * read one past the end that lands in padding.
+ *
+ * The tests are public (shown on the page and in results, including the
+ * full sanitizer report), so they never need hiding: keep them small,
+ * since instrumentation slows a program 5–15×. Languages without sanitizer
+ * support (see judge/src/languages.ts) skip this phase. */
+export interface SanitizerCheck {
+  sanitizer: Sanitizer;
+  tests: TestCase[];
+  /** Per-test limits for the instrumented build. Defaults scale the
+   * exercise's limits (see judge/src/judge.ts). */
+  limits?: Partial<Limits>;
+}
+
 // ---- Exercises ----
 //
 // This is the public half of an exercise: everything here is shown on the
@@ -128,6 +158,7 @@ interface ExerciseBase {
   constraints?: string[];
   limits: Limits;
   checker?: Checker;
+  sanitizers?: SanitizerCheck[];
 }
 
 export interface FunctionExercise extends ExerciseBase {

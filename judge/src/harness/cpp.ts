@@ -157,8 +157,9 @@ function designMain(exercise: DesignExercise): string {
     "    std::cin.tie(nullptr);",
     ...readArgs(constructorParams, "c", "    "),
     // Heap-allocated and never destroyed: destructor bugs aren't what's
-    // being tested, and the object may be too big for the stack.
-    `    auto* kata_obj = new ${className}(${ctorArgs});`,
+    // being tested, and the object may be too big for the stack. Static,
+    // so it's still reachable at exit and LeakSanitizer doesn't flag it.
+    `    static ${className}* kata_obj = new ${className}(${ctorArgs});`,
     "    std::size_t kata_calls;",
     '    if (!(std::cin >> kata_calls)) kata_io::bad_input("call count");',
     "    std::ostringstream kata_out;",

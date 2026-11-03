@@ -6,7 +6,15 @@ import { CodeBlock } from "@/components/question/code-block";
 import { InlineText } from "@/components/question/inline-code";
 import { CodingWorkspaceLoader } from "@/components/coding/coding-workspace-loader";
 import { DetailHeader } from "@/components/layout/detail-header";
-import { LANGUAGES, LANGUAGE_META, type CodingExercise, type Language } from "@/types/coding-exercise";
+import {
+  LANGUAGES,
+  LANGUAGE_META,
+  SANITIZER_LABEL,
+  type CodingExercise,
+  type Language,
+  type Sanitizer,
+} from "@/types/coding-exercise";
+import { RUNTIMES } from "@/judge/src/languages";
 import { getAllCodingExercises, getCodingExerciseById } from "@/lib/coding-exercises";
 import { starterCode } from "@/judge/src/harness";
 import { isJudgeEnabled } from "@/lib/judge-config";
@@ -34,6 +42,16 @@ function exampleText(exercise: CodingExercise, index: number): { input: string; 
 function customInputTemplate(exercise: CodingExercise): string {
   const { input } = exampleText(exercise, 0);
   return input;
+}
+
+const SANITIZER_CATCHES: Record<Sanitizer, string> = {
+  thread: "data races, including ones a missing memory ordering hides on x86",
+  address: "out-of-bounds access, use-after-free, double frees, leaks, and undefined behavior",
+};
+
+function testInputText(test: CodingExercise["examples"][number]): string {
+  if ("stdin" in test) return test.stdin;
+  return JSON.stringify("args" in test ? test.args : { constructorArgs: test.constructorArgs, calls: test.calls });
 }
 
 const DRIVER_FILENAME: Record<Language, string> = { cpp: "kata_driver.cpp", rust: "kata_driver.rs" };
@@ -94,6 +112,31 @@ export default async function CodingExercisePage({ params }: { params: Params })
               );
             })}
           </section>
+
+          {exercise.sanitizers?.map((check) => {
+            const languages = LANGUAGES.filter((l) => RUNTIMES[l].sanitize?.[check.sanitizer]).map(
+              (l) => LANGUAGE_META[l].label,
+            );
+            return (
+              <section key={check.sanitizer} className="space-y-3">
+                <h2 className="text-sm font-semibold text-foreground">{SANITIZER_LABEL[check.sanitizer]} check</h2>
+                <p className="text-sm text-muted-foreground">
+                  Once a {languages.join(" or ")} solution passes the tests, it&apos;s rebuilt with{" "}
+                  {SANITIZER_LABEL[check.sanitizer]} and run again on{" "}
+                  {check.tests.length === 1 ? "this input" : "these inputs"}. It catches{" "}
+                  {SANITIZER_CATCHES[check.sanitizer]}. Any report fails the submission, even when the output is
+                  right.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {check.tests.map((t, i) => (
+                    <code key={i} className="rounded-md border border-border bg-[oklch(0.13_0.006_250)] px-2 py-1 font-mono text-xs text-foreground">
+                      {testInputText(t).trim()}
+                    </code>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
 
           {exercise.mode === "harness" && (
             <details className="group overflow-hidden rounded-xl surface">
