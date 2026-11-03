@@ -139,5 +139,6 @@ cat <<EOF
 Done. The worker restarts on its own after reboots (restart: unless-stopped).
   logs:    docker compose -f $REPO/judge/compose.yaml logs -f worker
   update:  sudo $REPO/judge/deploy/update-runner.sh
-Run/Submit stay off on the site until JUDGE_ENABLED=true is set in Vercel.
+Running code stays off until both switches are on: judge.settings enabled = 1
+and JUDGE_ENABLED=true in Vercel (step 5 of judge/deploy/README.md).
 EOF

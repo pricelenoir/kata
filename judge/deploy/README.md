@@ -5,8 +5,8 @@ Linux server, never on Vercel. It claims jobs from the database, judges them
 in gVisor sandboxes, and writes results back. It only makes outbound
 connections, so the server needs no open ports except SSH.
 
-Run/Submit stay off on the site until `JUDGE_ENABLED=true` is set in Vercel,
-so a runner can be set up and checked before anyone can reach it.
+Running code stays off until you flip two switches (step 5), so a runner can
+be set up and checked before anyone can reach it.
 
 ## The server
 
@@ -85,9 +85,19 @@ sudo ufw allow OpenSSH && sudo ufw enable
 
 ### 5. Turn it on
 
-Vercel → kata → Settings → Environment Variables: add `JUDGE_ENABLED` =
-`true` for Production, then redeploy (pages read it at build time). Then
-try Run and Submit on the spin lock while watching the worker log.
+Two switches, both off by default:
+
+1. **Database** (Supabase SQL Editor). Until this is set, the database
+   refuses new jobs even from people calling the API directly:
+   ```sql
+   insert into judge.settings values ('enabled', 1)
+     on conflict (key) do update set value = excluded.value;
+   ```
+2. **Site**: Vercel → kata → Settings → Environment Variables: add
+   `JUDGE_ENABLED` = `true` for Production, then redeploy (pages read it at
+   build time). This shows Run/Submit.
+
+Then try Run and Submit on the spin lock while watching the worker log.
 
 ## Day to day
 
@@ -109,6 +119,15 @@ your value.
 
 ## Turning it off
 
-Set `JUDGE_ENABLED=false` in Vercel and redeploy first, so nothing new
-queues, then `docker compose -f /opt/kata/judge/compose.yaml down`. Jobs
-left in the queue are picked up whenever a worker starts again.
+In an emergency, flip the database switch. It takes effect immediately, no
+deploy needed, and people trying to run code get "running code isn't
+available right now":
+
+```sql
+update judge.settings set value = 0 where key = 'enabled';
+```
+
+To shut down for longer, also set `JUDGE_ENABLED=false` in Vercel and
+redeploy so the buttons disappear, then
+`docker compose -f /opt/kata/judge/compose.yaml down`. Jobs already queued
+are picked up whenever a worker starts again.

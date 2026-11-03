@@ -3,6 +3,10 @@
 --   JUDGE_DATABASE_URL=postgresql://judge_worker:judge-local-dev@127.0.0.1:54322/postgres
 alter role judge_worker with login password 'judge-local-dev';
 
+-- Local development runs a worker, so accept submissions (see 0006).
+insert into judge.settings values ('enabled', 1)
+  on conflict (key) do update set value = excluded.value;
+
 -- A ready-made local login (dev@kata.test / kata-local-dev).
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,

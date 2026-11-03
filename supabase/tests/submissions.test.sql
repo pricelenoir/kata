@@ -1,7 +1,7 @@
 -- Submissions, rate limits, and the worker API (0003_submissions.sql).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(21);
+select plan(24);
 
 -- pgTAP's assertion functions live in `extensions`; let the worker role
 -- call them for the duration of this (rolled-back) transaction.
@@ -26,7 +26,20 @@ select throws_ok(
 );
 reset role;
 
+-- The judge is off until judge.settings says otherwise (0006).
+delete from judge.settings where key = 'enabled';
 select pg_temp.as_user('11111111-1111-1111-1111-111111111111');
+select throws_ok(
+  $$ select public.enqueue_submission('spin-lock', 'cpp', 'run', 'int main(){}') $$,
+  'KT503', 'running code isn''t available right now', 'nothing queues while the judge is off'
+);
+reset role;
+insert into judge.settings values ('enabled', 1);
+select pg_temp.as_user('11111111-1111-1111-1111-111111111111');
+select throws_ok(
+  $$ update judge.settings set value = 1 where key = 'max_per_day' $$,
+  '42501', null, 'clients cannot change judge settings'
+);
 
 select isnt(
   public.enqueue_submission('spin-lock', 'cpp', 'run', 'int main(){}'),
@@ -97,7 +110,14 @@ select throws_ok(
   'KT429', 'too many runs in the last minute', 'per-minute rate limit'
 );
 reset role;
-delete from judge.settings;
+delete from judge.settings where key <> 'enabled';
+update judge.settings set value = 0 where key = 'enabled';
+select pg_temp.as_user('22222222-2222-2222-2222-222222222222');
+select throws_ok(
+  $$ select public.enqueue_submission('spin-lock', 'cpp', 'run', 'e') $$,
+  'KT503', 'running code isn''t available right now', 'switching the judge off stops new jobs'
+);
+reset role;
 
 -- ---- worker ----
 set local role judge_worker;
