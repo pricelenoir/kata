@@ -2311,4 +2311,521 @@ int main() {
       "https://docs.kernel.org/scheduler/sched-bwc.html",
     ],
   },
+  {
+    id: "os-madvise-free-01",
+    category: "os",
+    difficulty: "hard",
+    title: "Returning a dirty arena with MADV_FREE",
+    tags: ["madvise", "madv_free", "memory-management", "rss"],
+    type: "trace",
+    prompt:
+      "A custom allocator returns a 512 MiB arena to the kernel. Every page of the arena " +
+      "is private anonymous memory that was written earlier. The allocator calls " +
+      "madvise(MADV_FREE) on it instead of MADV_DONTNEED, to avoid the cost of zero-filling " +
+      "pages it may reuse later. The machine has tens of gigabytes of free RAM. A few " +
+      "minutes later, monitoring reads the process's RSS, and the program then reads one " +
+      "byte from the arena without writing to it first. What do the RSS and the byte read " +
+      "look like?",
+    snippet: {
+      language: "cpp",
+      filename: "arena.cpp",
+      code: `#include <sys/mman.h>
+
+void release_arena(char* arena, size_t len) {
+    // every page in [arena, arena + len) was written before this call
+    madvise(arena, len, MADV_FREE);
+}
+
+// ... minutes later, on a machine with plenty of free memory ...
+char peek(const char* arena) {
+    return arena[1000 * 4096];   // read only, no write since madvise()
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "RSS drops right away, as with MADV_DONTNEED, and the read returns 0 because the page now maps the shared zero page",
+        "RSS drops right away and the read raises SIGSEGV, because the range has no backing until it is mmap()ed again",
+        "RSS stays high because the pages are only reclaimed under memory pressure, and the read returns either the old byte or 0",
+        "RSS stays high because MADV_FREE works only on file-backed mappings, so the call fails with EINVAL and the read returns the old byte",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "MADV_FREE (Linux 4.5+, private anonymous memory only) does not free anything when " +
+      "it is called. The kernel clears the dirty bits on the PTEs and marks the pages as " +
+      "lazily freeable by moving them to the inactive LRU list. It reclaims them only if memory pressure later forces " +
+      "reclaim, and it can then drop them without writing them to swap. Until that happens " +
+      "the frames are still mapped, so they still count toward RSS. With tens of gigabytes " +
+      "free, reclaim may never run, and RSS looks like the memory was never returned. You " +
+      "can see the pages in the LazyFree field of /proc/<pid>/smaps. Go hit exactly this " +
+      "when 1.12 switched to MADV_FREE: dashboards showed RSS that never went down, and " +
+      "Go 1.16 went back to MADV_DONTNEED by default.\n\n" +
+      "The contents of the range are also not defined. If reclaim has not taken a page, a " +
+      "read returns the old data. If it has, the next access gets a fresh zero-filled page. " +
+      "A write to a page that has not been reclaimed yet cancels the lazy free for that " +
+      "page, because the PTE becomes dirty again and reclaim will skip it. So the allocator " +
+      "must treat the contents as garbage, not as zeroed. MADV_DONTNEED is different: it " +
+      "tears down the mappings right away, so RSS drops at once and the next access is " +
+      "guaranteed a zero-filled page, at the cost of a page fault and zeroing on reuse. " +
+      "Neither call leaves a hole that faults with SIGSEGV, because the VMA itself is untouched.",
+    references: ["https://man7.org/linux/man-pages/man2/madvise.2.html"],
+  },
+  {
+    id: "os-rt-signals-01",
+    category: "os",
+    difficulty: "medium",
+    title: "Raising SIGUSR1 and SIGRTMIN five times each while blocked",
+    tags: ["signals", "real-time-signals", "sigprocmask"],
+    type: "trace",
+    prompt:
+      "The program blocks SIGUSR1 and SIGRTMIN, sends each signal to itself five times " +
+      "with kill(), and then unblocks both. Assume every pending signal has been handled " +
+      "by the time printf() runs, and that RLIMIT_SIGPENDING is nowhere near its limit. " +
+      "What does it print on Linux?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <csignal>
+#include <cstdio>
+#include <unistd.h>
+
+volatile sig_atomic_t usr1 = 0, rt = 0;
+void on_usr1(int) { ++usr1; }
+void on_rt(int)   { ++rt; }
+
+int main() {
+    signal(SIGUSR1, on_usr1);
+    signal(SIGRTMIN, on_rt);
+
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+    sigaddset(&set, SIGRTMIN);
+    sigprocmask(SIG_BLOCK, &set, nullptr);
+
+    for (int i = 0; i < 5; ++i) {
+        kill(getpid(), SIGUSR1);
+        kill(getpid(), SIGRTMIN);
+    }
+
+    sigprocmask(SIG_UNBLOCK, &set, nullptr);
+    printf("usr1=%d rt=%d\\n", (int)usr1, (int)rt);
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "usr1=1 rt=5, because a standard signal is tracked as one pending bit while each real-time signal send is queued separately",
+        "usr1=5 rt=5, because the kernel keeps a separate pending entry for every kill() call, whatever the signal type",
+        "usr1=1 rt=1, because real-time signals queue only when they are sent with sigqueue(), and kill() merges them like standard signals",
+        "usr1=0 rt=5, because a standard signal raised while it is blocked is discarded instead of being left pending",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "For a standard signal, the kernel's pending state is a single bit in a sigset_t. The " +
+      "first kill() sets the SIGUSR1 bit. The next four find it already set and do nothing, " +
+      "so when the mask is lifted the handler runs exactly once. The signal stays pending; " +
+      "it is not thrown away just because it is blocked.\n\n" +
+      "Real-time signals (SIGRTMIN through SIGRTMAX) work differently. POSIX requires each " +
+      "instance to be queued, and Linux does this by giving every send its own struct " +
+      "sigqueue on the pending list, whether the sender used kill() or sigqueue(). sigqueue() " +
+      "only adds the ability to attach a value in si_value. When SIGRTMIN is unblocked, " +
+      "five instances are pending and on_rt runs five times. Queued instances of the same " +
+      "real-time signal arrive in the order they were sent, and lower-numbered real-time " +
+      "signals are delivered first. When both kinds are pending, POSIX leaves the order " +
+      "unspecified; Linux delivers standard signals first. The queue is limited per user by " +
+      "RLIMIT_SIGPENDING. Once that limit is reached, sending a real-time signal fails with " +
+      "EAGAIN. This is why counting standard signals is a classic bug, while real-time " +
+      "signals can carry one event per send.",
+    references: [
+      "https://man7.org/linux/man-pages/man7/signal.7.html",
+      "https://man7.org/linux/man-pages/man3/sigqueue.3.html",
+    ],
+  },
+  {
+    id: "os-ptrace-signal-01",
+    category: "os",
+    difficulty: "hard",
+    title: "A minimal ptrace() loop and an external SIGTERM",
+    tags: ["ptrace", "signals", "debugging", "waitpid"],
+    type: "trace",
+    prompt:
+      "A tiny tracer forks, has the child call PTRACE_TRACEME and exec a server, then runs " +
+      "the loop below. The server keeps the default disposition for SIGTERM. While it runs, " +
+      "an operator runs `kill -TERM <server pid>` from another shell. What happens?",
+    snippet: {
+      language: "cpp",
+      filename: "tracer.cpp",
+      code: `#include <sys/ptrace.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+int main() {
+    pid_t pid = fork();
+    if (pid == 0) {
+        ptrace(PTRACE_TRACEME, 0, nullptr, nullptr);
+        execl("./server", "server", nullptr);
+        _exit(127);
+    }
+    for (;;) {
+        int status;
+        if (waitpid(pid, &status, 0) == -1) break;
+        if (WIFEXITED(status) || WIFSIGNALED(status)) break;
+        ptrace(PTRACE_CONT, pid, nullptr, nullptr);   // data argument = 0
+    }
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The server dies from SIGTERM right away, because ptrace intercepts only SIGTRAP and breakpoint stops and other signals are delivered as usual",
+        "waitpid() reports a stop with WSTOPSIG == SIGTERM, the loop resumes the server with signal 0, and the server keeps running as if SIGTERM never arrived",
+        "The server dies from SIGTERM, and waitpid() reports WIFSIGNALED immediately, because terminating signals skip the tracer and go straight to the default action",
+        "The tracer itself receives the SIGTERM and exits, because attaching with ptrace redirects the tracee's incoming signals to the tracer process",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "When a signal is about to be delivered to a ptraced process, the kernel does not act " +
+      "on it. Instead it puts the tracee into a signal-delivery-stop and wakes the tracer. " +
+      "The tracer's waitpid() returns with WIFSTOPPED(status) true and WSTOPSIG(status) == " +
+      "SIGTERM. This is why a debugger sees stops that an ordinary parent never would: " +
+      "almost every signal is routed through the tracer first.\n\n" +
+      "The tracer then decides what happens to the signal through the data argument of " +
+      "the restart request (PTRACE_CONT, PTRACE_SYSCALL, and so on). If it passes the " +
+      "signal number, the signal is delivered. If it passes 0, the signal is suppressed. " +
+      "This loop always passes 0, so it quietly swallows every signal sent to the server: " +
+      "SIGTERM, SIGINT, and even the SIGSEGV from a real crash, which then re-faults on " +
+      "the same instruction forever. gdb's 'handle SIGTERM nopass' does the same thing on " +
+      "purpose. The ptrace(2) man page notes that a suppressed signal still makes an " +
+      "interrupted syscall return early, typically with EINTR or a restart. SIGKILL is the " +
+      "only signal that cannot be stopped this way: it never produces a signal-delivery-stop " +
+      "and always kills the tracee. A correct loop forwards the signal with " +
+      "ptrace(PTRACE_CONT, pid, 0, WSTOPSIG(status)). It does this only for real " +
+      "signal-delivery-stops, not for the SIGTRAP that exec produces or for syscall and " +
+      "event stops.",
+    references: ["https://man7.org/linux/man-pages/man2/ptrace.2.html"],
+  },
+  {
+    id: "os-pdeathsig-01",
+    category: "os",
+    difficulty: "hard",
+    title: "PR_SET_PDEATHSIG in a child forked from a short-lived thread",
+    tags: ["prctl", "pdeathsig", "process-supervision", "threads"],
+    type: "trace",
+    prompt:
+      "A long-running supervisor launches each worker process from a short-lived helper " +
+      "thread, as below. The child sets PR_SET_PDEATHSIG to SIGKILL so that it dies if the " +
+      "supervisor crashes. The helper thread returns right after fork(), and the supervisor " +
+      "joins it and then keeps running for hours. What happens to ./worker?",
+    snippet: {
+      language: "cpp",
+      filename: "supervisor.cpp",
+      code: `#include <sys/prctl.h>
+#include <pthread.h>
+#include <csignal>
+#include <unistd.h>
+
+void* spawn(void*) {
+    pid_t parent = getpid();
+    pid_t pid = fork();
+    if (pid == 0) {
+        prctl(PR_SET_PDEATHSIG, SIGKILL);
+        if (getppid() != parent) _exit(1);   // parent already gone?
+        execl("./worker", "worker", nullptr);
+        _exit(127);
+    }
+    return nullptr;
+}
+
+int main() {
+    pthread_t t;
+    pthread_create(&t, nullptr, spawn, nullptr);
+    pthread_join(t, nullptr);
+    for (;;) pause();   // supervise for hours
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "./worker runs for as long as the supervisor does, since the death signal fires only after every thread of the parent process has exited",
+        "./worker is never protected, because execl() clears the PR_SET_PDEATHSIG setting before ./worker starts running",
+        "./worker gets SIGKILL almost as soon as it starts, when the helper thread exits, even though the supervisor process is still alive",
+        "./worker keeps running, but it becomes an unreapable zombie when it exits, because waitpid() in main() cannot see children forked by another thread",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "On Linux, a child's 'parent' for PR_SET_PDEATHSIG is the thread that called fork(), " +
+      "not the parent process. When any thread exits, exit_notify() calls " +
+      "forget_original_parent(). That reparents the thread's children to another live " +
+      "thread in the same thread group (or to a subreaper or init) and sends each child its " +
+      "pdeath_signal along the way. The prctl(2) man page states this directly: the signal " +
+      "is sent when the creating thread terminates, for example via pthread_exit(), 'rather " +
+      "than after all of the threads in the parent process terminate.' Here the helper " +
+      "thread returns right after fork(), so ./worker is SIGKILLed almost at once. The " +
+      "getppid() check does not catch it, because getppid() returns the parent's thread " +
+      "group ID, and the supervisor process is still alive.\n\n" +
+      "The death signal survives execve(). It is cleared only for set-user-ID or " +
+      "set-group-ID binaries, or when credentials change, and it is not inherited by fork() " +
+      "children. Threads in the same group can wait for each other's children on Linux, so " +
+      "reaping is not the problem. Fixes: fork from a thread that lives as long as the " +
+      "supervisor, such as the main thread or a dedicated spawner thread. Or supervise in a " +
+      "different way, for example with a pipe the child watches for EOF, or a pidfd. The " +
+      "getppid() comparison is still needed for its intended job: closing the race where " +
+      "the parent dies between fork() and prctl().",
+    references: ["https://man7.org/linux/man-pages/man2/prctl.2.html"],
+  },
+  {
+    id: "os-mmap-private-coherency-01",
+    category: "os",
+    difficulty: "hard",
+    title: "A MAP_PRIVATE file mapping and another process's pwrite()",
+    tags: ["mmap", "map_private", "page-cache", "copy-on-write"],
+    type: "trace",
+    prompt:
+      "data.bin is two 4 KiB pages, every byte 'a'. Process A maps it MAP_PRIVATE, reads " +
+      "page 0, and writes to page 1. Process B then opens the same file and uses ordinary " +
+      "buffered pwrite() to write 'B' at offsets 0 and 4096. After B finishes, A prints " +
+      "p[0] and p[4096]. What does A print on Linux?",
+    snippet: {
+      language: "cpp",
+      filename: "process_a.cpp",
+      code: `#include <sys/mman.h>
+#include <fcntl.h>
+#include <cstdio>
+
+int main() {
+    int fd = open("data.bin", O_RDWR);              // 8192 bytes of 'a'
+    char* p = (char*)mmap(nullptr, 8192, PROT_READ | PROT_WRITE,
+                          MAP_PRIVATE, fd, 0);
+    volatile char r = p[0];   // read page 0
+    p[4096] = 'P';            // write page 1
+    (void)r;
+
+    wait_for_process_b();     // B: pwrite(fd2, "B", 1, 0); pwrite(fd2, "B", 1, 4096);
+
+    printf("%c %c\\n", p[0], p[4096]);
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "a P, because MAP_PRIVATE takes a snapshot of the file when mmap() is called, and later writes to the file are never seen",
+        "B B, because B's pwrite() goes through the page cache and overwrites A's private page 1 along with page 0",
+        "a P, because B's pwrite() calls fail with ETXTBSY while another process has the file mapped for writing",
+        "B P, because page 0 is still the page-cache page that B wrote into, while page 1 is a private copy that only A can see",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "MAP_PRIVATE is copy-on-write, and the copy happens per page, only on a write. When A " +
+      "reads page 0, the page-fault handler maps the file's page-cache page directly into " +
+      "A's page tables, read-only, with no copy. When A writes page 1, a COW fault gives A a " +
+      "private anonymous copy of that page and detaches it from the file.\n\n" +
+      "B's buffered pwrite() writes into the same page-cache pages. Page 0 in A is still " +
+      "that page-cache page, so A sees 'B' at offset 0 at once, with no msync() needed. " +
+      "Page 1 in A is now a private copy, so B's write cannot reach it and A still sees its " +
+      "own 'P'. POSIX says only that it is unspecified whether changes to the file after " +
+      "mmap() show up in a MAP_PRIVATE mapping. Linux's answer is the per-page behavior " +
+      "above, so a private mapping is not a snapshot. Pages you have only read keep " +
+      "following the file. Fault-around may also map nearby pages early, and those follow " +
+      "the file too. If you need a stable snapshot, copy the data, use a file nobody else " +
+      "writes, or rely on something like a filesystem reflink. ETXTBSY applies to writing " +
+      "an executable that is running, not to ordinary mapped files.",
+    references: [
+      "https://man7.org/linux/man-pages/man2/mmap.2.html",
+      "https://pubs.opengroup.org/onlinepubs/9799919799/functions/mmap.html",
+    ],
+  },
+  {
+    id: "os-emfile-accept-01",
+    category: "os",
+    difficulty: "medium",
+    title:
+      "accept() at the RLIMIT_NOFILE limit in a level-triggered epoll loop",
+    tags: ["rlimit", "emfile", "epoll", "file-descriptors"],
+    type: "trace",
+    prompt:
+      "A server's soft RLIMIT_NOFILE is 1024 and all 1024 descriptors are in use by " +
+      "long-lived client connections. The listening socket is registered with epoll in the " +
+      "default level-triggered mode. A new client now connects and then waits. What does " +
+      "the server process do?",
+    snippet: {
+      language: "cpp",
+      filename: "server.cpp",
+      code: `for (;;) {
+    int n = epoll_wait(ep, events, 64, -1);
+    for (int i = 0; i < n; ++i) {
+        if (events[i].data.fd == listen_fd) {
+            int c = accept4(listen_fd, nullptr, nullptr, SOCK_NONBLOCK);
+            if (c == -1) {
+                if (errno == EMFILE) log_ratelimited("out of fds");
+                continue;
+            }
+            add_to_epoll(ep, c);
+        } else {
+            handle_client(events[i].data.fd);
+        }
+    }
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "It idles, because the kernel answers the client's SYN with RST once the listening process has hit its descriptor limit",
+        "It spins at 100% CPU, because the connection stays in the accept queue, so epoll_wait() keeps returning the listener as readable",
+        "It idles, because accept4() removes the pending connection from the backlog before failing with EMFILE, so the client is silently dropped",
+        "It blocks in epoll_wait(), because epoll stops reporting a listener as readable while the process has no free descriptors",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "The TCP handshake is completed by the kernel, not by accept(). The new connection is " +
+      "fully established and placed on the listening socket's accept queue whether or not " +
+      "the process has a free descriptor, so the client thinks it is connected. In " +
+      "__sys_accept4(), Linux reserves a descriptor number with get_unused_fd_flags() before " +
+      "it takes anything off the queue. When that reservation fails with EMFILE, the " +
+      "connection stays queued. The listening socket therefore stays readable, and " +
+      "level-triggered epoll reports it again on every epoll_wait() call. The loop becomes " +
+      "a busy spin of epoll_wait(), accept4(), EMFILE at full CPU, while the waiting " +
+      "client gets no service. With edge-triggered epoll the failure looks different: the " +
+      "server stalls quietly, because no new edge arrives until another connection comes " +
+      "in.\n\n" +
+      "Common fixes: on EMFILE, stop watching the listener (EPOLL_CTL_DEL, or set the " +
+      "event mask to 0) until a descriptor is closed. Or use the reserve-descriptor trick " +
+      "from libev and libuv: keep a spare fd open on /dev/null, close it on EMFILE, " +
+      "accept() and immediately close the connection so the client gets a clean reset, " +
+      "then reopen the spare. Also raise the soft limit toward the hard limit at startup " +
+      "with setrlimit(). The kernel never does that on its own.",
+    references: [
+      "https://man7.org/linux/man-pages/man2/accept.2.html",
+      "https://man7.org/linux/man-pages/man2/getrlimit.2.html",
+      "https://man7.org/linux/man-pages/man7/epoll.7.html",
+    ],
+  },
+  {
+    id: "os-sched-yield-01",
+    category: "os",
+    difficulty: "medium",
+    title: "A spinlock that calls sched_yield() between attempts",
+    tags: ["sched_yield", "spinlock", "scheduling", "low-latency"],
+    type: "trace",
+    prompt:
+      "Two SCHED_OTHER threads are pinned to isolated cores 2 and 3. Nothing else is " +
+      "runnable on either core. The thread on core 2 holds the lock below for about 50 µs. " +
+      "During that time, what is the waiting thread on core 3 actually doing?",
+    snippet: {
+      language: "cpp",
+      filename: "yield_lock.cpp",
+      code: `#include <atomic>
+#include <sched.h>
+
+std::atomic<bool> locked{false};
+
+void lock() {
+    while (locked.exchange(true, std::memory_order_acquire)) {
+        sched_yield();   // "let someone else run"
+    }
+}
+
+void unlock() { locked.store(false, std::memory_order_release); }`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Spinning at full CPU and entering the kernel on every iteration, because sched_yield() finds no other runnable task on core 3 and returns right away",
+        "Sleeping on a kernel wait queue tied to the lock's address, and woken by the scheduler when core 2 releases the lock",
+        "Descheduled for a full CFS timeslice (several ms) on each call, so it notices the release long after the 50 µs critical section ends",
+        "Donating its remaining timeslice to the lock holder on core 2, a directed yield that helps the critical section finish sooner",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "sched_yield() acts only on the calling CPU's runqueue. It tells the scheduler 'if " +
+      "something else here is runnable, consider running it before me.' On core 3 nothing " +
+      "else is runnable, so the scheduler picks the same thread again and the call returns " +
+      "after a full syscall round trip, which is hundreds of nanoseconds with mitigations " +
+      "on. The waiter still burns 100% of core 3. It is also slower to notice the release " +
+      "than a plain spin with a PAUSE instruction, because the lock is tested only once per " +
+      "syscall. The kernel has no idea which lock the thread is waiting for. sched_yield() " +
+      "carries no address and no target, so it cannot sleep until the lock is free, and it " +
+      "cannot boost or hand time to the holder on another CPU. Directed yield (yield_to()) " +
+      "exists inside the kernel, mainly for KVM pause-loop exiting, and user space cannot " +
+      "call it.\n\n" +
+      "Even when other tasks share the core, CFS and EEVDF treat yield from a SCHED_OTHER " +
+      "task as a weak hint. They do not move the task to the back of the queue, so the " +
+      "result depends on the kernel version. The sched_yield(2) man page warns that using " +
+      "it with nondeterministic scheduling policies like SCHED_OTHER is unspecified and very " +
+      "likely a design error. For real blocking, use a futex-based mutex, or spin briefly " +
+      "with PAUSE and then call futex_wait. sched_yield() makes sense mainly for SCHED_FIFO " +
+      "or SCHED_RR threads at equal priority, where it has precise semantics.",
+    references: [
+      "https://man7.org/linux/man-pages/man2/sched_yield.2.html",
+      "https://man7.org/linux/man-pages/man2/futex.2.html",
+    ],
+  },
+  {
+    id: "os-io-uring-sqpoll-01",
+    category: "os",
+    difficulty: "hard",
+    title: "Hand-rolled io_uring submission with IORING_SETUP_SQPOLL",
+    tags: ["io_uring", "sqpoll", "async-io", "low-latency"],
+    type: "trace",
+    prompt:
+      "A team writes its own io_uring ring code, without liburing. It sets up the ring with " +
+      "IORING_SETUP_SQPOLL and sq_thread_idle = 2000 ms. Since 'SQPOLL means zero " +
+      "syscalls', the submit path only fills an SQE and publishes the new SQ tail. It never " +
+      "calls io_uring_enter(). Under steady traffic everything works. After a 10-second " +
+      "quiet period overnight, the next requests are never completed, and nothing moves " +
+      "until the process is restarted. Why?",
+    snippet: {
+      language: "cpp",
+      filename: "ring.cpp",
+      code: `void submit(Ring& r, const io_uring_sqe& sqe) {
+    unsigned tail = *r.sq_tail;
+    r.sqes[tail & *r.sq_mask] = sqe;
+    r.sq_array[tail & *r.sq_mask] = tail & *r.sq_mask;
+    __atomic_store_n(r.sq_tail, tail + 1, __ATOMIC_RELEASE);
+    // no io_uring_enter(): the SQPOLL kernel thread will pick it up
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The kernel tears down the SQPOLL thread after sq_thread_idle, and the ring has to be created again with io_uring_setup() before it accepts more work",
+        "The CQEs are produced, but the CQ ring is copied to user memory only during an io_uring_enter() call, so completions pile up where the app can't see them",
+        "After sq_thread_idle the SQ thread goes to sleep and sets IORING_SQ_NEED_WAKEUP, so the app must check that flag and call io_uring_enter() with IORING_ENTER_SQ_WAKEUP",
+        "The idle SQ thread is migrated off its CPU, and the new tail value stays in that core's store buffer until a syscall forces it to drain",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "SQPOLL replaces the submit syscall with a kernel thread that busy-polls the SQ tail. " +
+      "Busy-polling costs a full CPU core while traffic is flowing, so the kernel limits " +
+      "it. When the thread finds no new SQEs for sq_thread_idle milliseconds, it sets " +
+      "IORING_SQ_NEED_WAKEUP in the shared sq_flags word and goes to sleep. From then on " +
+      "user space must wake it. After publishing the tail, the submitter has to issue a " +
+      "full memory barrier, read sq_flags, and if NEED_WAKEUP is set, call " +
+      "io_uring_enter(fd, 0, 0, IORING_ENTER_SQ_WAKEUP). liburing's io_uring_submit() does " +
+      "this check for you, which is why hand-rolled rings tend to hit this bug and liburing " +
+      "users rarely do. Without the wakeup, the SQEs stay in the ring and no one picks them " +
+      "up.\n\n" +
+      "The CQ ring is shared memory that the kernel writes directly, so completions need no " +
+      "copy step. The CQ overflow path is the exception, and it does not apply here. The " +
+      "ring and its thread are not torn down while the fd is open. Store buffers drain " +
+      "within nanoseconds without help from a syscall. The tuning trade-off is real: a " +
+      "large sq_thread_idle keeps submission latency low after lulls but burns a core while " +
+      "idle. A small one saves CPU but brings back a syscall, and the thread's wake-up " +
+      "latency, on the first request after every quiet period. Many low-latency deployments " +
+      "also pin the SQ thread with IORING_SETUP_SQ_AFF so it does not compete with the " +
+      "application's own hot threads. Before Linux 5.11, SQPOLL required CAP_SYS_ADMIN.",
+    references: [
+      "https://man7.org/linux/man-pages/man2/io_uring_setup.2.html",
+      "https://man7.org/linux/man-pages/man2/io_uring_enter.2.html",
+      "https://kernel.dk/io_uring.pdf",
+    ],
+  },
 ];

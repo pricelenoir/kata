@@ -5648,4 +5648,485 @@ int main() {
       "through the dead reference, which is undefined behavior. Capturing by value with `[s]` gives the " +
       "closure its own copy and fixes it.",
   },
+  {
+    id: "cpp-destructor-noexcept-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "Two destructors that throw",
+    tags: ["exceptions", "destructors", "noexcept", "std::terminate"],
+    type: "trace",
+    prompt:
+      "Compiled as C++17 or later, what does this program print before it exits (normally or otherwise)?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+#include <stdexcept>
+
+struct Throws {
+    ~Throws() noexcept(false) { throw std::runtime_error("Throws"); }
+};
+
+struct Holder {
+    Throws t;
+    ~Holder() { std::cout << "~Holder "; }   // no exception specification written
+};
+
+struct Plain {
+    ~Plain() { throw std::runtime_error("Plain"); }   // no exception specification written
+};
+
+int main() {
+    try { Holder h; } catch (const std::exception& e) { std::cout << "caught " << e.what() << "\\n"; }
+    try { Plain p; }  catch (const std::exception& e) { std::cout << "caught " << e.what() << "\\n"; }
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "~Holder caught Throws, then caught Plain",
+        "~Holder, then std::terminate from within Holder's destructor",
+        "~Holder caught Throws, then std::terminate from Plain's destructor",
+        "Compile error: Holder's destructor must also be marked noexcept(false)",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "Since C++11, a destructor written without a noexcept-specifier does not default to " +
+      "`noexcept(false)`; [except.spec] gives it the same exception specification it would have had " +
+      "if it were implicitly declared, and that specification is potentially-throwing only if the " +
+      "destructor of some potentially constructed subobject (base or member) is potentially-throwing. " +
+      "`Holder` has a member of type `Throws`, whose destructor is explicitly `noexcept(false)`, so " +
+      "`~Holder()` silently inherits `noexcept(false)` as well. Its body prints \"~Holder \", then member " +
+      "`t` is destroyed, its destructor throws, and the exception propagates normally out of the " +
+      "`try` block into the handler: \"caught Throws\". `Plain` has no subobjects with throwing " +
+      "destructors, so `~Plain()` is implicitly `noexcept`. An exception escaping a `noexcept` function " +
+      "calls `std::terminate` ([except.terminate]); the handler in `main` is never reached, and whether " +
+      "any stack unwinding happens first is implementation-defined. Clang and GCC compile this with " +
+      "only a `-Wexceptions`/`-Wterminate` warning, which is why the compile-error belief is wrong. " +
+      "Note that no other exception is in flight here: the common mental model that throwing from a " +
+      "destructor is only fatal *during stack unwinding* is a C++03 model. Since C++11 a plain " +
+      "destructor that throws terminates even on the happy path, and the only thing that changes that " +
+      "is `noexcept(false)` on it or on one of its subobjects' destructors, which is exactly the " +
+      "non-local effect that makes `Holder`'s behavior surprising.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/noexcept_spec",
+      "https://eel.is/c++draft/except.spec",
+    ],
+  },
+  {
+    id: "cpp-virtual-base-init-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "Virtual base initialization through two intermediate classes",
+    tags: ["virtual-inheritance", "constructors", "multiple-inheritance", "initialization-order"],
+    type: "trace",
+    prompt: "What does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+
+struct V {
+    V(int x = 0) { std::cout << "V(" << x << ") "; }
+};
+
+struct A : virtual V {
+    A() : V(1) { std::cout << "A "; }
+};
+
+struct B : virtual V {
+    B() : V(2) { std::cout << "B "; }
+};
+
+struct D : A, B {
+    D() { std::cout << "D"; }
+};
+
+int main() {
+    D d;
+    std::cout << "\\n";
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "V(1) A B D",
+        "V(1) A V(2) B D",
+        "Compile error: D's constructor must name V explicitly",
+        "V(0) A B D",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "A virtual base subobject is shared by every path through the hierarchy, so it must be " +
+      "constructed exactly once, and [class.base.init] assigns that job to the constructor of the " +
+      "*most derived* class. Virtual bases are initialized first, before any non-virtual direct " +
+      "base, and when `A()` and `B()` later run as base-class constructors of a `D`, their " +
+      "mem-initializers for `V` (`V(1)` and `V(2)`) are simply ignored. `D()` does not mention `V` in " +
+      "its own mem-initializer list, so `V` is default-initialized, which calls `V(int x = 0)` with " +
+      "the default argument: \"V(0)\", then \"A\", \"B\", \"D\". \"V(1) A B D\" is the intuition that " +
+      "the first base to reach `V` wins; \"V(1) A V(2) B D\" is what non-virtual inheritance would do, " +
+      "with two separate `V` subobjects. The compile-error option is half right: the rule really does " +
+      "mean `D` is responsible for `V`, and if `V` had no default constructor `D()` would be " +
+      "ill-formed even though both `A` and `B` supply arguments. Here the default argument makes " +
+      "default-initialization valid, so it compiles and quietly discards both intermediate " +
+      "classes' choices. In practice this is why constructor arguments for a virtual base have to be " +
+      "threaded all the way down to every concrete class, and why `std::basic_ios` (a virtual base " +
+      "of the iostream hierarchy) has a protected default constructor plus a separate `init()` call.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/derived_class#Virtual_base_classes",
+      "https://eel.is/c++draft/class.base.init",
+    ],
+  },
+  {
+    id: "cpp-unique-ptr-deleter-size-01",
+    category: "cpp",
+    difficulty: "medium",
+    title: "sizeof a unique_ptr with three different deleters",
+    tags: ["unique_ptr", "smart-pointers", "custom-deleter", "sizeof", "ebo"],
+    type: "trace",
+    prompt:
+      "On a 64-bit platform using libstdc++, libc++, or the MSVC STL, what does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+#include <memory>
+
+void free_int(int* p) { delete p; }
+
+int main() {
+    auto lambda_deleter = [](int* p) { delete p; };
+
+    std::unique_ptr<int> a(new int(1));
+    std::unique_ptr<int, void (*)(int*)> b(new int(2), &free_int);
+    std::unique_ptr<int, decltype(lambda_deleter)> c(new int(3), lambda_deleter);
+
+    std::cout << sizeof(a) << " " << sizeof(b) << " " << sizeof(c) << "\\n";
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: ["8 8 8", "8 16 8", "8 16 16", "16 16 16"],
+      correctIndex: 1,
+    },
+    explanation:
+      "A `std::unique_ptr<T, D>` has to store both the pointer and a `D` object, because the deleter " +
+      "is part of its type and may carry state. All three major standard libraries store the pair " +
+      "with the empty-base optimization (libc++'s `__compressed_pair`, libstdc++'s `std::tuple` with " +
+      "EBO, MSVC's `_Compressed_pair`), so an *empty* deleter type occupies no bytes. " +
+      "`std::default_delete<int>` is empty, and so is the closure type of a captureless lambda, " +
+      "which is a class with no non-static data members; `a` and `c` are therefore 8 bytes, the size " +
+      "of the raw pointer. A function-pointer deleter is different: `void (*)(int*)` is a runtime " +
+      "value that must be stored in every instance, since two `unique_ptr`s of that type could hold " +
+      "different functions, so `b` is 16 bytes. The \"8 8 8\" intuition comes from thinking of the " +
+      "deleter as a compile-time property; it is only compile-time when it's encoded in the type. " +
+      "The \"8 16 16\" belief treats every custom deleter as state; a stateless lambda isn't. The " +
+      "standard does not mandate these sizes, but every mainstream implementation has them, and the " +
+      "practical rule is to wrap a free function in an empty functor (`struct FreeInt { void " +
+      "operator()(int* p) const { free_int(p); } };`) rather than pass its address. Contrast " +
+      "`std::shared_ptr`, where the deleter is type-erased into the control block and never changes " +
+      "the `shared_ptr`'s type or size.",
+    references: ["https://en.cppreference.com/w/cpp/memory/unique_ptr"],
+  },
+  {
+    id: "cpp-make-shared-weak-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "make_shared with an outstanding weak_ptr",
+    tags: ["shared_ptr", "weak_ptr", "make_shared", "control-block", "memory"],
+    type: "trace",
+    prompt:
+      "Immediately after line (1) executes, which statement describes the Frame object and the memory it occupied?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <array>
+#include <iostream>
+#include <memory>
+
+struct Frame {
+    std::array<char, 256 * 1024 * 1024> pixels;   // 256 MiB, stored inline
+    ~Frame() { std::cout << "~Frame\\n"; }
+};
+
+int main() {
+    auto sp = std::make_shared<Frame>();
+    std::weak_ptr<Frame> watcher = sp;
+
+    sp.reset();   // (1)
+
+    // ... long-running work; watcher is still alive here ...
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "~Frame runs and the 256 MiB is returned to the allocator immediately",
+        "~Frame runs, but the 256 MiB stays allocated until watcher is gone",
+        "Neither: watcher keeps the Frame alive until it is reset as well",
+        "~Frame runs; the 256 MiB is freed on the next watcher.lock() call",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "A `shared_ptr` control block holds two counts. When the strong count drops to zero, the " +
+      "managed object is destroyed, so \"~Frame\" prints at line (1); a `weak_ptr` never keeps an " +
+      "object alive. The control block itself must survive as long as the weak count is nonzero, " +
+      "because `watcher.expired()` and `watcher.lock()` still need somewhere to read the strong " +
+      "count from. `std::make_shared` is specified to allocate the object and the control block " +
+      "together, and [util.smartptr.shared.create] recommends a single allocation, which every " +
+      "implementation does. The `Frame` therefore lives *inside* the control block's allocation, and " +
+      "destroying the object cannot release just part of that block. The full ~256 MiB stays " +
+      "allocated, holding a destroyed object, until the last `weak_ptr` goes away. Nothing lazy " +
+      "happens on `lock()`: it just sees a zero strong count and returns an empty pointer. With " +
+      "`std::shared_ptr<Frame>(new Frame)` there are two allocations: the `Frame` is freed as soon as " +
+      "the strong count hits zero, and only the small control block lingers. This is the main " +
+      "reason not to use `make_shared` for large objects observed by long-lived `weak_ptr`s " +
+      "(caches, observer lists). The single allocation that makes `make_shared` faster is the same " +
+      "thing that ties the object's memory to the weak count. A `std::vector<char>` member instead " +
+      "of an inline array would sidestep it, since the vector's destructor frees its own buffer.",
+    references: [
+      "https://en.cppreference.com/w/cpp/memory/shared_ptr/make_shared",
+      "https://eel.is/c++draft/util.smartptr.shared.create",
+    ],
+  },
+  {
+    id: "cpp-pmr-propagation-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "Copying a std::pmr::vector built on an arena",
+    tags: ["pmr", "allocators", "memory-resource", "containers", "c++17"],
+    type: "trace",
+    prompt: "What does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <cstddef>
+#include <iostream>
+#include <memory_resource>
+#include <vector>
+
+int main() {
+    std::byte buffer[1024];
+    std::pmr::monotonic_buffer_resource arena(buffer, sizeof buffer);
+
+    std::pmr::vector<int> a({1, 2, 3}, &arena);
+
+    std::pmr::vector<int> b = a;   // copy construction
+    std::pmr::vector<int> c;       // uses the default resource
+    c = a;                         // copy assignment
+
+    std::cout << (b.get_allocator().resource() == &arena)
+              << (c.get_allocator().resource() == &arena) << "\\n";
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: ["11", "10", "00", "01"],
+      correctIndex: 2,
+    },
+    explanation:
+      "Allocator-aware containers don't treat their allocator like an ordinary member. On copy " +
+      "construction they call `allocator_traits<A>::select_on_container_copy_construction(other." +
+      "get_allocator())`, and on assignment they consult `propagate_on_container_copy_assignment` " +
+      "(POCCA), with matching POCMA and POCS traits for move assignment and swap. " +
+      "`std::pmr::polymorphic_allocator` deliberately opts out of propagation everywhere. Its " +
+      "`select_on_container_copy_construction()` returns a *default-constructed* " +
+      "`polymorphic_allocator`, which uses `std::pmr::get_default_resource()` (normally " +
+      "`new_delete_resource()`), so `b` copies `a`'s elements onto the global heap, not the arena: " +
+      "first digit 0. Its POCCA is `false_type`, so `c = a` copies the elements but `c` keeps its own " +
+      "default resource: second digit 0. \"11\" is the model where the allocator is copied like any " +
+      "other member, which is what `std::allocator`-style allocators effectively do. \"10\" knows " +
+      "assignment doesn't propagate but assumes copy construction does. The pmr design reasons that " +
+      "a memory resource describes where a container *lives*, not part of its value, so a container " +
+      "inside an arena-allocated object should stay in that arena no matter what is assigned into " +
+      "it. The catch is that every copy silently escapes to the heap unless you pass the resource " +
+      "explicitly (`std::pmr::vector<int> b(a, &arena);`), and because all `pmr::vector<int>`s share one " +
+      "type regardless of resource, the type system can't flag it. POCMA is also false, so moving " +
+      "between containers on different resources degrades to a fresh allocation in the " +
+      "destination's resource plus an element-by-element move, and swapping two such containers is undefined behavior.",
+    references: [
+      "https://en.cppreference.com/w/cpp/memory/polymorphic_allocator/select_on_container_copy_construction",
+      "https://en.cppreference.com/w/cpp/memory/allocator_traits",
+    ],
+  },
+  {
+    id: "cpp-function-try-block-01",
+    category: "cpp",
+    difficulty: "hard",
+    title: "A function-try-block on a constructor",
+    tags: ["exceptions", "constructors", "function-try-block", "member-initialization"],
+    type: "trace",
+    prompt: "What does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+#include <stdexcept>
+
+struct Member {
+    Member() { throw std::runtime_error("member"); }
+};
+
+struct Owner {
+    Member m;
+    Owner() try : m() {
+        std::cout << "body ";
+    } catch (const std::exception& e) {
+        std::cout << "handler(" << e.what() << ") ";
+        // the handler does not throw
+    }
+};
+
+int main() {
+    try {
+        Owner o;
+        std::cout << "constructed ";
+    } catch (const std::exception& e) {
+        std::cout << "main(" << e.what() << ")";
+    }
+    std::cout << "\\n";
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "handler(member) main(member)",
+        "handler(member) constructed",
+        "main(member)",
+        "handler(member), then std::terminate is called",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "A function-try-block on a constructor is the only way to catch exceptions thrown from the " +
+      "mem-initializer list, so the handler does run when `Member()` throws, printing " +
+      "\"handler(member)\"; \"body\" never prints because the body is never entered. What the handler " +
+      "cannot do is recover. [except.handle] says that if control reaches the end of a handler of a " +
+      "constructor's (or destructor's) function-try-block, the current exception is *rethrown " +
+      "automatically*. There's no object to recover: `m` never finished construction, so `Owner` " +
+      "never began its lifetime, and any fully constructed bases and members have already been " +
+      "destroyed by the time the handler starts (which is also why referring to non-static members " +
+      "inside it is undefined behavior). A `return` statement in such a handler is ill-formed for " +
+      "the same reason. The rethrown `runtime_error` therefore reaches `main`'s handler, " +
+      "\"main(member)\", and \"constructed\" is skipped. The \"constructed\" option is the intuition " +
+      "carried over from an ordinary `try` block, where a handler that doesn't rethrow swallows the " +
+      "exception. The terminate option confuses this with an exception escaping a `noexcept` " +
+      "function. The practical use is narrow: logging, or translating the exception into a different " +
+      "type by throwing one explicitly, never suppressing it.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/function-try-block",
+      "https://eel.is/c++draft/except.handle",
+    ],
+  },
+  {
+    id: "cpp-virtual-default-arg-01",
+    category: "cpp",
+    difficulty: "medium",
+    title: "Default arguments on an overridden virtual function",
+    tags: ["virtual-functions", "default-arguments", "polymorphism", "overriding"],
+    type: "trace",
+    prompt: "What does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+
+struct Base {
+    virtual void show(int n = 1) const { std::cout << "Base " << n << "\\n"; }
+    virtual ~Base() = default;
+};
+
+struct Derived : Base {
+    void show(int n = 2) const override { std::cout << "Derived " << n << "\\n"; }
+};
+
+int main() {
+    Derived d;
+    const Base& b = d;
+    b.show();
+    d.show();
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Derived 2, then Derived 2",
+        "Base 1, then Derived 2",
+        "Compile error: an override cannot change a default argument",
+        "Derived 1, then Derived 2",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "Two different mechanisms are involved, and they bind at different times. Which function body " +
+      "runs is decided at run time through the vtable, from the dynamic type of the object, so both " +
+      "calls execute `Derived::show`. Default arguments are not part of the function's type or of " +
+      "the vtable entry; they are filled in by the compiler at the call site from whatever " +
+      "declaration it can see there. [dcl.fct.default] says it outright: a virtual function call uses " +
+      "the default arguments from the declaration found via the *static* type of the pointer or " +
+      "reference, and an overrider doesn't inherit or replace the base's defaults. `b.show()` has " +
+      "static type `const Base&`, so the compiler rewrites it to `b.show(1)` and dispatches to " +
+      "`Derived::show`, printing \"Derived 1\". `d.show()` has static type `Derived`, so it becomes " +
+      "`d.show(2)`: \"Derived 2\". The language doesn't require overrides to repeat or match the " +
+      "defaults, so this compiles cleanly. That's why guidelines such as clang-tidy's " +
+      "`google-default-arguments` say never to put defaults on virtual functions. The usual fix is " +
+      "the non-virtual interface pattern: a public non-virtual `show(int n = 1)` that forwards to a " +
+      "private virtual `doShow(int)` with no default.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/default_arguments",
+      "https://eel.is/c++draft/dcl.fct.default",
+    ],
+  },
+  {
+    id: "cpp-vector-bool-proxy-01",
+    category: "cpp",
+    difficulty: "medium",
+    title: "auto with vector<bool> and vector<int> subscripts",
+    tags: ["vector", "vector-bool", "auto", "proxy-objects", "type-deduction"],
+    type: "trace",
+    prompt: "What does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+#include <vector>
+
+int main() {
+    std::vector<bool> flags{true, false};
+    auto f = flags[0];
+    flags[0] = false;
+
+    std::vector<int> nums{1, 0};
+    auto n = nums[0];
+    nums[0] = 0;
+
+    std::cout << f << n << "\\n";
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: ["11", "10", "01", "00"],
+      correctIndex: 2,
+    },
+    explanation:
+      "`std::vector<int>::operator[]` returns `int&`, and `auto` drops the reference, so `n` is an " +
+      "independent `int` copy holding 1; changing `nums[0]` afterwards doesn't touch it. " +
+      "`std::vector<bool>` is the explicit specialization in [vector.bool], which packs elements as " +
+      "bits. Since a single bit can't be addressed, its `operator[]` cannot return `bool&`; it " +
+      "returns a prvalue of the nested proxy class `std::vector<bool>::reference`, which stores a " +
+      "pointer to the containing word plus a bit mask and converts to `bool` on read. `auto` deduces " +
+      "that proxy type, not `bool`, so `f` still refers to bit 0 of `flags`. After `flags[0] = false`, " +
+      "reading `f` yields `false`, and the program prints \"01\". The \"11\" answer assumes `auto` " +
+      "always makes a value copy, which holds for every other `vector<T>`. The same proxy also " +
+      "explains two related surprises: `auto& f = flags[0];` doesn't compile, because a non-const " +
+      "lvalue reference can't bind to a prvalue, and an `auto` proxy kept past a reallocation or the " +
+      "vector's destruction dangles just like a pointer would. The fix is to name the type (`bool f " +
+      "= flags[0];`) or force the conversion (`auto f = static_cast<bool>(flags[0]);`). The same " +
+      "hazard shows up with expression-template libraries like Eigen, where `auto` captures an " +
+      "unevaluated expression rather than a result.",
+    references: ["https://en.cppreference.com/w/cpp/container/vector_bool"],
+  },
 ];

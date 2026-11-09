@@ -1625,4 +1625,448 @@ std::sort(trades.begin(), trades.end(),
       "https://en.wikipedia.org/wiki/Van_Emde_Boas_tree",
     ],
   },
+  {
+    id: "dsa-heap-build-01",
+    category: "dsa",
+    difficulty: "medium",
+    title: "Bottom-up heapify vs. n successive heap inserts",
+    tags: ["binary-heap", "heapify", "priority-queue", "complexity-analysis"],
+    type: "trace",
+    prompt:
+      "There are two ways to turn an array of n arbitrary keys into a binary min-heap. The " +
+      "first starts from an empty heap and inserts the keys one at a time, each insert " +
+      "appending at the end and sifting the new key up. The second (Floyd's bottom-up " +
+      "heapify) treats the array as an already-shaped complete tree and calls sift-down on " +
+      "every internal node, from index n/2 - 1 down to 0. What are their worst-case running " +
+      "times?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Θ(n log n) for both, since every sift can travel a full root-to-leaf path",
+        "Θ(n log n) for successive inserts, but Θ(n) for bottom-up heapify",
+        "Θ(n) for both, since most nodes in a heap sit near the bottom level",
+        "Θ(n) for successive inserts, but Θ(n log n) for bottom-up heapify",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "The two procedures look symmetric but charge each node a different distance. Sift-up " +
+      "costs a node its depth (distance to the root); sift-down costs a node its height " +
+      "(distance to the leaves). In a complete binary tree about half the nodes are leaves, a " +
+      "quarter sit one level above, and so on, so most nodes are deep but short. For successive " +
+      "inserts, the worst case is keys arriving in decreasing order: every new key is the new " +
+      "minimum and sifts all the way to the root, costing floor(log2 i) swaps for the i-th " +
+      "insert, and the sum of log2 i over i = 1..n is log2(n!) = Θ(n log n). For bottom-up " +
+      "heapify, a heap of n nodes has at most ceil(n / 2^(h+1)) nodes of height h, and sifting " +
+      "one of them down costs at most h swaps (about 2h comparisons). The total is at most " +
+      "the sum over h of h · n / 2^(h+1) = n · Σ h / 2^(h+1) = n · 1, so at most about n swaps " +
+      "and 2n comparisons: Θ(n). The expensive long sifts happen only near the root, where " +
+      "there are very few nodes. 'Θ(n) for both' applies the right intuition to the wrong " +
+      "procedure: the many bottom nodes are exactly the ones that sift-up sends a long way. " +
+      "(On uniformly random input the expected sift-up distance per insert is a small " +
+      "constant, so the gap is a worst-case one.) None of this makes heapsort linear: its " +
+      "extraction phase is still n sift-downs from the root at Θ(log n) each, and heap order " +
+      "is a much weaker property than sorted order, so building one in O(n) does not conflict " +
+      "with the Ω(n log n) comparison-sorting lower bound. This is why std::make_heap is " +
+      "specified at O(n) comparisons rather than n calls to push_heap.",
+    references: [
+      "https://en.wikipedia.org/wiki/Binary_heap#Building_a_heap",
+    ],
+  },
+  {
+    id: "dsa-linear-probing-delete-01",
+    category: "dsa",
+    difficulty: "medium",
+    title: "Erasing from a linear-probing table by emptying the slot",
+    tags: ["hash-table", "open-addressing", "linear-probing", "deletion"],
+    type: "trace",
+    prompt:
+      "This fixed-size open-addressing table uses linear probing and erases a key by " +
+      "resetting its slot to EMPTY. Keys 3, 11, and 19 all have home slot 3. After the calls " +
+      "below, what is found, and what is the general fix?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `// Capacity 8, home slot = key % 8, linear probing.
+struct Table {
+    static constexpr int EMPTY = -1;
+    int slot[8];
+    Table() { std::fill(slot, slot + 8, EMPTY); }
+
+    void insert(int key) {
+        int i = key % 8;
+        while (slot[i] != EMPTY) i = (i + 1) % 8;
+        slot[i] = key;
+    }
+    bool contains(int key) const {
+        for (int i = key % 8; slot[i] != EMPTY; i = (i + 1) % 8)
+            if (slot[i] == key) return true;
+        return false;
+    }
+    void erase(int key) {
+        for (int i = key % 8; slot[i] != EMPTY; i = (i + 1) % 8)
+            if (slot[i] == key) { slot[i] = EMPTY; return; }
+    }
+};
+
+Table t;
+t.insert(3); t.insert(11); t.insert(19);
+t.erase(11);
+bool found = t.contains(19);`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "true; a lookup keeps scanning until it has covered the key's whole cluster",
+        "false; but only keys sharing the erased key's home slot can be lost this way",
+        "false; and the only safe fix is to rehash the whole table after each erase",
+        "false; erase must leave a tombstone or shift later entries of the run back",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "The inserts place 3, 11, and 19 in slots 3, 4, and 5. Erasing 11 empties slot 4. " +
+      "contains(19) starts at slot 3, sees 3, moves to slot 4, finds it EMPTY, and returns " +
+      "false, even though 19 is sitting in slot 5. Linear probing's lookup depends on an " +
+      "invariant: if a key lives in slot s and its home slot is h, then every slot from h up to " +
+      "s - 1 is occupied. That is what makes 'stop at the first empty slot' a correct proof " +
+      "of absence. Emptying a slot in the middle of a run breaks the invariant for every key " +
+      "whose probe path crossed that slot, and that includes keys with different home slots: " +
+      "a key homed at slot 4 that had been pushed to slot 6 is equally reachable only through " +
+      "the run, and so is a key homed at slot 2 that overflowed past slot 4. The lookup cannot " +
+      "'cover the whole cluster' either, because the only thing that defines a cluster's end " +
+      "is an empty slot. The table is now also corrupt for writes: insert(19) would land in " +
+      "slot 4, leaving a duplicate. Two standard fixes exist. A tombstone marks the slot as " +
+      "deleted: lookups probe past it, inserts may reuse it (after checking the key is not " +
+      "already further along). Tombstones accumulate, though, so a table with few live keys " +
+      "can still have long probe sequences for misses, and implementations rebuild once " +
+      "live + tombstones passes a threshold. Backward-shift deletion (Knuth's Algorithm R) " +
+      "avoids tombstones: after emptying slot i, scan forward through the run, and move any " +
+      "entry whose home slot is not cyclically within (i, j] back into the hole, repeating " +
+      "until an empty slot is reached. That works for linear probing specifically, since a " +
+      "key's probe sequence is just consecutive slots. Rehashing on every erase is correct " +
+      "but Θ(capacity) per erase, which defeats the point of a hash table.",
+    references: [
+      "https://en.wikipedia.org/wiki/Linear_probing#Deletion",
+    ],
+  },
+  {
+    id: "dsa-splay-amortized-01",
+    category: "dsa",
+    difficulty: "hard",
+    title: "A splay tree after ascending inserts, followed by find(1)",
+    tags: ["splay-tree", "amortized-analysis", "potential-method", "self-adjusting"],
+    type: "trace",
+    prompt:
+      "A splay tree inserts a key by ordinary BST insertion and then splays the new node to " +
+      "the root. Keys 1, 2, ..., n are inserted into an empty splay tree in increasing order, " +
+      "and then find(1) is called, which walks down to key 1 and splays it. Splay trees " +
+      "guarantee O(log n) amortized time per operation. What is the actual cost of the n " +
+      "inserts in total, and of the find(1)?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Θ(n) for all the inserts and Θ(n) for find(1), within the amortized bound",
+        "Θ(n log n) for the inserts and Θ(log n) for find(1), as each op is O(log n)",
+        "Θ(n) for the inserts and Θ(n) for find(1), breaking the bound on sorted input",
+        "Θ(n²) for the inserts, since each walks the chain built so far, then Θ(n)",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "After inserting k, key k is the root and is the largest key, so inserting k + 1 places " +
+      "it as the root's right child after a single comparison, and splaying it is a single zig " +
+      "rotation: k + 1 becomes the root with k as its left child. Each insert is O(1) actual " +
+      "work, Θ(n) in total, and the result is a left-going chain: n at the root, 1 at depth " +
+      "n - 1. find(1) then walks n - 1 edges and performs about n/2 zig-zig steps to bring 1 " +
+      "to the root: Θ(n) for one operation. This does not contradict the bound, because it is " +
+      "an amortized bound, not a per-operation one. Sleator and Tarjan's potential is " +
+      "Φ = Σ log2 size(x) over all nodes. The chain has subtree sizes 1, 2, ..., n, so " +
+      "Φ = log2(n!) = Θ(n log n): the cheap inserts each paid O(1) actual cost but were " +
+      "charged O(log n) amortized, and the difference was banked as potential. The access " +
+      "lemma bounds the amortized cost of splaying x by 3(log2 size(root) - log2 size(x)) + 1 " +
+      "= O(log n), so find(1)'s actual cost of about n is paid by a potential drop of about " +
+      "n - 3 log2 n. Concretely, zig-zig steps roughly halve the depth of every node on the " +
+      "access path, which is exactly the structural improvement the potential measures. Over " +
+      "any sequence, actual total = amortized total - (Φ_end - Φ_start) ≤ O(m log n) + Φ_start, " +
+      "so m operations from an empty tree cost O(m log n) overall. Nothing here depends on " +
+      "the input being random: the guarantee is deterministic and holds for every sequence, " +
+      "sorted ones included. What it does not give is a per-operation worst case, which is why " +
+      "splay trees are a poor fit for latency-sensitive code even though they do well on " +
+      "workloads with locality.",
+    references: [
+      "https://doi.org/10.1145/3828.3835",
+      "https://en.wikipedia.org/wiki/Splay_tree",
+    ],
+  },
+  {
+    id: "dsa-kmp-amortized-01",
+    category: "dsa",
+    difficulty: "hard",
+    title: "Total and per-character cost of KMP's failure-link loop",
+    tags: ["kmp", "string-matching", "amortized-analysis", "string-algorithms"],
+    type: "trace",
+    prompt:
+      "This is the search phase of Knuth-Morris-Pratt, with the failure table already built " +
+      "for a pattern of length m. For a text of length n, what is the worst-case total work, " +
+      "counting every iteration of the inner while loop?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `// fail[q] = length of the longest proper prefix of p[0..q]
+//           that is also a suffix of p[0..q]
+int countMatches(const string& t, const string& p, const vector<int>& fail) {
+    int count = 0, q = 0;  // q = number of pattern chars currently matched
+    for (size_t i = 0; i < t.size(); i++) {
+        while (q > 0 && p[q] != t[i]) q = fail[q - 1];
+        if (p[q] == t[i]) q++;
+        if (q == (int)p.size()) { count++; q = fail[q - 1]; }
+    }
+    return count;
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "O(n·m) total, since each text character can fall back up to m times",
+        "O(n) total, though a single text character can trigger Θ(m) fallbacks",
+        "O(n) total, and no text character ever triggers more than one fallback",
+        "O(n log m) total, since each fallback at least halves the matched length",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "Use q as a potential. q starts at 0 and never goes negative. The only increase is " +
+      "q++, at most once per text character, so q rises by at most n over the whole scan. " +
+      "Every iteration of the while loop sets q = fail[q - 1], and fail[q - 1] ≤ q - 1 " +
+      "because the border must be a proper prefix, so each fallback lowers q by at least 1 " +
+      "(the post-match q = fail[q - 1] lowers it too). Total decreases cannot exceed total " +
+      "increases, so the while loop runs at most n times across the entire scan, and the " +
+      "search is O(n) with at most about 2n character comparisons. Building the failure table " +
+      "is the same argument applied to the pattern against itself, O(m). That bound is " +
+      "amortized, not per character. With pattern a^(m-1)b and text a^(m-1)c, q reaches m - 1, " +
+      "and the c then falls back m - 1 times (m - 1 → m - 2 → ... → 0), each failing to " +
+      "match. That same example refutes the halving claim: for runs of a single letter, " +
+      "fail[q - 1] = q - 1, so q drops by only one per step. O(n·m) is what you get by bounding " +
+      "the inner loop per character and multiplying, which ignores that a long fallback chain " +
+      "can only be spent after an equally long run of increments paid for it. The " +
+      "per-character delay matters for real-time streaming matchers. KMP's refined 'next' " +
+      "function, which skips any fallback target whose next character equals the one that " +
+      "just mismatched, cuts the worst-case delay to O(log m) (Fibonacci strings are the worst " +
+      "case), and a full DFA over the alphabet Σ gets O(1) per character at the cost of " +
+      "O(m·|Σ|) preprocessing.",
+    references: [
+      "https://doi.org/10.1137/0206024",
+      "https://en.wikipedia.org/wiki/Knuth%E2%80%93Morris%E2%80%93Pratt_algorithm",
+    ],
+  },
+  {
+    id: "dsa-quicksort-duplicates-01",
+    category: "dsa",
+    difficulty: "hard",
+    title: "Randomized Lomuto quicksort on an array of identical keys",
+    tags: ["quicksort", "partitioning", "duplicates", "randomized-algorithms"],
+    type: "trace",
+    prompt:
+      "This quicksort chooses a uniformly random pivot and partitions with Lomuto's scheme. " +
+      "What is its running time on an array of n elements that all hold the same value?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `int partition(vector<int>& a, int lo, int hi) {
+    swap(a[lo + rand() % (hi - lo + 1)], a[hi]);  // random pivot to the end
+    int pivot = a[hi], i = lo;
+    for (int j = lo; j < hi; j++)
+        if (a[j] < pivot) swap(a[i++], a[j]);
+    swap(a[i], a[hi]);
+    return i;
+}
+
+void quicksort(vector<int>& a, int lo, int hi) {
+    if (lo >= hi) return;
+    int p = partition(a, lo, hi);
+    quicksort(a, lo, p - 1);
+    quicksort(a, p + 1, hi);
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Expected Θ(n log n), since a random pivot defeats any fixed input order",
+        "Θ(n), since the input is already sorted and no element needs to move",
+        "Θ(n²), since every partition call peels off nothing but the pivot itself",
+        "Expected Θ(n log n) once the comparison is changed from < to <=",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "With every key equal, a[j] < pivot is never true, so i stays at lo, the pivot is " +
+      "swapped to position lo, and the call returns p = lo. The left recursion is empty and " +
+      "the right one has n - 1 elements, so T(n) = T(n - 1) + Θ(n) = Θ(n²), with recursion " +
+      "depth n as well (a stack overflow risk for large inputs). Changing < to <= just " +
+      "mirrors the failure: every element goes left, p = hi, and the split is n - 1 and 0. " +
+      "Random pivot selection does not help because it protects against unlucky orderings of " +
+      "distinct values, and here every possible pivot is the same value: there is no good " +
+      "pivot to get lucky with. Being already sorted does not save Lomuto either, since its " +
+      "cost is driven by the split sizes, not by how many swaps happen. The same degradation " +
+      "applies partially to inputs with few distinct values: once a subarray consists of a " +
+      "block of equal keys, that block is sorted quadratically, so k distinct values in blocks " +
+      "of n/k cost at least Θ(n²/k). Hoare's partition avoids this because both scanning " +
+      "pointers stop on keys equal to the pivot and swap them, so on an all-equal array the " +
+      "pointers meet in the middle and T(n) = 2T(n/2) + Θ(n) = Θ(n log n), at the price of " +
+      "swaps that move nothing useful. A three-way partition (Dijkstra's Dutch national flag, " +
+      "or Bentley-McIlroy) groups the keys equal to the pivot into a middle band that is " +
+      "excluded from both recursive calls, so an all-equal array finishes in one Θ(n) pass. " +
+      "Production sorts use one of these, and introsort's depth limit would cap a degenerate " +
+      "run at Θ(n log n) via heapsort in any case.",
+    references: [
+      "https://en.wikipedia.org/wiki/Quicksort#Repeated_elements",
+    ],
+  },
+  {
+    id: "dsa-cuckoo-hashing-01",
+    category: "dsa",
+    difficulty: "hard",
+    title: "Cuckoo hashing's lookup and insert guarantees vs. load factor",
+    tags: ["cuckoo-hashing", "hash-table", "load-factor", "random-graphs"],
+    type: "trace",
+    prompt:
+      "A cuckoo hash table has two arrays T1 and T2 of m slots each and two independent hash " +
+      "functions. Every key lives either at T1[h1(k)] or at T2[h2(k)], never anywhere else. " +
+      "Insert places the key at T1[h1(k)]; if that evicts an occupant, the occupant moves to " +
+      "its slot in the other array, possibly evicting another key, and so on. If the chain " +
+      "exceeds a step limit, the table is rebuilt with fresh hash functions. Load factor is " +
+      "n / 2m. Which statement about its guarantees is correct?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Expected O(1) lookup, since evictions can push a key far from its hash",
+        "O(1) worst-case lookup and insert, since each key has only two slots",
+        "O(1) worst-case lookup; expected O(1) insert at any load below 100%",
+        "O(1) worst-case lookup; expected O(1) insert only below about 50% load",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "Lookup checks T1[h1(k)] and T2[h2(k)] and nothing else, so it is O(1) in the worst " +
+      "case. Evictions never move a key anywhere except its other designated slot, which is " +
+      "the whole point of the scheme. Insert is the expensive side. Model the table as the " +
+      "cuckoo graph: one vertex per slot (2m vertices) and one edge per key, joining its two " +
+      "candidate slots. A set of keys can be placed iff every connected component has at most " +
+      "as many edges as vertices, i.e. contains at most one cycle; an eviction chain is a walk " +
+      "through a component, and a component with two cycles makes it loop forever, which is " +
+      "why a step limit and rebuild are required and why insert has no worst-case O(1) bound. " +
+      "This is a random graph with 2m vertices and n edges, so its average degree is n/m, and " +
+      "random graphs undergo a phase transition at average degree 1. Below it (n < m, load " +
+      "below 1/2) components are small, mostly trees, with at most one cycle w.h.p.: Pagh and " +
+      "Rodler show expected O(1) insert with each array sized (1 + ε)n, and rebuilds are rare " +
+      "enough to be absorbed in that expectation. Above it a giant component with many cycles " +
+      "appears, inserts fail with high probability, and rebuilding with new hash functions " +
+      "just produces another random graph past the same threshold. Linear probing degrades " +
+      "gradually as load approaches 1; cuckoo hashing hits a cliff. That 50% ceiling on space " +
+      "efficiency is why practical variants relax the design: three or more hash functions " +
+      "push the threshold to about 91%, and buckets of four slots per index (as in cuckoo " +
+      "filters) reach about 95%, while still keeping lookup to a constant number of probes.",
+    references: [
+      "https://en.wikipedia.org/wiki/Cuckoo_hashing",
+    ],
+  },
+  {
+    id: "dsa-skiplist-concurrency-01",
+    category: "dsa",
+    difficulty: "hard",
+    title: "Skip lists vs. red-black trees as a concurrent ordered map",
+    tags: ["skip-list", "red-black-tree", "lock-free", "concurrency", "cas"],
+    type: "trace",
+    prompt:
+      "Java's single-threaded sorted map, TreeMap, is a red-black tree, but its concurrent " +
+      "counterpart, ConcurrentSkipListMap, is a lock-free skip list, and many other lock-free " +
+      "ordered sets follow the same pattern. What property of skip lists is the main reason " +
+      "for that choice?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Its search is O(log n) in the worst case, tighter than a red-black tree's bound",
+        "Each update rewires a few local pointers, one CAS at a time, with no rotations",
+        "It stores fewer pointers per key, so fewer cache lines get contended on writes",
+        "Its random levels make concurrent updates commute, so they need no atomics",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "A red-black insert or delete may recolor nodes all the way up the search path and " +
+      "perform rotations. A rotation rewrites child pointers in three nodes at once, and a " +
+      "concurrent reader traversing mid-rotation can be routed into the wrong subtree and " +
+      "miss a key that is present. Those multi-word updates cannot be done with single-word " +
+      "compare-and-swap, so concurrent balanced trees need locking (and rebalancing near the " +
+      "root makes the upper levels a contention hotspot) or substantially more intricate " +
+      "relaxed-balance and optimistic schemes. A skip list's correctness lives entirely in " +
+      "its bottom level, which is an ordinary sorted linked list. Insert prepares the new node " +
+      "with its next pointer already set, then a single CAS on the predecessor's next pointer " +
+      "splices it into level 0; that CAS is the linearization point, after which the key is " +
+      "in the set. The upper levels are linked afterward, one CAS each, and they are only " +
+      "shortcuts: a search that misses a not-yet-linked upper pointer just walks a little " +
+      "further at a lower level and still returns the right answer. Delete follows Harris's " +
+      "linked-list technique: first mark the node's next pointer (logical deletion, one CAS), " +
+      "then unlink it (another CAS), so no insert can be lost behind a node being removed. " +
+      "ConcurrentSkipListMap does the marking with separate marker nodes, since Java cannot " +
+      "steal pointer bits. Balance is decided by each node's own coin flips at insert time, " +
+      "independent of every other node, so there is no global restructuring to coordinate. " +
+      "The other options get the tradeoffs backward: skip-list search is O(log n) only in " +
+      "expectation, while a red-black tree's bound is worst-case; with p = 1/2 a node averages " +
+      "1/(1 - p) = 2 forward pointers, about the same as a BST node's two children; and CAS " +
+      "is exactly the synchronization the structure relies on.",
+    references: [
+      "https://www.cl.cam.ac.uk/techreports/UCAM-CL-TR-579.pdf",
+      "https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/ConcurrentSkipListMap.html",
+    ],
+  },
+  {
+    id: "dsa-rope-depth-01",
+    category: "dsa",
+    difficulty: "medium",
+    title: "Index lookup in a rope built by repeated appends",
+    tags: ["rope", "string-data-structures", "balanced-trees", "text-editors"],
+    type: "trace",
+    prompt:
+      "A rope represents a long string as a binary tree: leaves hold short chunks of text, " +
+      "and each internal node stores its weight, the total length of its left subtree. " +
+      "index(i) walks down from the root, going left if i < weight and otherwise subtracting " +
+      "weight and going right. concat(a, b) allocates a new root with children a and b in " +
+      "O(1). A document is built from n chunks with r = concat(r, chunk) in a loop, and " +
+      "nothing ever rebalances the tree. What does index(i) cost on the result?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "O(log n), since the stored weights let each step discard half the text",
+        "Amortized O(1), since every append lands at the shallow right edge",
+        "Θ(n) for every position, since weights are summed along the chain",
+        "Θ(n) for early positions; concat needs rebalancing to keep O(log n)",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "Each concat makes the previous rope the new root's left child and the new chunk its " +
+      "right child, so after n appends the tree is a left spine of n - 1 internal nodes with " +
+      "one chunk hanging to the right of each. Chunk k sits at depth about n - k + 1: the " +
+      "first chunk is at the bottom, the last one directly under the root. index(i) for a " +
+      "position in the first chunk takes the left branch at every internal node, Θ(n) steps, " +
+      "while a position in the last chunk is found in O(1). The weights decide which way to go " +
+      "at each node; they say nothing about how much text that step discards, so they only " +
+      "give O(log n) when the tree's depth is O(log n). The 'every position' option ignores " +
+      "that late chunks are shallow, and the 'amortized O(1)' option is describing the cost " +
+      "of append, not of indexing into what the appends built. Ropes therefore keep their " +
+      "depth logarithmic explicitly. Boehm, Atkinson, and Plass's ropes rebalance when depth " +
+      "exceeds a bound, using a Fibonacci-based criterion (a node at depth d is balanced if " +
+      "its length is at least F(d + 2)); other implementations keep the rope as an AVL, " +
+      "red-black, or B-tree and implement concat as an O(log n) join. With balance, index, " +
+      "insert, delete, split, and concat are all O(log n). That is the real tradeoff against " +
+      "a flat std::string, which has O(1) indexing and amortized O(1) append but Θ(n) for an " +
+      "insertion or deletion in the middle, since everything after the edit point is moved. " +
+      "Ropes win when edits land in the middle of very large texts or when old versions are " +
+      "shared, since unchanged subtrees can be reused rather than copied.",
+    references: [
+      "https://en.wikipedia.org/wiki/Rope_(data_structure)",
+    ],
+  },
 ];

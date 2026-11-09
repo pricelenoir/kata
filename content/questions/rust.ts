@@ -2687,4 +2687,525 @@ fn main() {
       "https://doc.rust-lang.org/book/ch03-01-variables-and-mutability.html#shadowing",
     ],
   },
+  {
+    id: "rust-drop-order-02",
+    category: "rust",
+    difficulty: "medium",
+    title: "Drop order across struct fields, Vec elements, and locals",
+    tags: ["drop", "raii", "destructors", "structs", "vec"],
+    type: "trace",
+    prompt: "What does this program print when `main` returns?",
+    snippet: {
+      language: "rust",
+      filename: "main.rs",
+      code: `struct Noisy(&'static str);
+
+impl Drop for Noisy {
+    fn drop(&mut self) {
+        print!("{} ", self.0);
+    }
+}
+
+struct Pair {
+    a: Noisy,
+    b: Noisy,
+}
+
+fn main() {
+    let _p = Pair { a: Noisy("a"), b: Noisy("b") };
+    let _v = vec![Noisy("v0"), Noisy("v1")];
+    let _x = Noisy("x");
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "x v0 v1 a b",
+        "x v1 v0 b a",
+        "a b v0 v1 x",
+        "x v1 v0 a b",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "Three different ordering rules are in play, and only one of them is 'reverse'. " +
+      "**Local variables** are dropped in reverse declaration order, exactly like C++ " +
+      "automatic objects: `_x` first, then `_v`, then `_p`. **Struct fields** are dropped " +
+      "in *declaration* order, `a` then `b`, which is the opposite of C++, where non-static " +
+      "data members are destroyed in reverse declaration order (mirroring construction). " +
+      "Tuple elements and enum-variant fields follow the same first-to-last rule. **Vec " +
+      "elements** are dropped first to last: `Vec<T>`'s `Drop` calls `ptr::drop_in_place` on " +
+      "its initialized slice, and the Reference specifies that array and slice elements are " +
+      "dropped in index order. So the full sequence is `x v0 v1 a b`. The C++ comparison is " +
+      "worth knowing precisely: the standard leaves `std::vector`'s element destruction " +
+      "order unspecified, and the two major implementations disagree in practice (libstdc++ " +
+      "destroys front to back, libc++ back to front), whereas Rust's order is a documented, " +
+      "stable language guarantee. The practical consequence is for structs whose fields " +
+      "depend on each other: if field `b` must be torn down before field `a` (say, a " +
+      "statement handle that must close before its database connection), a C++ programmer's " +
+      "instinct to declare `a` first is backwards in Rust. Either declare the dependent " +
+      "field first, or take control explicitly with `ManuallyDrop<T>` and an explicit `Drop` " +
+      "impl on the containing struct.",
+    references: [
+      "https://doc.rust-lang.org/reference/destructors.html",
+      "https://doc.rust-lang.org/std/ops/trait.Drop.html#drop-order",
+      "https://doc.rust-lang.org/std/mem/struct.ManuallyDrop.html",
+    ],
+  },
+  {
+    id: "rust-const-generics-01",
+    category: "rust",
+    difficulty: "medium",
+    title: "A const generic parameter used in an arithmetic array length",
+    tags: ["const-generics", "arrays", "generics", "compile-error"],
+    type: "trace",
+    prompt: "What happens when this program is compiled with a stable toolchain?",
+    snippet: {
+      language: "rust",
+      filename: "main.rs",
+      code: `fn append_zero<const N: usize>(a: [u8; N]) -> [u8; N + 1] {
+    let mut out = [0u8; N + 1];
+    out[..N].copy_from_slice(&a);
+    out
+}
+
+fn main() {
+    let b = append_zero([1, 2, 3]);
+    println!("{:?}", b);
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Compiles and prints `[1, 2, 3, 0]`: `N` is inferred as 3 and `N + 1` is evaluated when the function is monomorphized",
+        "Compile error: `N + 1` overflows when `N == usize::MAX`, so rustc requires an explicit bound ruling that case out",
+        "Compile error: generic parameters may not be used in const operations; `N` may only appear as a standalone argument",
+        "Compiles, then fails at the call site with a post-monomorphization error once `N = 3` is substituted into `N + 1`",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "Stable Rust's const generics (the `min_const_generics` subset, stable since 1.51) let " +
+      "a const parameter appear in a type or array length only as a *standalone* argument: " +
+      "`[u8; N]` is fine, `[u8; N + 1]` is not. rustc rejects both line 1 and line 2 with " +
+      "\"error: generic parameters may not be used in const operations\", labeled \"cannot " +
+      "perform const operation using `N`\" with the help note \"const parameters may only be " +
+      "used as standalone arguments here, i.e. `N`\" (this diagnostic carries no error " +
+      "code). Lifting the restriction is the nightly-only, explicitly incomplete " +
+      "`generic_const_exprs` feature. The reason is that Rust type-checks a generic body " +
+      "*once*, before monomorphization, so it would have to reason about `N + 1` " +
+      "symbolically: decide whether `[u8; N + 1]` and some other `[u8; 1 + N]` are the same " +
+      "type, and prove the expression can't fail for any `N`. Overflow at `usize::MAX` is " +
+      "one reason that's hard, which is what makes choice 2 plausible, but the error isn't a " +
+      "request for a bound: no bound you could write on stable would make it compile. This " +
+      "is a sharp difference from C++, where `template <size_t N> std::array<uint8_t, N + 1> " +
+      "append_zero(std::array<uint8_t, N>)` compiles without complaint, because templates " +
+      "are only fully checked after instantiation. The usual stable workaround makes the " +
+      "output length its own parameter, `fn append_zero<const N: usize, const M: usize>(a: " +
+      "[u8; N]) -> [u8; M]`, and checks the relationship with an inline const block, " +
+      "`const { assert!(M == N + 1) };` (stable since 1.79). Ironically, *that* produces " +
+      "exactly the post-monomorphization error choice 4 describes: calling it with the wrong " +
+      "`M` fails with error[E0080] while instantiating `append_zero::<3, 5>`.",
+    references: [
+      "https://doc.rust-lang.org/reference/items/generics.html#const-generics",
+      "https://blog.rust-lang.org/2021/02/26/const-generics-mvp-beta.html",
+      "https://doc.rust-lang.org/reference/expressions/block-expr.html#const-blocks",
+    ],
+  },
+  {
+    id: "rust-rwlock-match-scrutinee-01",
+    category: "rust",
+    difficulty: "medium",
+    title: "Calling RwLock::write in a match arm on a read() lookup",
+    tags: ["rwlock", "temporaries", "deadlock", "match", "drop"],
+    type: "trace",
+    prompt:
+      "This is a single-threaded read-through cache: look the key up under a read lock, " +
+      "and on a miss, compute the value and insert it under a write lock. What happens when " +
+      "the program runs?",
+    snippet: {
+      language: "rust",
+      filename: "main.rs",
+      code: `use std::collections::HashMap;
+use std::sync::RwLock;
+
+fn main() {
+    let cache: RwLock<HashMap<u32, String>> = RwLock::new(HashMap::new());
+    let key = 7;
+
+    let value = match cache.read().unwrap().get(&key) {
+        Some(v) => v.clone(),
+        None => {
+            let v = format!("computed-{}", key);
+            cache.write().unwrap().insert(key, v.clone());
+            v
+        }
+    };
+
+    println!("{}", value);
+}`,
+      highlightLines: [8, 12],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Prints `computed-7`: the read guard is a temporary, so it is dropped once the scrutinee expression is evaluated, before any arm runs",
+        "Compile error E0502: `cache.write()` needs a borrow of `cache` that conflicts with the read guard still borrowed by the scrutinee",
+        "Prints `computed-7`: std's `RwLock` upgrades the current thread's read lock to a write lock when that same thread calls `write()`",
+        "Hangs (std also permits a panic here): the read guard lives until the end of the whole `let` statement, so `write()` waits on itself",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "Temporaries created in a `match` scrutinee are not dropped when the scrutinee " +
+      "finishes evaluating: they live until the end of the enclosing *statement*, here the " +
+      "whole `let value = match ... ;`. That rule exists for good reason: `get` returns an " +
+      "`Option<&String>` that borrows from the `RwLockReadGuard` temporary, so the `Some(v)` " +
+      "arm needs the guard alive. But the extension applies to every arm, including `None`, " +
+      "which doesn't need it. So the `None` arm calls `cache.write()` while this same " +
+      "thread still holds a read lock. It *compiles* because `RwLock::read` and " +
+      "`RwLock::write` both take `&self`: two shared borrows of `cache` never conflict, and " +
+      "the borrow checker tracks references, not lock state, so choice 2's E0502 never " +
+      "fires. At runtime, std's `RwLock` has no upgrade path (choice 3); a writer waits for " +
+      "all readers to leave, and the only reader is the thread that is waiting. The `write` " +
+      "docs say it \"might panic when called if the lock is already held by the current " +
+      "thread\"; on the current futex-based (Linux) and queue-based (macOS) implementations " +
+      "it simply blocks forever. Compare C++: calling `lock()` on a `std::shared_mutex` " +
+      "while the same thread holds `lock_shared()` is undefined behavior per the standard. " +
+      "Rust downgrades that to a deadlock or panic, but safe Rust does not prevent " +
+      "deadlocks. The fix is to end the read lock in its own statement: `let hit = " +
+      "cache.read().unwrap().get(&key).cloned();` then `match hit`. (Between dropping the " +
+      "read lock and taking the write lock another thread may insert the key, so a " +
+      "concurrent version should re-check under the write lock, e.g. via `entry`.) Note " +
+      "that the Rust 2024 edition shortened scrutinee temporaries for `if let` so they drop " +
+      "before the `else` block, but `match` kept its old rule, so this code hangs in every " +
+      "edition.",
+    references: [
+      "https://doc.rust-lang.org/reference/destructors.html#temporary-scopes",
+      "https://doc.rust-lang.org/std/sync/struct.RwLock.html#method.write",
+      "https://doc.rust-lang.org/edition-guide/rust-2024/temporary-if-let-scope.html",
+    ],
+  },
+  {
+    id: "rust-pin-unpin-01",
+    category: "rust",
+    difficulty: "medium",
+    title: "Polling an async block through Pin::new(&mut fut)",
+    tags: ["pin", "unpin", "async", "futures", "self-referential", "compile-error"],
+    type: "trace",
+    prompt:
+      "This hand-polls an async block once using a no-op waker (`Waker::noop`, stable " +
+      "since Rust 1.85). What happens when it is compiled?",
+    snippet: {
+      language: "rust",
+      filename: "main.rs",
+      code: `use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll, Waker};
+
+fn main() {
+    let mut fut = async {
+        let x = 5;
+        let r = &x;
+        std::future::ready(()).await;
+        *r
+    };
+
+    let mut cx = Context::from_waker(Waker::noop());
+    let pinned = Pin::new(&mut fut);
+    match pinned.poll(&mut cx) {
+        Poll::Ready(v) => println!("ready: {}", v),
+        Poll::Pending => println!("pending"),
+    }
+}`,
+      highlightLines: [14],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Compiles and prints `ready: 5`: `std::future::ready` completes on its first poll, so the whole block finishes in one call",
+        "Compile error E0277: the async block's future does not implement `Unpin`, and `Pin::new` is only available for `Unpin` targets",
+        "Compile error E0597: `x` does not live long enough, because `r` holds a borrow of it across the `.await` suspension point",
+        "Compiles and prints `pending`: every future returns `Poll::Pending` on its first poll so that it can register the waker",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "rustc rejects line 14 with error[E0277]: `{async block@...}` cannot be unpinned: " +
+      "\"the trait `Unpin` is not implemented for `{async block}`\", \"required by a bound in " +
+      "`Pin::<Ptr>::new`\", with a note suggesting `pin!` or `Box::pin`. The reason is the " +
+      "whole point of `Pin`. An async block compiles to an anonymous state machine, and " +
+      "every local that is live across an `.await` becomes a field of that state machine. " +
+      "Here both `x` and `r` survive the await, so `r` is a pointer to another field of the " +
+      "*same* value: the future is self-referential. If it were moved after its first poll, " +
+      "`r` would still point at the old location. So compiler-generated futures are " +
+      "`!Unpin`, and `Pin::new` is only offered when `Ptr::Target: Unpin`, i.e. for types " +
+      "where pinning promises nothing. For a `!Unpin` future you must either pin it in place " +
+      "on the stack with `let fut = std::pin::pin!(fut);` (which also shadows the original " +
+      "binding so it can never be moved again), pin it on the heap with `Box::pin(fut)`, or " +
+      "use `unsafe { Pin::new_unchecked(&mut fut) }` and personally guarantee it never moves. " +
+      "With `pin!`, this program prints `ready: 5`: `ready(())` resolves on the first poll, " +
+      "so choice 4's 'always Pending first' rule is not a real rule. Choice 3 has it " +
+      "backwards: borrowing a local across an `.await` inside an async block is legal, and " +
+      "`Pin` is the mechanism that makes it legal. Contrast C++20 coroutines, which sidestep " +
+      "the problem by allocating the coroutine frame (typically on the heap, unless the " +
+      "compiler elides it) and handing out only a `coroutine_handle` pointer, so the frame " +
+      "never moves. Rust instead keeps futures as ordinary inline values that compose " +
+      "without allocation, and encodes 'must not move after first poll' in the type system.",
+    references: [
+      "https://doc.rust-lang.org/std/pin/index.html",
+      "https://doc.rust-lang.org/std/pin/macro.pin.html",
+      "https://doc.rust-lang.org/std/marker/trait.Unpin.html",
+      "https://doc.rust-lang.org/error_codes/E0277.html",
+    ],
+  },
+  {
+    id: "rust-variance-01",
+    category: "rust",
+    difficulty: "hard",
+    title: "Shortening an element lifetime behind &'a Vec vs. &'a mut Vec",
+    tags: ["variance", "lifetimes", "subtyping", "mutable-references", "compile-error"],
+    type: "trace",
+    prompt: "Which of these two functions compile?",
+    snippet: {
+      language: "rust",
+      filename: "main.rs",
+      code: `fn shorten<'a>(v: &'a Vec<&'static str>) -> &'a Vec<&'a str> {
+    v
+}
+
+fn shorten_mut<'a>(v: &'a mut Vec<&'static str>) -> &'a mut Vec<&'a str> {
+    v
+}
+
+fn main() {
+    let mut names: Vec<&'static str> = vec!["alpha"];
+    println!("{}", shorten(&names).len());
+    println!("{}", shorten_mut(&mut names).len());
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Both: `&'static str` outlives `&'a str`, so a reference to either vector can be viewed at the shorter element lifetime",
+        "Neither: a returned reference whose element type differs from the parameter's always needs an explicit conversion",
+        "Only `shorten`: `shorten_mut` fails with \"lifetime may not live long enough\", because `&mut T` is invariant in `T`",
+        "Only `shorten_mut`: exclusive access means no other alias can observe the shortened type, so only the `&mut` form is sound",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "Lifetimes give Rust a subtyping relation: `&'static str` is a subtype of `&'a str`. " +
+      "Variance says how that relation passes through a type constructor. `Vec<T>` is " +
+      "covariant in `T`, and `&'a T` is covariant in `T`, so `&'a Vec<&'static str>` is a " +
+      "subtype of `&'a Vec<&'a str>` and `shorten` compiles by plain subsumption. `&'a mut " +
+      "T` is *invariant* in `T`, so `shorten_mut` is rejected: \"lifetime may not live long " +
+      "enough ... returning this value requires that `'a` must outlive `'static`\", with " +
+      "notes \"requirement occurs because of a mutable reference to `Vec<&str>`\" and " +
+      "\"mutable references are invariant over their type parameter\" (NLL region errors " +
+      "like this carry no error code). The invariance is load-bearing. If `shorten_mut` " +
+      "compiled, a caller could write `shorten_mut(&mut names).push(&local)` with a " +
+      "short-lived `String local`; once `local` is dropped, `names`, still typed " +
+      "`Vec<&'static str>`, would hold a dangling reference. A shared reference can only " +
+      "read, so viewing elements at a shorter lifetime is harmless; a mutable one can " +
+      "*write* a shorter-lived value into a slot the original owner believes is longer-lived. " +
+      "That also refutes choice 4: exclusivity is exactly what makes writes possible, and " +
+      "writes are what break covariance. This is the same hole as Java's covariant arrays " +
+      "(`Object[] o = new String[1]; o[0] = 1;` compiles and throws `ArrayStoreException` at " +
+      "runtime), closed at compile time. C++ has no variance for templates at all: " +
+      "`std::vector<Derived*>&` never converts to `std::vector<Base*>&`, sound but blunt. " +
+      "Rust computes variance per type parameter: covariant where only reads are possible, " +
+      "invariant behind `&mut T`, `Cell<T>`, and `UnsafeCell<T>`.",
+    references: [
+      "https://doc.rust-lang.org/nomicon/subtyping.html",
+      "https://doc.rust-lang.org/reference/subtyping.html#variance",
+    ],
+  },
+  {
+    id: "rust-any-type-id-01",
+    category: "rust",
+    difficulty: "hard",
+    title: "Three type checks against a Box<dyn Any>",
+    tags: ["any", "type-id", "downcasting", "method-resolution", "autoref", "trait-objects"],
+    type: "trace",
+    prompt: "What does this program print?",
+    snippet: {
+      language: "rust",
+      filename: "main.rs",
+      code: `use std::any::{Any, TypeId};
+
+fn main() {
+    let b: Box<dyn Any> = Box::new(42i32);
+    println!("{}", b.type_id() == TypeId::of::<i32>());
+    println!("{}", (*b).type_id() == TypeId::of::<i32>());
+    println!("{}", b.downcast_ref::<i32>().is_some());
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "false\ntrue\ntrue",
+        "true\ntrue\ntrue",
+        "false\nfalse\ntrue",
+        "true\ntrue\nfalse",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "`type_id` is a method of the `Any` trait, and `Any` has a blanket impl, `impl<T: " +
+      "'static + ?Sized> Any for T`. `Box<dyn Any>` is itself a `'static` type, so " +
+      "`Box<dyn Any>` implements `Any` too. Method resolution tries receiver types in order " +
+      "`Box<dyn Any>`, `&Box<dyn Any>`, `&mut Box<dyn Any>`, and only then dereferences to " +
+      "`dyn Any`. At the `&Box<dyn Any>` step, `<Box<dyn Any> as Any>::type_id` already " +
+      "matches, so `b.type_id()` returns `TypeId::of::<Box<dyn Any>>()` and line 5 prints " +
+      "`false`, silently, with no compiler warning. `(*b).type_id()` starts the search at " +
+      "`dyn Any`, so it makes a vtable call into the concrete `i32`'s impl: `true`. " +
+      "`downcast_ref` is different: it is an inherent method on `dyn Any` itself (`impl dyn " +
+      "Any { pub fn downcast_ref<T: Any>(&self) -> Option<&T> }`), not something `Box` has, " +
+      "so lookup must deref through the `Box` to find it, and it checks the inner value's " +
+      "`TypeId`: `true`. The `std::any` module docs call this out under \"Smart pointers and " +
+      "`dyn Any`\", and Clippy's `type_id_on_box` lint catches it. The C++ analogue is " +
+      "`typeid(p)` vs `typeid(*p)` on a pointer to a polymorphic base: the first gives the " +
+      "static pointer type, the second does the dynamic lookup. The difference is that C++ " +
+      "makes you spell the dereference, while Rust's autoref can hide it. The same trap " +
+      "applies to any method a smart pointer type also gets from a blanket impl, which is " +
+      "why generic code that wants the pointee's behavior should call `(*b).method()` or " +
+      "`b.as_ref().method()`.",
+    references: [
+      "https://doc.rust-lang.org/std/any/index.html#smart-pointers-and-dyn-any",
+      "https://doc.rust-lang.org/reference/expressions/method-call-expr.html",
+      "https://rust-lang.github.io/rust-clippy/master/index.html#type_id_on_box",
+    ],
+  },
+  {
+    id: "rust-mem-forget-01",
+    category: "rust",
+    difficulty: "hard",
+    title: "std::mem::forget on a Vec::drain iterator",
+    tags: ["mem-forget", "leak", "drain", "destructors", "unsafe-invariants"],
+    type: "trace",
+    prompt: "What does this program print with the current standard library?",
+    snippet: {
+      language: "rust",
+      filename: "main.rs",
+      code: `fn main() {
+    let mut v = vec![
+        String::from("a"),
+        String::from("b"),
+        String::from("c"),
+        String::from("d"),
+    ];
+
+    let drain = v.drain(1..3);
+    std::mem::forget(drain);
+
+    println!("{} {:?}", v.len(), v);
+}`,
+      highlightLines: [9, 10],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        '`4 ["a", "b", "c", "d"]`: `drain` is lazy, so nothing is removed until the iterator is advanced or dropped',
+        '`2 ["a", "d"]`: the range is removed eagerly by `drain`, so forgetting the iterator only leaks `"b"` and `"c"`',
+        "Compile error: `mem::forget` is an `unsafe fn`, since skipping a destructor can break invariants, so it needs `unsafe`",
+        '`1 ["a"]`: the `Drain`\'s destructor is what moves the tail back, so `"d"` is leaked along with `"b"` and `"c"`',
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "`mem::forget` is a safe function. It was made safe before 1.0 (the 2015 " +
+      "'Leakpocalypse'), once it was clear that safe code can leak anyway with an " +
+      "`Rc` cycle; the scoped-thread API whose soundness depended on a destructor running " +
+      "was removed instead. The resulting rule: *safe code may never rely on a destructor " +
+      "running for memory safety.* `Vec::drain` is designed around that rule, a technique " +
+      "the Nomicon calls leak amplification. When `drain(1..3)` is called it immediately " +
+      "sets the vector's length to the start of the range, `1`, so the vector never exposes " +
+      "slots that are about to be moved out. All the cleanup (dropping any undrained " +
+      "elements in the range, `memmove`-ing the tail `\"d\"` back down, and restoring the " +
+      "length) happens in `Drain`'s `Drop` impl. Forget the `Drain` and none of that runs: " +
+      "`v.len()` stays `1`, and `\"b\"`, `\"c\"`, and `\"d\"` are leaked (their heap buffers " +
+      "are never freed) but never double-freed or read after a move. Output: `1 [\"a\"]`. The " +
+      "`drain` docs only promise that a forgotten `Drain` \"may have lost and leaked " +
+      "elements arbitrarily, including elements outside the range\", so the exact count is " +
+      "an implementation detail; the guaranteed part is leak, not UB. The same reasoning " +
+      "covers guards: `mem::forget` on a `MutexGuard` leaves the mutex locked forever, a " +
+      "deadlock rather than a data race. C++ RAII code routinely depends on destructors " +
+      "for correctness; Rust allows that only when skipping the destructor degrades to a " +
+      "leak. Any unsafe code you write must hold up the same way. `ManuallyDrop<T>` is the " +
+      "modern, more explicit tool when you deliberately want to suppress a drop.",
+    references: [
+      "https://doc.rust-lang.org/std/mem/fn.forget.html",
+      "https://doc.rust-lang.org/nomicon/leaking.html",
+      "https://doc.rust-lang.org/std/vec/struct.Vec.html#method.drain",
+    ],
+  },
+  {
+    id: "rust-method-resolution-01",
+    category: "rust",
+    difficulty: "hard",
+    title: "An inherent &mut self method vs. a trait &self method of the same name",
+    tags: ["method-resolution", "autoref", "traits", "inherent-methods"],
+    type: "trace",
+    prompt: "What happens when this program is compiled and run?",
+    snippet: {
+      language: "rust",
+      filename: "main.rs",
+      code: `trait Describe {
+    fn describe(&self) -> &'static str {
+        "trait Describe::describe"
+    }
+}
+
+struct Sensor;
+
+impl Sensor {
+    fn describe(&mut self) -> &'static str {
+        "inherent Sensor::describe"
+    }
+}
+
+impl Describe for Sensor {}
+
+fn main() {
+    let mut s = Sensor;
+    println!("{}", s.describe());
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Prints `inherent Sensor::describe`: an inherent method always takes priority over a trait method with the same name",
+        "Prints `trait Describe::describe`: lookup tries the `&Sensor` receiver before `&mut Sensor`, and the trait method matches there",
+        "Compile error E0034: multiple applicable items in scope, so the call must be disambiguated with fully qualified syntax",
+        "Prints `inherent Sensor::describe`: since `s` is declared `mut`, the `&mut self` receiver is the better match for the call",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "Method call resolution is a search over *receiver types*, not a ranking of methods. " +
+      "Starting from the receiver's type, rustc builds the candidate list by repeated " +
+      "dereferencing (`Sensor` has no `Deref`, so just `Sensor`), then inserts `&T` and " +
+      "`&mut T` after each entry: `[Sensor, &Sensor, &mut Sensor]`. For each candidate in " +
+      "order, it looks first for inherent methods whose receiver has that type, then for " +
+      "methods of traits in scope, and stops at the first match. At `Sensor` (by value) " +
+      "nothing matches. At `&Sensor`, the inherent `describe` doesn't match (it wants " +
+      "`&mut Sensor`), but `Describe::describe(&self)` does, so the trait method wins and " +
+      "the program prints `trait Describe::describe`. 'Inherent before trait' only breaks " +
+      "ties *within* one receiver step. rustc does leave two clues: \"variable does not " +
+      "need to be mutable\" on `s`, and \"method `describe` is never used\" on the inherent " +
+      "method. E0034 needs two candidates at the same step, e.g. two traits both providing " +
+      "`fn describe(&self)`; then you write `Describe::describe(&s)` or `<Sensor as " +
+      "Describe>::describe(&s)`. To reach the inherent method here, call " +
+      "`Sensor::describe(&mut s)`. Choice 4 is the C++ intuition: given `describe()` and " +
+      "`describe() const` overloads, a non-const object selects the non-const overload " +
+      "because it is the better match for the implicit object parameter. Rust has no such " +
+      "overload ranking. Shared autoref is simply tried before mutable autoref, so the " +
+      "`&self` method wins.",
+    references: [
+      "https://doc.rust-lang.org/reference/expressions/method-call-expr.html",
+      "https://doc.rust-lang.org/error_codes/E0034.html",
+      "https://doc.rust-lang.org/book/ch20-02-advanced-traits.html",
+    ],
+  },
 ];

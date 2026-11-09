@@ -1602,4 +1602,460 @@ for (;;) {
       "https://man7.org/linux/man-pages/man2/recvmsg.2.html",
     ],
   },
+  {
+    id: "networking-pmtud-blackhole-39",
+    category: "networking",
+    difficulty: "hard",
+    title: "Large responses through a tunnel with a smaller MTU",
+    tags: ["tcp", "pmtud", "mtu", "mss", "icmp"],
+    type: "trace",
+    prompt:
+      "A Linux server and its clients both sit on 1500-byte-MTU Ethernet, but the clients are " +
+      "in a branch office whose traffic crosses an IPsec tunnel with an effective MTU of 1400 " +
+      "bytes. A firewall in front of the server drops all inbound ICMP. Handshakes succeed and " +
+      "responses of a few hundred bytes arrive instantly, but any response larger than about " +
+      "one full segment hangs with nothing delivered until the client gives up. Server kernel " +
+      "settings are defaults. What explains it?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The client advertised a receive window smaller than one full segment, so the server waits for a window update that the tunnel keeps delaying.",
+        "Both ends announced an MSS of 1460 from their own interfaces; full-size DF segments die at the tunnel, and the ICMP that would shrink them never arrives.",
+        "The tunnel router fragments full-size segments, and the firewall drops the non-initial fragments because they carry no TCP port numbers to match on.",
+        "The handshake negotiated an MSS from the smallest MTU on the path, so segments already fit the tunnel and the stall must come from loss inside it.",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "The MSS option in each SYN is computed locally from the sender's own outgoing interface " +
+      "(1500 minus 40 bytes of IP and TCP headers, so 1460), and it says nothing about links " +
+      "further along the path. Both ends therefore agree on 1460-byte payloads, which become " +
+      "1500-byte packets that do not fit the 1400-byte tunnel. Linux sets DF on every TCP " +
+      "segment by default because it relies on Path MTU Discovery (RFC 1191): the tunnel " +
+      "ingress drops the oversized packet and returns ICMP Destination Unreachable, Fragmentation " +
+      "Needed (type 3 code 4) carrying the next-hop MTU, and the server lowers its cached path " +
+      "MTU and resends smaller segments. Here the firewall eats that ICMP, so the server never " +
+      "learns anything. It retransmits the identical 1500-byte packet on exponential backoff " +
+      "until tcp_retries2 gives up, while handshakes, ACKs, and small responses fit under 1400 " +
+      "bytes and sail through. That is the classic PMTUD black hole. Fragmentation cannot rescue " +
+      "it, because DF forbids routers from fragmenting; with DF set, the only signal is the ICMP. " +
+      "The fixes, roughly in order of preference: let ICMP type 3 code 4 (and ICMPv6 Packet Too " +
+      "Big, which IPv6 depends on completely since its routers never fragment) through the " +
+      "firewall; clamp the MSS on the tunnel gateway (iptables TCPMSS --clamp-mss-to-pmtu " +
+      "rewrites the SYN's MSS option to 1360 so neither end ever sends too large); or set " +
+      "net.ipv4.tcp_mtu_probing=1, which enables RFC 4821 packetization-layer PMTUD once the " +
+      "kernel suspects a black hole and probes downward from tcp_base_mss without any ICMP at all.",
+    references: [
+      "https://www.rfc-editor.org/rfc/rfc1191.html",
+      "https://www.rfc-editor.org/rfc/rfc2923.html",
+      "https://www.rfc-editor.org/rfc/rfc4821.html",
+      "https://docs.kernel.org/networking/ip-sysctl.html",
+    ],
+  },
+  {
+    id: "networking-keepalive-idle-race-40",
+    category: "networking",
+    difficulty: "medium",
+    title: "A pooled HTTP connection reused after an idle lull",
+    tags: ["http", "connection-pooling", "keep-alive", "rst", "idempotency"],
+    type: "trace",
+    prompt:
+      "A service calls a backend over HTTP/1.1 through a client-side connection pool that " +
+      "keeps idle connections for up to 60 seconds. The backend's HTTP server closes " +
+      "keep-alive connections that have been idle for 5 seconds. Both hosts sit in the same " +
+      "subnet with no proxy or NAT between them. Intermittently, a request fails immediately " +
+      "with ECONNRESET or an empty response, and it is almost always the first request after " +
+      "a lull of more than 5 seconds. What is happening?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The server's TCP keepalive probed the idle connection, got no answer from the pooled socket, and reset it, so the next request hit a dead connection.",
+        "Linux reclaims TCP connections idle for more than a few seconds unless SO_KEEPALIVE is set, and the server's kernel resets the next segment it sees.",
+        "HTTP/1.1 caps keep-alive connections at a protocol-defined idle limit after which clients must reconnect, and this pool ignores that limit.",
+        "The server closed the idle connection at its 5-second timeout; the pool reused it without noticing the FIN, and the server's kernel answered with RST.",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "HTTP/1.1 defines no idle timeout. RFC 9112 lets either side close a persistent " +
+      "connection whenever it likes, and each server picks its own limit. Here the server's " +
+      "limit is shorter than the pool's, so after 5 idle seconds it calls close() and sends a " +
+      "FIN. The client's kernel ACKs it and parks the socket in CLOSE_WAIT, but the pool is not " +
+      "reading from idle connections, so the EOF sits unnoticed and the connection still looks " +
+      "available. When the next request is written to it, write() succeeds, because CLOSE_WAIT " +
+      "is a legal state to send from (the FIN could have been a half-close). The server " +
+      "application has already closed its socket, so nobody can ever read the request, and " +
+      "its kernel answers the data with RST. Depending on timing and which call notices first, " +
+      "the client sees EOF from the queued FIN (reported as an empty response or 'socket hang " +
+      "up'), ECONNRESET, or EPIPE on a later write. A second, unfixable variant exists: the server " +
+      "decides to close at the very instant the client sends, and the two cross on the wire. " +
+      "Neither side did anything wrong, so the robust fix has three parts. Keep the client's " +
+      "pool idle timeout comfortably below every server's keep-alive timeout. Check a pooled " +
+      "connection for readability (a pending EOF) before reusing it. And retry automatically " +
+      "only requests that are safe to repeat: RFC 9112 says a client MUST NOT automatically " +
+      "retry a non-idempotent request such as a POST unless it knows the request was never " +
+      "applied, and here it cannot tell whether the server processed it before the connection " +
+      "died. Keepalive plays no part (its default first " +
+      "probe is two hours out, and the kernel answers probes on an idle socket by itself), and " +
+      "Linux never reclaims an idle TCP connection on its own.",
+    references: [
+      "https://www.rfc-editor.org/rfc/rfc9112.html#section-9.3.1",
+      "https://www.rfc-editor.org/rfc/rfc9112.html#section-9.5",
+      "https://www.rfc-editor.org/rfc/rfc9110.html#section-9.2.2",
+    ],
+  },
+  {
+    id: "networking-syn-cookies-41",
+    category: "networking",
+    difficulty: "hard",
+    title: "SYN cookies and a client without TCP timestamps",
+    tags: ["tcp", "syn-cookies", "syn-flood", "window-scaling", "sack"],
+    type: "trace",
+    prompt:
+      "A Linux server is under a SYN flood. Its SYN queue has overflowed, so with " +
+      "net.ipv4.tcp_syncookies=1 (the default) it is answering new SYNs with SYN cookies. A " +
+      "legitimate client 80ms away, whose stack has TCP timestamps disabled, connects during " +
+      "the flood and downloads a large file. Its handshake completes normally. Compared with " +
+      "the same download outside the flood, what is different about this connection?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "It runs without window scaling or SACK, since those lived only in the SYN the server never stored, so its window is capped near 64KB, about 6.5Mbit/s at 80ms.",
+        "Nothing: the cookie is a keyed hash over the full SYN, so once the final ACK returns the server reconstructs every option the client originally sent.",
+        "Its MSS is pinned to 536 bytes, the only segment size a cookie can encode, so the transfer completes normally but with roughly three times the packet count.",
+        "The handshake takes an extra round trip, because the client must echo the cookie back in a second SYN before the server will allocate any connection state.",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "A SYN cookie lets the server answer a SYN without allocating anything. The connection's " +
+      "state is folded into the 32-bit initial sequence number of the SYN-ACK, and when the " +
+      "client's ACK returns acknowledging ISN+1, the server validates the cookie and rebuilds " +
+      "the connection from it. Thirty-two bits do not hold much. Linux spends them on a " +
+      "timestamp counter, a keyed hash of the 4-tuple, and a 2-bit index into a small MSS table " +
+      "(536, 1300, 1440, 1460 for IPv4), so the MSS is quantized down to the nearest entry, " +
+      "not pinned to the minimum. Everything else negotiated in the SYN, notably the window " +
+      "scale factor, SACK-permitted, and ECN, is simply gone. Linux recovers those only when " +
+      "the client uses TCP timestamps, by encoding them into the low bits of the SYN-ACK's " +
+      "TSval, which the client echoes back in TSecr. Without timestamps, tcp_conn_request() " +
+      "clears the options before building the SYN-ACK, so the server does not even offer " +
+      "window scaling. The connection then has a hard 65,535-byte window, and at 80ms RTT that " +
+      "caps throughput near 64KB / 0.08s, about 6.5Mbit/s, on a path that might carry " +
+      "gigabits, with no SACK to recover efficiently from multiple losses. The handshake costs " +
+      "no extra round trip; the cookie travels in the ordinary SYN-ACK. The connection keeps " +
+      "this handicap for its whole life, long after the flood ends. Cookies are a graceful " +
+      "degradation that keeps legitimate clients connectable, not a free lunch, so a server " +
+      "that hits them under normal load needs a bigger backlog (somaxconn and " +
+      "tcp_max_syn_backlog), not just the cookie fallback.",
+    references: [
+      "https://www.rfc-editor.org/rfc/rfc4987.html#section-3.6",
+      "https://docs.kernel.org/networking/ip-sysctl.html",
+      "https://cr.yp.to/syncookies.html",
+    ],
+  },
+  {
+    id: "networking-anycast-tcp-42",
+    category: "networking",
+    difficulty: "medium",
+    title: "Long-lived TCP connections to an anycast address during a route change",
+    tags: ["anycast", "bgp", "tcp", "rst", "routing"],
+    type: "trace",
+    prompt:
+      "A market-data API is served from one anycast IP announced over BGP by three " +
+      "geographically separate sites. Each site runs its own independent TCP stacks and load " +
+      "balancers with no state shared between sites. An upstream provider shifts routing so " +
+      "that some clients' traffic now lands at a different site. Those clients' long-lived " +
+      "TCP price streams abruptly fail with ECONNRESET, while DNS queries and short HTTP " +
+      "requests to the same IP keep working. Why?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "BGP convergence blackholes the prefix for minutes, and the clients' own TCP stacks exhaust their retransmissions and reset the connections themselves.",
+        "The new site replies from its own unicast address rather than the anycast one, so each client sees segments from an unknown source and resets.",
+        "Segments for the existing connections now reach a site that never saw their handshake, and with no matching socket its stack answers them with RST.",
+        "Clients' cached DNS answers still point at the old site's address, and connections to it are refused once that site's route has been withdrawn.",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "Anycast puts the same address in several places and lets BGP deliver each packet to " +
+      "whichever site is topologically closest from the sender's point of view. That is " +
+      "invisible to DNS: every client resolves the same IP, and there is no per-site address " +
+      "to go stale. It is also invisible to the endpoints, which is exactly the problem for " +
+      "TCP. Connection state lives only in the stack at the site that completed the handshake, " +
+      "and routing carries no notion of a flow. When the best path changes, packets for an " +
+      "established connection arrive at a site that has no socket for that 4-tuple, and RFC " +
+      "9293 says a segment for a nonexistent connection draws a RST. The client sees " +
+      "ECONNRESET within one round trip, not a blackhole. Convergence typically takes seconds, " +
+      "while TCP would retransmit for many minutes before timing out, which would surface as " +
+      "ETIMEDOUT anyway. Stateless or short exchanges ride through: a DNS query is one datagram " +
+      "each way, and a short HTTP request rarely straddles the change. This is the real " +
+      "anycast tradeoff. Failover is bounded by BGP withdrawal and convergence rather than DNS " +
+      "TTLs, which is fast, but path changes also happen for reasons unrelated to failure, such " +
+      "as upstream traffic engineering or a flap elsewhere in the internet, and every one of " +
+      "them breaks long-lived flows that shift sites. Operators mitigate it by keeping routing " +
+      "stable, forwarding unknown flows to the site that owns them (some CDNs do this), using " +
+      "anycast only for discovery and then moving long-lived sessions to a unicast address, or " +
+      "making the application reconnect and resume from a sequence number.",
+    references: [
+      "https://www.rfc-editor.org/rfc/rfc4786.html",
+      "https://www.rfc-editor.org/rfc/rfc9293.html",
+    ],
+  },
+  {
+    id: "networking-so-linger-close-43",
+    category: "networking",
+    difficulty: "hard",
+    title: "close() with a 10-second SO_LINGER and its return value",
+    tags: ["tcp", "so_linger", "close", "connection-teardown", "delivery"],
+    type: "trace",
+    prompt:
+      "A Linux order gateway uses the code below to decide that a fill report reached the " +
+      "counterparty. The socket is blocking, and no unread inbound data is pending on it. " +
+      "What does close() returning 0 at (1) actually establish?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `struct linger lg = { .l_onoff = 1, .l_linger = 10 };
+setsockopt(fd, SOL_SOCKET, SO_LINGER, &lg, sizeof(lg));
+
+write(fd, fill_report, len);      // returns len
+if (close(fd) == 0)
+    mark_delivered(order_id);     // (1)`,
+      highlightLines: [5, 6],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "That the peer application has read every byte, since close() lingers until the peer's FIN, which its application sends only after draining the stream.",
+        "That every byte reached the peer's receive buffer, since a linger timeout that expires first makes close() return -1 with EWOULDBLOCK instead.",
+        "Only that the data was copied locally: like write(), close() returns once bytes are in the send buffer, and SO_LINGER decides only whether a RST is sent.",
+        "Nothing dependable: Linux returns 0 even if the 10 seconds expire with bytes unacknowledged, and a full ACK means only that the peer's kernel buffered them.",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "socket(7) says that with SO_LINGER enabled, close() will not return until all queued " +
+      "data has been sent or the linger timeout has been reached. The second half is the trap. " +
+      "In Linux's __tcp_close(), the FIN is queued behind the remaining data and " +
+      "sk_stream_wait_close() sleeps until the socket leaves FIN_WAIT1, CLOSING, or LAST_ACK, " +
+      "meaning the peer has ACKed the FIN and therefore every byte before it, or until the " +
+      "timeout expires. Either way close() returns 0. Linux does not report the expiry, and " +
+      "because the descriptor is gone, there is no later call that could. The orphaned socket " +
+      "keeps transmitting in the background, so the report might still arrive or might not. " +
+      "Stevens describes BSD-derived stacks returning EWOULDBLOCK when the linger time runs " +
+      "out, which is where the second choice comes from, but that is not Linux behavior. Even " +
+      "in the good case, a TCP ACK is a statement by the peer's kernel that the bytes are in " +
+      "its receive buffer. The counterparty process can still crash before reading them, and " +
+      "the data dies with it. The peer's FIN is not waited for at all; lingering ends when our " +
+      "own FIN is acknowledged. SO_LINGER also does more than choose between FIN and RST: only " +
+      "a zero timeout makes close() abortive. Delivery to an application can only be confirmed " +
+      "by the application. Use a protocol-level acknowledgment (FIX sequence numbers and " +
+      "resend requests are the trading-world example), or call shutdown(SHUT_WR) and read " +
+      "until the peer's EOF when the protocol defines that EOF as a consumption signal. " +
+      "ioctl(SIOCOUTQ) can tell you how many bytes are still unsent or unacknowledged before " +
+      "you give up the descriptor.",
+    references: [
+      "https://man7.org/linux/man-pages/man7/socket.7.html",
+      "https://man7.org/linux/man-pages/man7/tcp.7.html",
+      "https://www.rfc-editor.org/rfc/rfc9293.html",
+    ],
+  },
+  {
+    id: "networking-bind-before-connect-44",
+    category: "networking",
+    difficulty: "hard",
+    title: "bind() to a source address before connect() under connection churn",
+    tags: ["ephemeral-ports", "bind", "connect", "ip_bind_address_no_port"],
+    type: "trace",
+    prompt:
+      "A Linux client opens short-lived TCP connections to 40 backend addresses. With " +
+      "TIME_WAIT included, about 30,000 of its sockets exist at any moment, roughly 750 per " +
+      "backend. ip_local_port_range is the default 32768-60999. With a plain connect() this ran " +
+      "for months. After the bind() below was added to pin the source address to the " +
+      "exchange-facing NIC, bind() starts failing with EADDRINUSE. Why does adding it change " +
+      "anything?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `int fd = socket(AF_INET, SOCK_STREAM, 0);
+
+sockaddr_in src{};
+src.sin_family = AF_INET;
+src.sin_addr.s_addr = inet_addr("10.20.0.15");  // exchange-facing NIC
+src.sin_port = 0;                               // let the kernel pick
+bind(fd, (sockaddr*)&src, sizeof(src));         // now fails: EADDRINUSE
+
+connect(fd, (sockaddr*)&dst, sizeof(dst));`,
+      highlightLines: [7],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "bind() must pick a port before the destination is known, so it cannot share ports across 4-tuples: the cap becomes ~28K sockets in total, not ~28K per destination.",
+        "An explicitly bound port stays reserved for 60 seconds after close() even when the peer closes first, so every connection now leaves its port held behind.",
+        "bind() scans the ephemeral range sequentially from its lowest port, so it collides with live sockets far more often than connect()'s randomized choice.",
+        "bind() registers the socket in the listening table, so every bound client socket also counts against somaxconn and the host's accept-queue limits.",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "A TCP connection only has to be unique by its full 4-tuple. When connect() picks the " +
+      "source port itself, __inet_hash_connect() already knows the destination, so it can hand " +
+      "out a port that is already in use toward backend A as long as no existing connection to " +
+      "backend B has the same tuple. With 40 destinations, the 28,232 ports in the default " +
+      "range are effectively available about 40 times over, and 750 per backend is nowhere near " +
+      "a limit. bind() with port 0 runs earlier and has no destination to check against, so " +
+      "the kernel has to choose a port that conflicts with no existing socket bound to that " +
+      "address, TIME_WAIT included. SO_REUSEADDR alone does not change that for a port-0 bind " +
+      "(only the ip_autobind_reuse sysctl, off by default, relaxes it). The " +
+      "same 30,000 sockets now need 30,000 distinct ports out of 28,232, and bind() fails with " +
+      "EADDRINUSE. (Before failing outright, the port search also gets slower as the range " +
+      "fills.) The fix keeps the source pinning and restores per-destination sharing. " +
+      "IP_BIND_ADDRESS_NO_PORT (Linux 4.2+) makes bind() record only the address and defer " +
+      "port selection to connect(). Alternatives are a policy route with a src hint (ip route " +
+      "... src 10.20.0.15) so the kernel picks the right source without any bind(), or, on " +
+      "Linux 6.3+, IP_LOCAL_PORT_RANGE to give the socket its own range. Explicit binds do not " +
+      "change TIME_WAIT duration or put a socket in any listening table; the only difference " +
+      "is when, and with how much information, the port is chosen.",
+    references: [
+      "https://man7.org/linux/man-pages/man7/ip.7.html",
+      "https://man7.org/linux/man-pages/man2/bind.2.html",
+      "https://www.rfc-editor.org/rfc/rfc6056.html",
+    ],
+  },
+  {
+    id: "networking-tcp-user-timeout-45",
+    category: "networking",
+    difficulty: "hard",
+    title: "Aggressive keepalive settings and a peer that dies mid-transfer",
+    tags: ["tcp", "keepalive", "tcp_user_timeout", "retransmission", "dead-peer"],
+    type: "trace",
+    prompt:
+      "A Linux drop-copy publisher sets the options below and expects a dead subscriber to be " +
+      "detected in about 8 seconds. The subscriber's host loses power while the publisher is " +
+      "mid-stream, with unacknowledged data in flight. The publisher's send() calls succeed " +
+      "until the send buffer fills, then block, and the connection is not declared dead for " +
+      "roughly 15 minutes. Why?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `int on = 1, idle = 5, intvl = 1, cnt = 3;
+setsockopt(fd, SOL_SOCKET,  SO_KEEPALIVE,  &on,    sizeof(on));
+setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE,  &idle,  sizeof(idle));
+setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &intvl, sizeof(intvl));
+setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT,   &cnt,   sizeof(cnt));
+
+for (;;) send(fd, &report, sizeof(report), 0);  // continuous stream`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The probes went out on schedule, but keepalive declares a peer dead only when a RST comes back, and a powered-off host cannot send one.",
+        "Keepalive only runs on an idle connection; with data unacknowledged, retransmission owns it, and Linux gives up only after tcp_retries2 backoffs.",
+        "The probes failed after 8 seconds and set the socket error, but Linux reports it only to recv(), which a publisher that never reads does not call.",
+        "Each keepalive probe is itself retransmitted with exponential backoff up to tcp_retries2, so three unanswered probes take minutes, not seconds.",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "Keepalive exists to probe a connection on which nothing is happening. RFC 1122 frames it " +
+      "as a check for when no data or acknowledgment has been received for an interval, and " +
+      "Linux's tcp_keepalive_timer() simply reschedules itself without probing whenever " +
+      "packets are in flight or the send queue is non-empty. A publisher streaming continuously " +
+      "is never idle, so TCP_KEEPIDLE, TCP_KEEPINTVL, and TCP_KEEPCNT never come into play. " +
+      "Instead, the retransmission timer owns the connection. Each unacknowledged segment is " +
+      "retransmitted with a doubling RTO capped at 120 seconds, and the kernel abandons the " +
+      "connection after net.ipv4.tcp_retries2 retransmissions, default 15. That limit is " +
+      "converted to a time budget as if the RTO started at 200ms, which the kernel " +
+      "documentation puts at about 924.6 seconds, or roughly 15 minutes. Then pending and " +
+      "future calls fail with ETIMEDOUT. The other choices misdescribe keepalive. Unanswered " +
+      "probes are exactly how it detects a silent peer, no RST needed. Probes are sent " +
+      "TCP_KEEPINTVL apart and counted by TCP_KEEPCNT, with no backoff. A socket error is " +
+      "reported to whichever call comes next, send() included. The per-socket fix is " +
+      "TCP_USER_TIMEOUT (RFC 5482, Linux 2.6.37+), which caps how long transmitted data may " +
+      "remain unacknowledged before the kernel kills the connection with ETIMEDOUT. When it is " +
+      "set alongside keepalive, it also overrides TCP_KEEPCNT in deciding when an idle " +
+      "connection dies. Setting it to around 8000ms covers both the busy and the idle case. " +
+      "Lowering tcp_retries2 instead is system-wide and blunt. Latency-sensitive systems still " +
+      "add an application heartbeat, which also catches a peer whose kernel is alive but whose " +
+      "process is wedged.",
+    references: [
+      "https://man7.org/linux/man-pages/man7/tcp.7.html",
+      "https://www.rfc-editor.org/rfc/rfc5482.html",
+      "https://www.rfc-editor.org/rfc/rfc1122.html#page-101",
+      "https://docs.kernel.org/networking/ip-sysctl.html",
+    ],
+  },
+  {
+    id: "networking-multicast-rp-filter-46",
+    category: "networking",
+    difficulty: "hard",
+    title: "A multicast feed visible in tcpdump but not in recvfrom()",
+    tags: ["udp", "multicast", "market-data", "rp_filter", "routing"],
+    type: "trace",
+    prompt:
+      "A Linux feed handler host built from the firm's hardened base image has two NICs: eth0 " +
+      "(management, carries the default route) and ens2f0 (10.20.0.15/24, the exchange " +
+      "handoff, with only its connected route). The exchange publishes 239.1.1.1:30001 from " +
+      "source 198.51.100.17. tcpdump -i ens2f0 shows the feed arriving at full rate with valid " +
+      "checksums, but recvfrom() never returns, and the UDP RcvbufErrors counter stays at zero. " +
+      "What is discarding the packets?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `int fd = socket(AF_INET, SOCK_DGRAM, 0);
+sockaddr_in addr{};
+addr.sin_family = AF_INET;
+addr.sin_port = htons(30001);
+addr.sin_addr.s_addr = inet_addr("239.1.1.1");        // bind to the group
+bind(fd, (sockaddr*)&addr, sizeof(addr));
+
+ip_mreq mreq{};
+mreq.imr_multiaddr.s_addr = inet_addr("239.1.1.1");
+mreq.imr_interface.s_addr = inet_addr("10.20.0.15");  // ens2f0
+setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq));
+
+char buf[2048];
+recvfrom(fd, buf, sizeof(buf), 0, nullptr, nullptr);  // never returns`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "imr_interface is only a hint: Linux joins groups via the default-route interface, so the membership sits on eth0 and nothing on ens2f0 matches it.",
+        "Binding to the group address installs a destination filter that Linux compares against the interface address, so every datagram is rejected.",
+        "Strict reverse-path filtering: the route back to 198.51.100.17 leaves via eth0, not ens2f0, so the kernel drops each packet after tcpdump sees it.",
+        "The NIC's hardware multicast filter was never programmed for 239.1.1.1, so frames are discarded in the NIC after tcpdump has captured them.",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "tcpdump reads through an AF_PACKET tap that the kernel feeds in __netif_receive_skb, " +
+      "before the packet reaches ip_rcv() and the routing input path, so seeing a packet in a " +
+      "capture proves only that it reached the host. It says nothing about whether the IP " +
+      "layer accepted it. On input, Linux validates the source address with " +
+      "fib_validate_source(), and with net.ipv4.conf.*.rp_filter=1 it applies RFC 3704 strict " +
+      "unicast reverse-path forwarding: the packet is accepted only if the route back to its " +
+      "source points out the interface it arrived on. The only route covering 198.51.100.17 is " +
+      "the default via eth0, so every feed packet arriving on ens2f0 looks spoofed and is " +
+      "dropped silently. The socket receive buffer is never touched, so RcvbufErrors and " +
+      "SO_RXQ_OVFL stay at zero. The drops show up in the IPReversePathFilter counter (nstat " +
+      "-az TcpExtIPReversePathFilter) and, with log_martians enabled, in the kernel log. The " +
+      "kernel's own default is 0, but CIS-style hardening baselines and several distributions " +
+      "set 1. Note the effective value is the maximum of conf.all and the per-interface " +
+      "setting, so loosening only one of them may not take effect. The right fix is a route " +
+      "for the exchange's source networks via ens2f0, which is also where the unicast " +
+      "retransmission requests should go. Setting rp_filter=2 (loose mode) on the feed " +
+      "interface and on all also works. The other choices fail on the details. imr_interface " +
+      "is honored; only INADDR_ANY falls back to a routing lookup on the group address, which " +
+      "is a real pitfall on multi-homed hosts but not this code. Binding to the group address " +
+      "is the recommended way to filter out other groups on the same port. And a NIC cannot " +
+      "drop a frame after the host captured it; tcpdump's promiscuous mode would even mask a " +
+      "missing hardware filter.",
+    references: [
+      "https://docs.kernel.org/networking/ip-sysctl.html",
+      "https://www.rfc-editor.org/rfc/rfc3704.html",
+      "https://man7.org/linux/man-pages/man7/ip.7.html",
+    ],
+  },
 ];

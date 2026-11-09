@@ -2155,4 +2155,490 @@ cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow, &attr);`,
       "https://docs.nvidia.com/cuda/cuda-runtime-api/structcudaAccessPolicyWindow.html",
     ],
   },
+  {
+    id: "gpu-cuda-cuda-graphs-01",
+    category: "gpu-cuda",
+    difficulty: "hard",
+    title: "Ping-pong buffers driven by repeated cudaGraphLaunch calls",
+    tags: ["cuda-graphs", "stream-capture", "kernel-launch", "kernel-parameters"],
+    type: "trace",
+    prompt:
+      "An iterative solver used to launch `step` 1000 times, swapping `d_a` and `d_b` after each " +
+      "launch. To cut launch overhead, the engineer captures one launch into a CUDA graph and replays " +
+      "it, keeping the swap. `step` reads its first argument and writes its second, and the solver " +
+      "expects the final state in `d_a` after the loop. Every API call returns `cudaSuccess`. What " +
+      "does `d_a` hold after the synchronize?",
+    snippet: {
+      language: "cpp",
+      filename: "solver.cu",
+      code: `float *d_a, *d_b;              // d_a holds the initial state
+// ... allocate and initialize ...
+
+cudaGraph_t graph;
+cudaGraphExec_t exec;
+cudaStreamBeginCapture(stream, cudaStreamCaptureModeGlobal);
+step<<<grid, block, 0, stream>>>(d_a, d_b);   // reads d_a, writes d_b
+cudaStreamEndCapture(stream, &graph);
+cudaGraphInstantiate(&exec, graph, 0);
+
+for (int it = 0; it < 1000; ++it) {
+    cudaGraphLaunch(exec, stream);
+    std::swap(d_a, d_b);       // next step should read what this one wrote
+}
+cudaStreamSynchronize(stream);`,
+      highlightLines: [12, 13],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The 1000-step result: kernel arguments in a graph node are resolved when the graph is launched, so each replay picks up the current d_a and d_b exactly as a fresh <<<>>> launch would",
+        "The untouched initial state: the node froze the pointer values seen at capture, so every replay reads the original d_a and writes the original d_b, and 1000 swaps leave d_a on the original",
+        "An unpredictable mix of steps: graph launches into one stream may overlap one another, so a replay can start reading a buffer while the previous replay is still writing into it",
+        "The state after a single step: only the first replay runs, since later replays see argument pointers that no longer match the capture and are skipped by the executor as stale",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "Recording a kernel launch into a graph, whether through stream capture or " +
+      "`cudaGraphAddKernelNode`, copies the kernel's arguments into the node by value at that moment, " +
+      "exactly as an ordinary launch copies them at the `<<<>>>` call. The arguments here are two " +
+      "pointer values, so the node permanently says `step(A, B)` where A and B are the original " +
+      "buffers. `std::swap` changes which buffer the host variables name, but nothing ties those " +
+      "variables to the instantiated graph, so all 1000 replays compute `B = step(A)` from the same " +
+      "unchanged input: B ends up holding one step, and A is never written at all. After an even " +
+      "number of swaps `d_a` names the original A again, so the solver reads back its initial state " +
+      "with no error anywhere. Replays are not concurrent with each other: graph launches into one " +
+      "stream are ordered like any other stream work, and there is no staleness check that skips a " +
+      "replay. The idiomatic fixes keep the graph static: capture both directions, " +
+      "`step(d_a, d_b)` followed by `step(d_b, d_a)`, as a two-node graph and launch it 500 times; or " +
+      "update the arguments of the instantiated graph before each launch with " +
+      "`cudaGraphExecKernelNodeSetParams` (or re-capture and apply `cudaGraphExecUpdate`), which is " +
+      "far cheaper than re-instantiating. A third option is indirection, passing a pointer to " +
+      "device-resident pointers that a kernel flips, so the captured arguments never need to change. " +
+      "The same freezing applies to every scalar argument (a step size, an iteration count), which " +
+      "is the most common way a graph conversion silently changes results.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/cuda-graphs.html",
+      "https://developer.nvidia.com/blog/cuda-graphs/",
+    ],
+  },
+  {
+    id: "gpu-cuda-dynamic-parallelism-01",
+    category: "gpu-cuda",
+    difficulty: "hard",
+    title: "A parent kernel that reads its child grid's output",
+    tags: ["dynamic-parallelism", "cdp", "kernel-launch", "race-condition"],
+    type: "trace",
+    prompt:
+      "The code is built with `-rdc=true` using CUDA 12 for an H100 (sm_90), and the host launches " +
+      "`parent<<<1, 1>>>`. `n` is a few million. The single parent thread launches a child grid to " +
+      "fill `tmp`, then sums `tmp`. What is the status of this code, and what is the supported fix?",
+    snippet: {
+      language: "cpp",
+      filename: "kernel.cu",
+      code: `__global__ void child(const float* in, float* tmp, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) tmp[i] = expensive(in[i]);
+}
+
+__global__ void parent(const float* in, float* tmp, float* result, int n) {
+    child<<<(n + 255) / 256, 256>>>(in, tmp, n);
+
+    float s = 0.0f;
+    for (int i = 0; i < n; ++i) s += tmp[i];
+    *result = s;
+}`,
+      highlightLines: [7, 9, 10],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Correct as written: a device-side launch blocks the launching thread until the child grid has finished, because the parent's SM must hand its resources over to the child while it runs",
+        "Correct once __threadfence() follows the launch: the fence stalls the parent thread until every write issued by the child grid has reached global memory and become visible to it",
+        "Correct once cudaDeviceSynchronize() follows the launch: it is the standard device-side join, and its only cost is that the parent's state may be swapped out to memory while it waits",
+        "A race: the child runs asynchronously and must only finish before the parent grid does; CUDA 12 dropped device-side cudaDeviceSynchronize, so do the sum in a grid tail-launched afterward",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "A device-side launch is asynchronous, just like a host-side one: the launching thread enqueues " +
+      "the child grid and continues immediately. The only ordering guarantee is that a parent grid is " +
+      "not considered complete until every child grid it launched has completed, so from the host's " +
+      "perspective the whole tree is done when `parent` is. Inside `parent`, though, the summing loop " +
+      "runs concurrently with (or before) the child, reading whatever `tmp` held, so the result is " +
+      "garbage that may look plausible if `tmp` was left over from a previous run. `__threadfence()` " +
+      "only orders the calling thread's own memory operations; it does not wait for another grid. The " +
+      "trap answer is `cudaDeviceSynchronize()`: it was the join mechanism in the original dynamic " +
+      "parallelism model (CDP1), at the price of the parent block possibly being swapped out to " +
+      "memory, but it was deprecated in CUDA 11.6, is not available when compiling for compute_90 and " +
+      "later, and is absent from the CDP2 model that CUDA 12 uses by default. CDP2 instead provides " +
+      "named device streams: `sumKernel<<<1, 1, 0, cudaStreamTailLaunch>>>(tmp, result, n)` " +
+      "issued from `parent` runs only after the parent grid and all the work it launched have " +
+      "finished, so it sees a complete `tmp` (`cudaStreamFireAndForget` exists for children nobody " +
+      "waits on). Often the cleaner answer is to skip dynamic parallelism here entirely: the child's " +
+      "size is known on the host, so two host launches in one stream express the same dependency. " +
+      "Device launches pay for themselves when the nested work is data dependent (adaptive mesh " +
+      "refinement, irregular tree traversal), not as a replacement for a fixed pipeline.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/dynamic-parallelism.html",
+    ],
+  },
+  {
+    id: "gpu-cuda-vectorized-access-01",
+    category: "gpu-cuda",
+    difficulty: "medium",
+    title: "A float4 kernel called on a sub-range starting at element offset",
+    tags: ["vectorized-access", "alignment", "global-memory", "error-handling"],
+    type: "trace",
+    prompt:
+      "`d_in` and `d_out` come straight from `cudaMalloc`. To use 128-bit memory instructions, the " +
+      "kernel reinterprets its pointers as `float4`. It has been tested with `offset` values of 0 and " +
+      "1024, with `count` always a multiple of 4. A new caller passes `offset = 6`. What happens?",
+    snippet: {
+      language: "cpp",
+      filename: "kernel.cu",
+      code: `__global__ void scale4(const float* in, float* out, float s, int n4) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n4) {
+        float4 v = reinterpret_cast<const float4*>(in)[i];
+        v.x *= s; v.y *= s; v.z *= s; v.w *= s;
+        reinterpret_cast<float4*>(out)[i] = v;
+    }
+}
+
+// host
+scale4<<<blocks, 256>>>(d_in + offset, d_out + offset, 2.0f, count / 4);`,
+      highlightLines: [4, 11],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The kernel faults: a float4 access is one 128-bit instruction that needs a 16-byte-aligned address, d_in + 6 is only 8-byte aligned, and the misaligned-address error is sticky",
+        "The kernel runs correctly but slower: the memory system splits every misaligned 16-byte access into two sector requests, which roughly doubles the global memory traffic per warp",
+        "The kernel runs correctly at full speed: global memory is fetched in 32-byte sectors, so where a 16-byte access starts inside a sector has no effect on the transactions issued",
+        "The kernel runs correctly at scalar speed: the compiler cannot prove the pointer is 16-byte aligned, so it lowers each float4 access to four separate 32-bit loads or stores",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "CUDA's vector types carry alignment requirements equal to their size: `float4` is 16-byte " +
+      "aligned, and a vector access compiles to one instruction that assumes that alignment. " +
+      "`cudaMalloc` returns pointers aligned to at least 256 bytes, which is why offsets 0 and 1024 " +
+      "(4 KB in) work, but `d_in + 6` is 24 bytes past an aligned base, so it is 8-byte aligned and " +
+      "nothing more. The `reinterpret_cast` is a promise to the compiler, not a request: it emits a " +
+      "single `LDG.E.128`/`STG.E.128` per thread trusting the type's alignment, and does not fall " +
+      "back to scalar accesses. On current GPUs the hardware rejects the misaligned 128-bit access, " +
+      "the kernel aborts with `cudaErrorMisalignedAddress`, and because that is a sticky execution " +
+      "error the context is unusable: every later CUDA call in the process returns the same error. " +
+      "Neither 'slower but correct' story exists for misaligned vector accesses; the cost model of " +
+      "splitting into extra sectors applies to scalar accesses whose warp footprint straddles sector " +
+      "boundaries, not to an individual access that violates its own alignment. " +
+      "`compute-sanitizer` pinpoints the faulting access as a misaligned 16-byte read. The usual fix " +
+      "is to peel a scalar prologue up to the first 16-byte boundary, run the `float4` body, then " +
+      "finish with a scalar epilogue, or to check `reinterpret_cast<uintptr_t>(p) % 16` on the host " +
+      "and dispatch to a scalar kernel when it fails. Peeling only works when `in` and `out` share the " +
+      "same misalignment; when they do not, one side has to use narrower accesses.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#vector-types-alignment-requirements-in-device-code",
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#coalesced-access-to-global-memory",
+      "https://docs.nvidia.com/cuda/compute-sanitizer/index.html",
+    ],
+  },
+  {
+    id: "gpu-cuda-dynamic-shared-memory-01",
+    category: "gpu-cuda",
+    difficulty: "medium",
+    title: "Launching with 64 KB of dynamic shared memory on an A100",
+    tags: ["shared-memory", "dynamic-shared-memory", "launch-configuration", "error-handling"],
+    type: "trace",
+    prompt:
+      "An A100 has 164 KB of shared memory per SM, and the spec sheet lists up to 163 KB per block. " +
+      "A stencil kernel is moved from a 32 KB tile to a 64 KB tile by changing only the launch's " +
+      "third argument. No other host code changes. What does `cudaGetLastError()` report right after " +
+      "the launch?",
+    snippet: {
+      language: "cpp",
+      filename: "stencil.cu",
+      code: `extern __shared__ float tile[];   // sized by the launch
+
+__global__ void stencil(const float* in, float* out, int n) {
+    // ... loads a halo'd tile into 'tile', __syncthreads(), computes ...
+}
+
+size_t smem = 64 * 1024;          // was 32 * 1024
+stencil<<<grid, 256, smem>>>(d_in, d_out, n);
+cudaError_t err = cudaGetLastError();`,
+      highlightLines: [7, 8],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "cudaSuccess: 64 KB is well under the 163 KB per-block limit, and the driver grows the L1/shared carveout automatically to fit the request when the blocks are scheduled",
+        "A launch error: dynamic requests above 48 KB per block need a prior opt-in through cudaFuncSetAttribute with cudaFuncAttributeMaxDynamicSharedMemorySize, even on an A100",
+        "cudaSuccess, with a cost: only 48 KB of the tile lives in shared memory and accesses past that boundary are served from local memory, so the upper quarter runs at L1/L2 speed",
+        "Nothing, since it never compiles: extern __shared__ arrays are capped at 48 KB, and a tile larger than that must be declared with a fixed size such as __shared__ float tile[16384]",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "The 48 KB per-block figure from older architectures survives as the default ceiling: on every " +
+      "architecture that offers more (Volta onward), shared memory allocations above 48 KB per block " +
+      "are architecture-specific, must use dynamic shared memory rather than a statically sized " +
+      "array, and require an explicit opt-in per kernel: `cudaFuncSetAttribute(stencil, " +
+      "cudaFuncAttributeMaxDynamicSharedMemorySize, 64 * 1024)` before the launch. Without it, the " +
+      "64 KB request exceeds the kernel's permitted maximum and the launch is rejected at " +
+      "configuration time with an error (invalid argument), so no block ever runs. As with any " +
+      "launch error, `<<<>>>` returns nothing, and code that does not check `cudaGetLastError()` " +
+      "simply reads back stale output. The static-array choice is exactly backwards: a statically " +
+      "declared `__shared__` array is limited to 48 KB, and the compiler rejects a larger one, " +
+      "which is why big tiles must use `extern __shared__`. Shared memory never silently overflows " +
+      "into local memory; an allocation either fits in the block's shared-memory budget or the " +
+      "launch fails. The carveout half of the first choice is true (once opted in, the driver picks " +
+      "a shared/L1 split large enough, and `cudaFuncAttributePreferredSharedMemoryCarveout` lets you " +
+      "steer it), but the opt-in is still mandatory. After the fix, the occupancy cost is worth " +
+      "checking: compute capability 8.x reserves 1 KB of shared memory per block, so each block uses " +
+      "65 KB and only two fit in 164 KB, versus four with the 32 KB tile.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/03-advanced/advanced-kernel-programming.html#configuring-l1-shared-memory-balance",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#shared-memory",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html#features-and-technical-specifications",
+    ],
+  },
+  {
+    id: "gpu-cuda-fp64-throughput-01",
+    category: "gpu-cuda",
+    difficulty: "hard",
+    title: "A 1024-step float recurrence on an RTX 4090",
+    tags: ["fp64", "arithmetic-throughput", "type-promotion", "roofline"],
+    type: "trace",
+    prompt:
+      "The kernel below processes 64 million elements on an RTX 4090 (82.6 TFLOPS FP32, about " +
+      "1 TB/s of memory bandwidth). Counting two FLOPs per iteration, the engineer's roofline " +
+      "estimate says it is compute-bound and should take about 1.7 ms. It takes over 100 ms, and " +
+      "Nsight Compute shows the FP32 pipe nearly idle. What is the most accurate explanation?",
+    snippet: {
+      language: "cpp",
+      filename: "kernel.cu",
+      code: `__global__ void damp(const float* x, float* y, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n) return;
+    float v = x[i];
+    float acc = 0.0f;
+    for (int k = 0; k < 1024; ++k)
+        acc = acc * 0.999 + v;
+    y[i] = acc;
+}`,
+      highlightLines: [7],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The loop-carried dependence on acc serializes each thread, and with a 4-cycle FMA latency an SM cannot keep enough independent warps in flight to hide it, so the pipe sits mostly idle",
+        "The kernel is memory-bound after all: the 2-FLOP count ignores that every iteration reloads v, and 1024 reloads per element at about 1 TB/s are what set the 100 ms runtime",
+        "acc * 0.999 + v is compiled as a separate multiply and add rather than one FMA, because acc changes every iteration, which halves FP32 throughput and doubles the instruction count",
+        "0.999 is a double literal, so each iteration widens acc and v and runs a DFMA; Ada executes FP64 at 1/64 of its FP32 rate, which accounts for the gap, and 0.999f keeps it in FP32",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "In C++ an unsuffixed floating literal has type `double`, and the usual arithmetic conversions " +
+      "then promote `acc` and `v` to double, so the line compiles to a widening conversion, a " +
+      "double-precision FMA, and a narrowing conversion back to float on every iteration. The SASS " +
+      "shows `DFMA` and `F2F` instructions where `FFMA` was expected. FP64 throughput varies " +
+      "enormously across product lines: data-center parts (A100, H100) run FP64 at half the FP32 " +
+      "rate, while consumer Ada and Ampere GPUs provide 2 FP64 results per clock per SM against 128 " +
+      "FP32, a 1/64 ratio (the RTX 4090 is about 1.3 TFLOPS FP64). The estimate's 1.7 ms times 64 " +
+      "is about 107 ms, matching the measurement. Promotion also adds two conversions per iteration, " +
+      "which have limited throughput on every GPU, so even an H100 would run this loop well below its FP32 peak. The " +
+      "other stories fail on the numbers. With 64 million independent threads, each SM has dozens " +
+      "of resident warps to interleave, which easily hides a 4-cycle dependent-FMA latency. `v` is " +
+      "loaded once into a register and stays there; the kernel moves 8 bytes per element against " +
+      "2048 FLOPs, about 256 FLOPs per byte, far above the 4090's ridge point near 80, and memory " +
+      "would cost well under 1 ms. And nvcc contracts `a * b + c` into an FMA by default " +
+      "(`--fmad=true`) whether or not an operand is loop-carried. The fix is `0.999f` (or a `const " +
+      "float` constant); `-Xptxas --warn-on-double-precision-use` flags accidental FP64, and `--use_fast_math` " +
+      "does not, since it does not change literal types.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#arithmetic-instructions",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html#features-and-technical-specifications",
+      "https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html",
+    ],
+  },
+  {
+    id: "gpu-cuda-zero-copy-01",
+    category: "gpu-cuda",
+    difficulty: "medium",
+    title: "Fifty kernel passes over a 1 GB cudaHostAllocMapped buffer",
+    tags: ["zero-copy", "mapped-memory", "pinned-memory", "pcie", "bandwidth"],
+    type: "trace",
+    prompt:
+      "On an A100 attached by PCIe 4.0 x16 (about 25 GB/s in practice; HBM is about 1.5 TB/s), an " +
+      "engineer avoids an explicit copy by allocating the input as mapped pinned memory and passing " +
+      "the device view straight to the kernel. Each launch reads the whole 1 GB input once, in a " +
+      "fully coalesced pattern. The engineer expected the loop to take tens of milliseconds; it takes " +
+      "about 2 seconds. What explains it, and what is the fix?",
+    snippet: {
+      language: "cpp",
+      filename: "relax.cu",
+      code: `float* h_in;
+cudaHostAlloc(&h_in, bytes, cudaHostAllocMapped);   // 1 GB, filled on the host
+float* d_view;
+cudaHostGetDevicePointer(&d_view, h_in, 0);
+
+for (int iter = 0; iter < 50; ++iter)
+    relax<<<grid, block>>>(d_view, d_out, n);       // reads all of d_view
+cudaDeviceSynchronize();`,
+      highlightLines: [2, 7],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Like managed memory, mapped pages migrate into device memory on first touch, so the first pass pays the PCIe cost; the time comes from page-fault handling, and prefetching hides it",
+        "Mapped memory bypasses the coalescer, so every 4-byte load becomes its own PCIe read request; switching the kernel to float4 loads restores most of the expected bandwidth",
+        "Mapped memory is never copied: every pass streams the 1 GB across PCIe at ~25 GB/s rather than from HBM; copy it to device memory once and run all fifty passes from there",
+        "Pinned allocations of this size exceed the DMA engine's mapping window, so the driver silently falls back to staging each kernel's reads through a pageable bounce buffer",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "Zero-copy (mapped pinned) memory stays in host DRAM; the device pointer just makes it " +
+      "addressable from kernels, and every access is a read across the interconnect at the time the " +
+      "kernel issues it. Nothing migrates: page migration is a unified memory (`cudaMallocManaged`) " +
+      "behavior, not a mapped-memory one. Fifty passes over 1 GB is 50 GB through a link that " +
+      "sustains roughly 25 GB/s, which is the 2 seconds observed. Copying once costs about 40 ms, " +
+      "after which each pass reads HBM at about 1.5 TB/s (under 1 ms), so the explicit version " +
+      "finishes in well under 100 ms, a 20x-plus difference. Coalescing still matters for mapped " +
+      "memory, since it determines how many PCIe requests a warp generates, but the kernel here is " +
+      "already coalesced and the link bandwidth is the ceiling no load width can exceed. The Best " +
+      "Practices Guide frames the trade-off: zero-copy pays off when data is read or written exactly " +
+      "once with coalesced access, or on integrated GPUs where host and device share physical " +
+      "memory, because it overlaps the transfer with compute and skips a staging buffer. Data reused " +
+      "across passes belongs in device memory. A practical tell in Nsight Systems: no memcpy rows " +
+      "at all, yet kernels running orders of magnitude longer than their HBM-bound estimate.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html#zero-copy",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/understanding-memory.html#mapped-memory",
+      "https://developer.nvidia.com/blog/how-optimize-data-transfers-cuda-cc/",
+    ],
+  },
+  {
+    id: "gpu-cuda-atomics-determinism-01",
+    category: "gpu-cuda",
+    difficulty: "hard",
+    title: "A grid-stride float sum that ends in one atomicAdd per warp",
+    tags: ["atomics", "floating-point", "determinism", "reduction", "warp-shuffle"],
+    type: "trace",
+    prompt:
+      "`*total` is zeroed before each run, `blockDim.x` is 256, and the input, grid size, and GPU are " +
+      "identical every time. Comparing runs, the printed sum differs in the last two or three " +
+      "significant digits from run to run. Which statement is correct?",
+    snippet: {
+      language: "cpp",
+      filename: "sum.cu",
+      code: `__global__ void sumKernel(const float* x, float* total, int n) {
+    float v = 0.0f;
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n;
+         i += gridDim.x * blockDim.x)
+        v += x[i];
+
+    for (int off = 16; off > 0; off >>= 1)
+        v += __shfl_down_sync(0xffffffff, v, off);
+
+    if ((threadIdx.x & 31) == 0)
+        atomicAdd(total, v);
+}`,
+      highlightLines: [11],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The shuffle tree races: lanes that leave the grid-stride loop early reach __shfl_down_sync first and read partner values before those partners have finished accumulating",
+        "Each warp's partial is reproducible, but the order its atomicAdd lands in total varies with scheduling and float addition is not associative; reduce fixed-order partials instead",
+        "Float atomicAdd is built on a compare-and-swap retry loop that can drop an update under heavy contention, so a small, varying fraction of the warp partials never reaches total",
+        "The variation is rounding noise that disappears with a double total and double atomicAdd, since 53 bits of mantissa make the result independent of the order of the additions",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "Everything before the atomic is deterministic: each thread's grid-stride walk visits the same " +
+      "elements in the same order, and the shuffle tree combines lanes in a fixed pattern. The " +
+      "`_sync` shuffle waits for all 32 lanes named in the mask, so a lane that exits the loop early " +
+      "cannot read a partner's unfinished value. What is not fixed is when each warp reaches its " +
+      "`atomicAdd`: warps are scheduled across SMs in an order that depends on timing, so the " +
+      "thousands of partials are folded into `*total` in a different sequence each run. Floating-point " +
+      "addition is commutative but not associative, `(a + b) + c` and `a + (b + c)` round " +
+      "differently, so a different order produces a different last few bits, which shows up as " +
+      "varying trailing digits. Atomics do not lose updates: float `atomicAdd` has been a native " +
+      "hardware atomic since compute capability 2.0, and even a CAS-loop emulation retries until it " +
+      "succeeds. A double accumulator shrinks the variation but does not remove it; the double sum " +
+      "is still order-dependent in its low bits, and those differences can survive when the result " +
+      "is rounded back to float. Bitwise reproducibility needs a fixed reduction order: write each " +
+      "warp's or block's partial to its own slot in an array, then reduce that array in a second " +
+      "kernel (or in the last block to finish) with a fixed tree. This is why PyTorch's " +
+      "`torch.use_deterministic_algorithms(True)` rejects or replaces kernels built on floating-point " +
+      "`atomicAdd`. Note that a fixed order buys run-to-run reproducibility, not a more accurate sum.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html#atomic-functions",
+      "https://docs.nvidia.com/cuda/floating-point/index.html",
+      "https://developer.nvidia.com/blog/faster-parallel-reductions-kepler/",
+    ],
+  },
+  {
+    id: "gpu-cuda-index-overflow-01",
+    category: "gpu-cuda",
+    difficulty: "hard",
+    title: "One thread per byte across a 5-billion-byte buffer",
+    tags: ["thread-hierarchy", "indexing", "integer-overflow", "large-arrays"],
+    type: "trace",
+    prompt:
+      "An 80 GB GPU holds a 5,000,000,000-byte buffer, zeroed beforehand. The kernel is launched with " +
+      "one thread per byte, 256 threads per block, and 19,531,250 blocks. After it completes, the " +
+      "buffer is copied back and inspected. What does it contain?",
+    snippet: {
+      language: "cpp",
+      filename: "bump.cu",
+      code: `__global__ void bump(unsigned char* data, size_t n) {
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) data[i] += 1;
+}
+
+size_t n = 5000000000ULL;
+unsigned blocks = (unsigned)((n + 255) / 256);   // 19,531,250
+bump<<<blocks, 256>>>(d_data, n);`,
+      highlightLines: [2],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Every byte is 1: i is declared size_t, so the index expression is evaluated in 64 bits and nothing special happens at 2^32, which leaves each of the 5 billion bytes bumped exactly once",
+        "Every byte is 0: gridDim.x is capped at 65,535 blocks, so a 19.5-million-block launch is rejected with an invalid-configuration error before any thread runs, leaving the zeros intact",
+        "Bytes below 2^31 are 1 and the rest stay 0: the product overflows a signed int at 2^31, wraps to a negative value, and the resulting huge size_t fails the i < n bounds check",
+        "The first 705,032,704 bytes are 2, the rest below 2^32 are 1, and the last 705,032,704 stay 0: the index wraps modulo 2^32 in unsigned arithmetic before being widened to size_t",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "`blockIdx.x`, `blockDim.x`, and `threadIdx.x` are all `unsigned int`, so the right-hand side " +
+      "is computed entirely in 32-bit unsigned arithmetic, which wraps modulo 2^32 (well defined, " +
+      "with no trap), and only the wrapped result is widened when it is assigned to `size_t i`. The " +
+      "declared type of the destination has no influence on how the expression is evaluated, the " +
+      "same C++ rule that makes `long long x = a * b;` overflow for two ints. Blocks from 16,777,216 " +
+      "(2^32 / 256) onward therefore compute `true_index - 2^32`: the 705,032,704 threads whose true " +
+      "index lies in [2^32, 5e9) land on [0, 705,032,704) instead, so those bytes are incremented " +
+      "twice (in practice the two writers run millions of blocks apart, though nothing formally " +
+      "orders their non-atomic read-modify-writes), the remainder below 2^32 once, and the tail " +
+      "beyond 2^32 never. No error is reported. The signed-int story would apply to `int idx = ...`, " +
+      "a common habit that fails even earlier, at 2^31 elements, and with undefined behavior rather " +
+      "than defined wraparound. The 65,535 limit applies to `gridDim.y` and `gridDim.z`; " +
+      "`gridDim.x` allows up to 2^31 - 1 blocks on every architecture since compute capability 3.0. " +
+      "The fix is to widen before multiplying, `size_t i = (size_t)blockIdx.x * blockDim.x + " +
+      "threadIdx.x;`, and to use a `size_t` grid-stride loop, which also stops the launch size from " +
+      "scaling with n. Multi-gigabyte single allocations are routine on 80 GB parts, so this bug " +
+      "tends to appear only when a dataset first crosses 4 GB.",
+    references: [
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/writing-cuda-kernels.html#thread-hierarchy",
+      "https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html#features-and-technical-specifications",
+      "https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/",
+    ],
+  },
 ];

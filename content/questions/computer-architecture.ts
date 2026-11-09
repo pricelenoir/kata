@@ -1888,4 +1888,501 @@ STR  w0, [flag]`,
       "https://en.wikipedia.org/wiki/Memory-level_parallelism",
     ],
   },
+  {
+    id: "computer-architecture-4k-aliasing-40",
+    category: "computer-architecture",
+    difficulty: "hard",
+    title: "A vectorized scale loop whose buffers differ by 4 KB plus 64 bytes",
+    tags: ["4k-aliasing", "memory-disambiguation", "store-buffer", "load-store-queue"],
+    type: "trace",
+    prompt:
+      "This loop is compiled with AVX2 (8 floats, 32 bytes, per vector iteration) and runs on " +
+      "an Intel Skylake core. `src` and `dst` are separate 8 KB buffers, and the function is " +
+      "called millions of times so both stay resident in L1D. In configuration A, " +
+      "`(dst - src) % 4096 == 64` bytes. In configuration B, the same allocations are shifted " +
+      "so that `(dst - src) % 4096 == 2048`. Configuration A is consistently and substantially " +
+      "slower, with no extra cache misses. What is the cause?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `void scale(float* __restrict dst, const float* __restrict src,
+           size_t n, float k) {
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = src[i] * k;   // vector load src, multiply, vector store dst
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "L1 set conflicts: with equal low 12 address bits, both streams index the same L1 sets, " +
+          "so each source line keeps evicting the destination line it pairs with",
+        "Failed store forwarding: each load partially overlaps a buffered store from an earlier " +
+          "iteration, so it must wait for that store to commit to L1 before reading",
+        "Prefetcher confusion: the L1 streamer tracks streams by 4 KB page offset, so two " +
+          "streams at nearly the same offset keep resetting each other's trained state",
+        "False memory dependence: loads are first checked against older stores on address bits " +
+          "[11:0] only, so each load is held as if it depended on the store two iterations back",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "This is 4K aliasing, a microarchitectural artifact with no ISA-level meaning. A load " +
+      "issued speculatively has to find out whether any older store still in the store buffer " +
+      "writes the same bytes. To do this early, before the load's own TLB lookup and without " +
+      "waiting for every store's full physical address, Intel cores first compare only the " +
+      "page-offset bits [11:0], which are identical in the virtual and physical address. A " +
+      "match on those bits is treated as a possible dependence. The full address check then " +
+      "finds the pages differ, and the load is reissued several cycles late. Here the arithmetic " +
+      "makes that happen on every vector. A load of `src + 32v` matches, modulo 4096, the store " +
+      "to `dst + 32(v - 2)`, two iterations older and certainly still buffered. In configuration " +
+      "B the matching store is 64 iterations older, more than a 56-entry store buffer can even " +
+      "hold, so it has long since committed and nothing " +
+      "matches. Performance counters show this as `LD_BLOCKS_PARTIAL.ADDRESS_ALIAS`. The L1-set " +
+      "answer is the tempting one, because equal low bits do mean equal set indices, but a " +
+      "32 KB, 8-way L1D has 8 ways per set, and two streams use only two of them. Nor is there " +
+      "any real overlap for forwarding to fail on, since the bytes are disjoint. The problem " +
+      "occurs in real code because large allocations from `mmap`-backed allocators tend to " +
+      "start at the same small offset within a page, so separately allocated input and output " +
+      "buffers often share their low 12 bits. The fix is to offset one buffer so that " +
+      "`(dst - src) % 4096` is not a small positive value, for example near 2048 as in " +
+      "configuration B, so any store sharing a load's low 12 bits has long since drained.",
+    references: [
+      "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html",
+      "https://www.agner.org/optimize/microarchitecture.pdf",
+    ],
+  },
+  {
+    id: "computer-architecture-subnormal-assist-41",
+    category: "computer-architecture",
+    difficulty: "medium",
+    title: "A one-pole audio filter's cost after its input goes silent",
+    tags: ["floating-point", "subnormals", "microcode-assist", "mxcsr"],
+    type: "trace",
+    prompt:
+      "This feedback filter runs once per audio sample, compiled for x86-64 with scalar SSE and " +
+      "the default MXCSR settings (no flush-to-zero, no denormals-are-zero). While music is " +
+      "playing it costs a few cycles per sample. The input then goes digitally silent, all " +
+      "zeros. Within a few milliseconds, `process` starts taking well over 10x longer per " +
+      "sample, and it stays that slow for as long as the input remains silent. Why?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `float y = 0.0f;
+
+void process(const float* in, float* out, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        y = in[i] + 0.7f * y;
+        out[i] = y;
+    }
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Each multiply now underflows, raising a floating-point underflow exception that the " +
+          "kernel delivers to the process as a signal and resumes on every sample",
+        "y decays into the subnormal range and stays there, and each multiply producing a " +
+          "subnormal result takes a microcode assist costing on the order of 100 cycles",
+        "With zero input the add has no independent work to overlap, so the loop-carried " +
+          "dependency through y becomes the bottleneck it was not while music played",
+        "y keeps shrinking but stays normal, and the FP unit needs extra rounding passes on " +
+          "tiny magnitudes, adding a handful of cycles to each multiply-add",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "IEEE 754 gradual underflow requires subnormal numbers below the smallest normal float " +
+      "(about 1.2e-38), and many x86 cores, Intel's especially, do not handle every subnormal " +
+      "case in the fast FP datapath. An operation that produces a subnormal result (and, on " +
+      "some cores and operations, one that consumes a subnormal input) is handed to a microcode " +
+      "assist that typically costs on the order of 100 to 150 cycles, against an FP latency of " +
+      "about 4. The `FP_ASSIST.ANY` counter shows it directly. Once the input is zero, y simply " +
+      "multiplies by 0.7 each sample and reaches the subnormal range after roughly 250 samples, " +
+      "about 5 ms at 48 kHz. It never leaves. Once y reaches the smallest subnormal, 2^-149, " +
+      "the exact product 0.7 x 2^-149 is nearer to 2^-149 than to 0, so round-to-nearest gives " +
+      "back 2^-149, and every sample pays the assist indefinitely. The dependency chain " +
+      "through y was there all along and did not change. The underflow answer fails because " +
+      "x86 FP exceptions are masked by default: underflow sets a sticky flag in MXCSR and " +
+      "traps nothing. The standard fixes are to set FTZ, which flushes subnormal results to " +
+      "zero, and DAZ, which treats subnormal inputs as zero, in MXCSR " +
+      "(`_MM_SET_FLUSH_ZERO_MODE` and `_MM_SET_DENORMALS_ZERO_MODE`; linking with `-ffast-math` " +
+      "sets both at startup via crtfastmath.o), or to add a tiny DC offset or noise to the " +
+      "feedback path. Audio DSP code does one of these routinely, because silence followed by " +
+      "a CPU spike is a classic symptom of this bug.",
+    references: [
+      "https://www.agner.org/optimize/microarchitecture.pdf",
+      "https://en.wikipedia.org/wiki/Subnormal_number#Performance_issues",
+    ],
+  },
+  {
+    id: "computer-architecture-spin-wait-machine-clear-42",
+    category: "computer-architecture",
+    difficulty: "hard",
+    title: "Exiting a spin-wait loop on a flag, with and without `pause`",
+    tags: ["spin-wait", "pause", "machine-clear", "memory-ordering", "smt"],
+    type: "trace",
+    prompt:
+      "A thread on an Intel x86 core with SMT enabled waits for another core to publish a flag. " +
+      "The loop compiles to the three instructions below with no `pause`. The flag's line stays " +
+      "in this core's L1D in Shared state while it spins, so every load hits. Eventually another " +
+      "core stores 1 to `flag`, invalidating this core's copy. What does the spinning core go " +
+      "through when that store arrives, and what would a `pause` inside the loop change?",
+    snippet: {
+      language: "text",
+      code: `; while (flag.load(std::memory_order_acquire) == 0) {}
+.spin:
+    mov   eax, dword ptr [flag]
+    test  eax, eax
+    jz    .spin`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "One ordinary exit: the next load sees 1 and the loop branch mispredicts once, which is " +
+          "the whole cost; pause only reduces power and has no effect on the exit itself",
+        "A serialized refill: every queued spin load misses to L3 one after another, so exit " +
+          "costs one L3 latency per load in flight; pause shortens that queue of loads",
+        "A machine clear: executed-but-unretired spin loads see their line invalidated, a " +
+          "possible ordering violation, so the core flushes and refetches; pause keeps few in flight",
+        "Delayed delivery: the invalidation cannot land while the core keeps re-reading the " +
+          "line, so the waiter can starve for microseconds; pause opens a gap for it to arrive",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "The predictor learns that `jz .spin` is taken, so the out-of-order core fills its ROB " +
+      "with dozens of speculative iterations. Every load in them hits L1 and executes early, " +
+      "long before it retires. x86 TSO requires loads to appear to execute in program order, " +
+      "and the core enforces that cheaply. Loads that have executed but not retired are " +
+      "tracked in the load buffer, and an incoming snoop invalidation that hits one of their " +
+      "lines means an earlier-ordered load might now see a newer value than a later one already " +
+      "read. The core does not work out whether a violation really occurred. It flushes " +
+      "everything from the oldest affected load onward and refetches, a memory-ordering " +
+      "machine clear (`MACHINE_CLEARS.MEMORY_ORDERING`), on top of the loop-exit branch " +
+      "misprediction. Intel's SDM describes this exact case as a severe penalty on exiting a " +
+      "spin-wait loop. The coherence protocol has no starvation problem here, since an " +
+      "invalidation is never blocked by repeated reads that hit, and the refetch after the " +
+      "clear is a single miss, not one per queued load. `pause` hints that this is a spin-wait. " +
+      "It delays the next iteration (roughly 10 cycles on older cores, and up to about 140 " +
+      "cycles on Skylake-derived cores), so only a few loads are ever in flight and the clear is " +
+      "avoided. While spinning, the thread then stops consuming the fetch, issue, and ROB " +
+      "capacity it shares with its SMT sibling, and the core burns less power. The " +
+      "longer `pause` changed the tuning of spin-then-block loops calibrated in iteration " +
+      "counts, which is why spin limits should be measured in time. These are " +
+      "microarchitectural costs, not memory-model rules: the loop is correct with or without " +
+      "`pause`, just slower to exit and harder on the sibling thread. Arm's equivalents are the " +
+      "`YIELD` hint and `WFE`, which waits for an event such as the loss of an exclusive " +
+      "monitor instead of polling.",
+    references: [
+      "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html",
+      "https://www.agner.org/optimize/microarchitecture.pdf",
+    ],
+  },
+  {
+    id: "computer-architecture-store-buffer-full-43",
+    category: "computer-architecture",
+    difficulty: "hard",
+    title: "Scattered DRAM-missing stores against a 56-entry store buffer",
+    tags: ["store-buffer", "load-store-queue", "rfo", "tso", "out-of-order-execution"],
+    type: "trace",
+    prompt:
+      "On an x86 core with a 224-entry ROB, a 72-entry load buffer, and a 56-entry store " +
+      "buffer, this loop scatters 4-byte stores into a 4 GB table at random, precomputed " +
+      "indices. `idx` is read sequentially and prefetches well. Nearly every store targets a " +
+      "line not present in any cache, and nothing in the loop reads `table`. Profiling shows " +
+      "the ROB is rarely more than a quarter full, yet the allocation stage spends most cycles " +
+      "unable to issue new uops. What is happening?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `// table: 4 GB of uint32_t; idx[i] is uniformly random
+for (size_t i = 0; i < n; ++i)
+    table[idx[i]] = static_cast<uint32_t>(i);`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The store buffer is full of retired stores waiting to commit in program order, and " +
+          "each new store needs an entry at allocation, so issue stalls with the ROB nearly empty",
+        "Retirement is blocked: a store cannot retire until its line has arrived and been " +
+          "written into L1, so the oldest missing store holds up everything behind it",
+        "The load buffer is full: each store's read-for-ownership occupies a load-buffer entry " +
+          "until its line arrives, so the 72 entries run out before anything else",
+        "Commit is reordered: stores whose lines are already in L1 drain ahead of the missing " +
+          "ones, so only the stores that missed have to wait to be allocated",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "Stores pass through two separate lifetimes. Each store gets a store-buffer entry in " +
+      "program order at allocation, alongside its ROB entry. Once its address and data are " +
+      "computed and it reaches the head of the ROB it retires, freeing the ROB entry, and " +
+      "becomes a senior store. It keeps its store-buffer entry until it commits to L1D, which " +
+      "requires the line in Modified or Exclusive state, here a read-for-ownership (RFO) from " +
+      "DRAM. x86 TSO requires stores to become visible in program order, so the store buffer " +
+      "commits strictly FIFO. Intel cores issue RFO prefetches for buffered stores so several " +
+      "misses overlap, bounded by the fill buffers, but the head store still has to wait for its " +
+      "line before anything behind it commits. Within a few dozen iterations all 56 entries " +
+      "hold senior stores waiting on DRAM. The next store cannot allocate, so the allocator " +
+      "stalls everything behind it, including independent `idx` loads and loop arithmetic. The " +
+      "ROB, meanwhile, is nearly empty, because the stores already retired. Intel exposes this " +
+      "as `RESOURCE_STALLS.SB`. The retirement answer would fill the ROB, which the profile " +
+      "contradicts, and RFOs do not occupy load-buffer entries. Out-of-order commit is what " +
+      "TSO rules out. ARM and POWER permit store-store reordering to different addresses, so " +
+      "their implementations may drain non-FIFO, but that is a property of the memory model, not " +
+      "of x86. A larger ROB does nothing here. What helps is fewer DRAM-missing stores in " +
+      "flight per unit of work: sort or bucket the indices for locality, or issue `prefetchw` " +
+      "for targets some iterations ahead. `prefetchw` requests ownership without taking a " +
+      "store-buffer entry, so the stores find their lines already owned when they reach the head.",
+    references: [
+      "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html",
+      "https://www.agner.org/optimize/microarchitecture.pdf",
+    ],
+  },
+  {
+    id: "computer-architecture-vipt-l1-sizing-44",
+    category: "computer-architecture",
+    difficulty: "medium",
+    title: "Doubling a VIPT L1D from 32 KB to 64 KB at fixed associativity",
+    tags: ["cache-design", "vipt", "virtual-memory", "synonyms"],
+    type: "trace",
+    prompt:
+      "A core's L1D is 32 KB, 8-way set associative, with 64-byte lines. It is virtually " +
+      "indexed and physically tagged (VIPT): the set index comes from the virtual address so " +
+      "the set can be read in parallel with the TLB lookup, and the physical tag from the TLB " +
+      "is compared afterward. Pages are 4 KB. A proposal doubles capacity to 64 KB, still " +
+      "8-way, 64-byte lines, VIPT, with no other changes. What problem does this introduce?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "None: physical tags identify every line uniquely, so indexing with virtual bits can " +
+          "never leave two copies of one physical line in the cache",
+        "Only latency: the extra index bit has to come from the TLB, so every hit now waits on " +
+          "translation, but caching behavior stays correct",
+        "Index bit 12 is now translated: two virtual aliases of one physical page can put the " +
+          "same line in two sets, and a store through one leaves the other stale",
+        "Wasted capacity: lines whose virtual bit 12 differs from physical bit 12 cannot be " +
+          "placed at all, so about half of the added capacity is never used",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "The VIPT trick works only if the index bits lie within the page offset, which " +
+      "translation never changes. Then the virtual index is the physical index, and VIPT " +
+      "behaves exactly like a physically indexed cache with a faster lookup. At 32 KB and " +
+      "8-way, each way is 4 KB: 64 sets times 64 bytes, so the index is bits [11:6] and offset " +
+      "bits [5:0]. All 12 bits come from the page offset. At 64 KB and 8-way, each way is 8 KB, " +
+      "and the index needs bit 12, which belongs to the virtual page number. When two virtual " +
+      "addresses map the same physical page (shared memory mapped twice, a kernel alias of a " +
+      "user page, copy-on-write sharing), they can differ in bit 12 and select different sets. " +
+      "Each set then holds its own copy with the same correct physical tag. Both lookups hit, " +
+      "and a write through one alias leaves the other copy stale, an incoherence inside a " +
+      "single core that the coherence protocol never sees. The latency answer describes PIPT, " +
+      "which this design is not. The general rule is way size = capacity / associativity <= " +
+      "page size. That is why Intel's L1D stayed 32 KB and 8-way for many generations and then " +
+      "grew to 48 KB by going to 12 ways (Sunny Cove), not by adding sets, and why Apple's " +
+      "large L1D is feasible on a system that uses 16 KB pages. The alternatives are more " +
+      "ways, which cost tag comparators, power, and possibly latency; hardware synonym " +
+      "detection that checks the other candidate sets on a miss; or OS page coloring that " +
+      "guarantees aliases agree in the extra bits, as older MIPS and SPARC systems did.",
+    references: [
+      "https://en.wikipedia.org/wiki/CPU_cache#Address_translation",
+    ],
+  },
+  {
+    id: "computer-architecture-popcnt-false-dependency-45",
+    category: "computer-architecture",
+    difficulty: "hard",
+    title: "A popcnt reduction loop before and after adding `xor eax, eax`",
+    tags: ["false-dependency", "register-renaming", "zeroing-idiom", "dependency-chain"],
+    type: "trace",
+    prompt:
+      "On an Intel Haswell or Skylake core, `popcnt` has 3-cycle latency and a throughput of " +
+      "one per cycle on port 1. This loop sums population counts over an array resident in " +
+      "L1D, and it measures about 3 cycles per iteration, roughly twice what its uop count on a " +
+      "4-wide front end predicts. Inserting `xor eax, eax` immediately before the `popcnt` " +
+      "brings it well under 2 cycles per iteration, despite adding an instruction. What " +
+      "explains both observations?",
+    snippet: {
+      language: "text",
+      code: `.loop:
+    popcnt rax, qword ptr [rdi + rcx*8]
+    add    rdx, rax
+    inc    rcx
+    cmp    rcx, rsi
+    jb     .loop`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Port 1 contention: popcnt runs only on port 1 and the add and inc keep landing there " +
+          "too; the xor adds a uop, so its apparent benefit has to be measurement noise",
+        "A false dependency: these cores treat popcnt's destination as an input, chaining each " +
+          "popcnt to the last at 3 cycles; the xor is a zeroing idiom that rename breaks off",
+        "A flags dependency: popcnt writes RFLAGS, serializing it behind the previous cmp; the " +
+          "xor helps by resetting RFLAGS to a known value before each popcnt executes",
+        "The add chain: each add rdx waits on the add before it, and that chain costs the 3 " +
+          "cycles; the xor only lets rename start the next iteration's popcnt earlier",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "Register renaming removes WAW and WAR hazards only when the hardware knows an " +
+      "instruction does not read its destination. On Intel cores from Sandy Bridge through the " +
+      "Skylake derivatives, `popcnt` (and `lzcnt`/`tzcnt` before Skylake) is implemented as if " +
+      "it read its destination register, a false output dependency, plausibly because it shares " +
+      "a uop format with `bsf`/`bsr`, which leave the destination unchanged on a zero input. " +
+      "Each iteration's `popcnt rax` therefore waits for the previous iteration's `popcnt rax`, " +
+      "forming a loop-carried chain at popcnt's 3-cycle latency, though no instruction " +
+      "consumes the old value. `xor eax, eax` is a recognized zeroing idiom. Rename handles it " +
+      "by pointing `rax` at a fresh zero register without executing anything, and writing " +
+      "`eax` zero-extends into all of `rax`, so the next `popcnt` has no input from the prior " +
+      "iteration. The chain is gone, and the loop runs at its uop-throughput bound. The real " +
+      "`add rdx` chain costs 1 cycle per iteration, not 3. RFLAGS is renamed like any other " +
+      "register, and `popcnt` writes flags without reading them. Port 1 accepts one popcnt " +
+      "per cycle, and the scheduler moves `add`/`inc` to the other ALU ports. Intel fixed " +
+      "`lzcnt`/`tzcnt` in Skylake and `popcnt` in Cannon Lake. GCC and Clang insert a " +
+      "dependency-breaking `xor` when tuning for affected cores, and the bug became notorious " +
+      "when changing a loop counter from 32 to 64 bits altered register allocation and swung " +
+      "throughput substantially. Other instructions with partial or false destination " +
+      "dependencies, such as `cvtsi2sd` and `sqrtss` into an XMM register, get the same " +
+      "fix: zero or otherwise break the destination before the instruction.",
+    references: [
+      "https://gcc.gnu.org/bugzilla/show_bug.cgi?id=62011",
+      "https://www.agner.org/optimize/instruction_tables.pdf",
+    ],
+  },
+  {
+    id: "computer-architecture-split-lock-46",
+    category: "computer-architecture",
+    difficulty: "hard",
+    title: "A `lock add` on an operand that straddles two cache lines",
+    tags: ["atomics", "split-lock", "bus-lock", "cache-coherence", "alignment"],
+    type: "trace",
+    prompt:
+      "`g_stats` is 64-byte aligned, and the packed layout puts `hits` at bytes 60 through 67, " +
+      "straddling a cache-line boundary. On an x86-64 server where split-lock detection is " +
+      "disabled (or the CPU predates it), one thread calls `record()` in a tight loop while " +
+      "other cores run unrelated, memory-intensive processes that never touch `g_stats`. The " +
+      "increment compiles to `lock add qword ptr [g_stats+60], 1`. What does the hardware do " +
+      "for this instruction, and who pays for it?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#pragma pack(push, 1)
+struct Stats {
+    char     tag[60];
+    uint64_t hits;            // offset 60: bytes 60..67
+};
+#pragma pack(pop)
+
+alignas(64) Stats g_stats;
+
+void record() {
+    __atomic_fetch_add(&g_stats.hits, 1, __ATOMIC_RELAXED);
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "It takes a bus lock: atomicity across two lines can't come from holding one line in " +
+          "L1, so memory traffic is blocked system-wide, stalling the unrelated cores too",
+        "It faults: x86 requires a locked operand to be naturally aligned, so the instruction " +
+          "raises #GP on its first execution and the process is terminated",
+        "It tears: each half is updated by its own locked access to its own line, so concurrent " +
+          "increments can lose updates whenever a carry crosses the line boundary",
+        "Only this core pays: it holds both lines in Modified state in its L1 for the duration, " +
+          "so the cost is a second line's latency and other cores never notice",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "x86 guarantees that a `lock`-prefixed read-modify-write is atomic regardless of " +
+      "alignment, so the result is always correct and nothing faults. The question is how the " +
+      "hardware delivers that guarantee. For an operand within one cache line, modern cores use " +
+      "cache locking. The core obtains the line in Modified state, performs the read-modify-write, " +
+      "and defers snoops to that line until it finishes. The cost is local, and other cores are " +
+      "affected only if they want the same line. Coherence works one line at a time, and the " +
+      "core cannot hold two lines atomically. A split lock therefore falls back to a bus lock, " +
+      "which on modern multi-socket interconnects means quiescing memory traffic across the " +
+      "whole system while the operation completes. Each split lock costs far more than an " +
+      "ordinary locked instruction, and it also degrades the memory throughput of every other " +
+      "core, including unrelated processes and other tenants' VMs. One unprivileged process " +
+      "issuing split locks in a loop can measurably slow an entire host. That is why Intel " +
+      "added split-lock detection (an alignment-check #AC on the locked access) and bus-lock " +
+      "detection, and why Linux exposes `split_lock_detect=` to warn about, throttle, or kill " +
+      "offenders. The fault answer confuses x86 with stricter ISAs. AArch64 requires " +
+      "exclusive and LSE atomic accesses to be aligned (LSE2 relaxes this only within a " +
+      "16-byte granule), so the equivalent code faults there instead. The fix is to keep atomics " +
+      "naturally aligned. `std::atomic<uint64_t>` would enforce 8-byte alignment, but a packed " +
+      "struct member, a hand-computed offset into a byte buffer, or a misaligned cast defeats it.",
+    references: [
+      "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html",
+      "https://lwn.net/Articles/790464/",
+    ],
+  },
+  {
+    id: "computer-architecture-retpoline-speculation-47",
+    category: "computer-architecture",
+    difficulty: "hard",
+    title: "Where speculation goes at the `ret` inside a retpoline thunk",
+    tags: ["speculative-execution", "spectre-v2", "retpoline", "return-stack-buffer", "btb"],
+    type: "trace",
+    prompt:
+      "A kernel built with retpolines, as a Spectre v2 (branch target injection) mitigation, " +
+      "replaces each indirect `call *%r11` with `call __x86_indirect_thunk_r11`, shown below. " +
+      "When the front end reaches the thunk's `ret`, before the `ret` itself has executed, " +
+      "where does it speculatively fetch from, and what does each retpolined indirect call " +
+      "cost?",
+    snippet: {
+      language: "text",
+      code: `__x86_indirect_thunk_r11:
+    call  .Lset_target      ; pushes .Lcapture (stack and RSB)
+.Lcapture:
+    pause
+    lfence
+    jmp   .Lcapture
+.Lset_target:
+    mov   [rsp], r11        ; overwrite the return address in memory
+    ret`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "The real target in r11: the mov updates the return-stack entry as well as memory, so " +
+          "the ret predicts correctly and the thunk costs only a few extra uops",
+        "Nowhere: the lfence stops the front end from fetching past the ret until it resolves, " +
+          "so each call costs a pipeline drain but never a misprediction",
+        "The pause/lfence loop: the RSB still predicts .Lcapture, so speculation spins " +
+          "harmlessly, and each call pays a full misprediction when the ret resolves",
+        "A BTB-predicted target: the thunk first evicts attacker-trained BTB entries, so the " +
+          "prediction is safe and indirect calls keep their usual hit rate",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "Spectre v2 exploits the indirect branch predictor. An attacker trains BTB entries, " +
+      "which on affected cores are shared across privilege levels or contexts, so that a " +
+      "victim's indirect branch speculatively jumps to a gadget of the attacker's choice. " +
+      "Retpoline avoids that predictor entirely by turning the indirect branch into a `ret`, " +
+      "which is predicted from the return stack buffer instead. The `call .Lset_target` pushes " +
+      "the address of `.Lcapture` both onto the architectural stack in memory and onto the RSB. " +
+      "The `mov` then overwrites only the in-memory copy with the real target. The RSB is a " +
+      "predictor and never observes stores to the stack, so it still holds `.Lcapture`. The " +
+      "front end therefore predicts the `ret` to `.Lcapture` and speculatively runs " +
+      "`pause; lfence; jmp`. `lfence` keeps later instructions from executing until earlier " +
+      "ones complete, and `pause` throttles the loop, so the speculative window does nothing " +
+      "useful to an attacker. When the `ret` executes, it reads the real target from `[rsp]`, " +
+      "detects the mismatch, flushes, and redirects. Every retpolined indirect call therefore " +
+      "pays a guaranteed misprediction, typically 15 to 20 or more cycles, in place of what " +
+      "was often a correctly predicted BTB hit, which is why kernels de-virtualize hot paths " +
+      "and why hardware mitigations such as eIBRS replaced retpoline on newer cores. Retpoline " +
+      "relies on the RSB actually supplying the prediction. Skylake-family cores fall back to " +
+      "the BTB when the RSB underflows, so on those cores the kernel also had to stuff the RSB " +
+      "on context switches or rely on IBRS.",
+    references: [
+      "https://support.google.com/faqs/answer/7625886",
+      "https://doi.org/10.1109/SP.2019.00002",
+    ],
+  },
 ];

@@ -2530,4 +2530,503 @@ void worker() {
       "https://en.cppreference.com/w/cpp/atomic/memory_order",
     ],
   },
+  {
+    id: "concurrency-atomic-wait-notify-01",
+    category: "concurrency",
+    difficulty: "hard",
+    title: "std::atomic<bool>::wait with a set-notify-reset pulse",
+    tags: ["atomic-wait", "notify", "cpp20", "aba", "futex"],
+    type: "trace",
+    prompt:
+      "main() starts waiter() and then pulser() on two threads and joins both. pulser() " +
+      "means to 'fire' the signal once and then reset it for the next round. Per the C++20 " +
+      "standard, what is guaranteed about waiter()?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `std::atomic<bool> signal{false};
+
+void waiter() {
+    signal.wait(false);          // block while signal == false
+    std::puts("woke");
+}
+
+void pulser() {
+    signal.store(true);
+    signal.notify_one();
+    signal.store(false);         // reset for the next round
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "It always prints: notify_one() releases a thread blocked in wait() on that object, the same way condition_variable::notify_one() does.",
+        "It can block forever: wait() returns only once a load it performs sees a value other than false, and the reset can land before that load.",
+        "It always prints, perhaps late: atomic wait() may return spuriously, so even a missed notify eventually lets the waiter fall through.",
+        "Undefined behavior: notify_one() on an atomic must be called while holding a mutex associated with it, as a condition variable requires.",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "C++20 atomic waiting is value-based, not event-based. The standard specifies " +
+      "`wait(old, order)` as a loop: evaluate `load(order)` and compare its value " +
+      "representation against `old`; if they differ, return; otherwise block until unblocked " +
+      "by a notifying operation *or spuriously*, and repeat. A notify is therefore only a hint " +
+      "to re-check, and the spurious unblocks the standard permits are absorbed inside that " +
+      "loop: `wait()` itself never returns while the value still equals `old`. Two schedules " +
+      "strand the waiter. If pulser() runs all three statements before waiter() even reaches " +
+      "`wait()`, the first load already sees `false` and the waiter blocks with no notify ever " +
+      "coming. If the waiter is already blocked, the notify wakes it, but its re-check load can " +
+      "observe the later `store(false)` (coherence allows a load to return any value not older " +
+      "in the modification order than one it has already seen, and the reset is the newest), " +
+      "so it blocks again. This is ABA on a wait word: false, true, false is indistinguishable " +
+      "from 'nothing happened'. The implementation mirrors this exactly: on Linux, libstdc++ and " +
+      "libc++ lower `wait` onto a futex (directly for suitable 4-byte types, via a proxy word " +
+      "for others), and `FUTEX_WAIT` compares the word inside the kernel and goes back to sleep " +
+      "on a match. No mutex is needed with atomic wait/notify, which is the whole appeal. The " +
+      "standard fix is the futex idiom: wait on a monotonically increasing generation counter " +
+      "(`gen.fetch_add(1); gen.notify_all();` on the signalling side, `gen.wait(seen)` on the " +
+      "waiting side), so a pulse can never be undone by a later write that restores the old value.",
+    references: [
+      "https://en.cppreference.com/w/cpp/atomic/atomic/wait",
+      "https://en.cppreference.com/w/cpp/atomic/atomic/notify_one",
+    ],
+  },
+  {
+    id: "concurrency-dclp-atomic-ordering-01",
+    category: "concurrency",
+    difficulty: "hard",
+    title: "Double-checked locking over a std::atomic pointer",
+    tags: ["double-checked-locking", "atomics", "memory-order", "acquire-release", "mutex"],
+    type: "trace",
+    prompt:
+      "This lazy initializer is correct as written: callers dereference the returned pointer " +
+      "and read `p->path` and `p->retries` with no further synchronization. Which single change " +
+      "keeps every one of those reads free of data races?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `struct Config { std::string path; int retries; };
+
+std::atomic<Config*> g_cfg{nullptr};
+std::mutex g_mtx;
+
+Config* get() {
+    Config* p = g_cfg.load(std::memory_order_acquire);      // (A)
+    if (!p) {
+        std::lock_guard<std::mutex> lk(g_mtx);
+        p = g_cfg.load(std::memory_order_acquire);          // (B)
+        if (!p) {
+            p = new Config{"/etc/app.conf", 3};
+            g_cfg.store(p, std::memory_order_release);      // (C)
+        }
+    }
+    return p;
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Weaken (A) to relaxed: every caller dereferences p, and that address dependency orders the member reads on all mainstream CPUs.",
+        "Weaken (C) to relaxed: lock_guard unlocks g_mtx right after the store, and a mutex unlock is already a release operation.",
+        "Weaken (B) to relaxed: any thread at (B) holds g_mtx, so the creating thread's unlock already happens-before that load.",
+        "None of them: (A), (B), and (C) each carry a distinct synchronizes-with edge, so relaxing any one of them reintroduces a race.",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "Only (B) is redundant. The sole store to g_cfg, (C), executes inside a g_mtx critical " +
+      "section, and so does every load at (B). Mutex lock and unlock operations on one mutex form " +
+      "a single total order in which each unlock synchronizes-with the next lock. If the " +
+      "creator's critical section precedes the reader's, the creator's constructor writes and " +
+      "(C) happen-before the reader's lock and therefore (B), whatever order (B) uses. If the " +
+      "reader's section came first, (B) happens-before (C), and read-write coherence forbids it " +
+      "from reading (C)'s value, so it sees nullptr and takes the creation path itself. Either " +
+      "way the mutex supplies all the ordering (B) needs. (A) is different: the fast path never " +
+      "touches the mutex, so its only route to the constructor's writes is (A) " +
+      "synchronizing-with (C). A relaxed (A) creates no happens-before edge; the member reads " +
+      "then race with the constructor's writes, which is UB. That address dependencies happen to " +
+      "order loads on x86, ARM, and POWER (everything but DEC Alpha) is exactly what " +
+      "memory_order_consume tried to capture, and relaxed promises none of it: the compiler is " +
+      "free to break the dependency, for example by value speculation. For the same reason (C) " +
+      "must stay release: the unlock that follows is a release only with respect to a later " +
+      "lock() of g_mtx, and a fast-path reader that loads g_cfg never performs one, so nothing " +
+      "pairs with it. On x86 all three orderings compile to plain MOVs, so the distinction is " +
+      "invisible in the codegen there and only shows up through compiler reordering or on " +
+      "weakly ordered hardware. In practice a function-local `static Config cfg{...};` gets the " +
+      "same fast path with the synchronization supplied by the compiler.",
+    references: [
+      "https://en.cppreference.com/w/cpp/atomic/memory_order",
+      "https://en.cppreference.com/w/cpp/thread/mutex",
+    ],
+  },
+  {
+    id: "concurrency-spsc-ring-buffer-01",
+    category: "concurrency",
+    difficulty: "hard",
+    title: "SPSC ring buffer with free-running head and tail indices",
+    tags: ["spsc", "ring-buffer", "lock-free", "memory-order", "acquire-release"],
+    type: "trace",
+    prompt:
+      "Exactly one producer thread calls push() and exactly one consumer thread calls pop(). " +
+      "The indices are never masked when stored; only the slot access is. Is this queue " +
+      "correct under the C++ memory model?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `template <size_t N>                // N is a power of two
+struct Spsc {
+    int buf[N];
+    std::atomic<size_t> head{0};   // written only by the consumer
+    std::atomic<size_t> tail{0};   // written only by the producer
+
+    bool push(int v) {
+        size_t t = tail.load(std::memory_order_relaxed);
+        if (t - head.load(std::memory_order_relaxed) == N) return false;  // full
+        buf[t & (N - 1)] = v;
+        tail.store(t + 1, std::memory_order_release);
+        return true;
+    }
+
+    bool pop(int& out) {
+        size_t h = head.load(std::memory_order_relaxed);
+        if (h == tail.load(std::memory_order_acquire)) return false;      // empty
+        out = buf[h & (N - 1)];
+        head.store(h + 1, std::memory_order_relaxed);
+        return true;
+    }
+};`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "No: nothing orders the consumer's read of a slot before the producer's later overwrite of it; head needs a release store and an acquire load.",
+        "Yes: tail's release store and acquire load order every access to buf, and head only has to be atomic, since it is never used to publish data.",
+        "No: once the size_t indices wrap past SIZE_MAX, `t - head` underflows, the full check stops firing, and push() overwrites unread slots.",
+        "No: tail.load in push() must be acquire; with relaxed, the producer can read a stale copy of its own tail and overwrite a published slot.",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "The tail pair is right: the producer's write to `buf[t]` is sequenced before its release " +
+      "store of tail, the consumer's acquire load reads that value, and so the write " +
+      "happens-before the consumer's read of the slot. The bug is the reverse direction, the " +
+      "write-after-read hazard people forget. When the buffer is full, the producer waits for " +
+      "head to advance past slot `h` and then overwrites `buf[h]`. The consumer's read of " +
+      "`buf[h]` and that overwrite conflict, and with a relaxed head store paired with a relaxed " +
+      "head load there is no synchronizes-with edge between them, so they are unordered by " +
+      "happens-before: a data race. Concretely, the compiler may sink the plain load of the slot " +
+      "below the relaxed head store, and ARM or POWER hardware may let the head store become " +
+      "visible while that load is still outstanding (load-to-store reordering), so the consumer " +
+      "returns the value the producer wrote N pushes later. x86-TSO forbids load-to-store " +
+      "reordering in hardware, which is why this version usually passes tests there; that " +
+      "covers only the hardware half, not the compiler. The fix is " +
+      "`head.store(h + 1, memory_order_release)` in pop() and " +
+      "`head.load(memory_order_acquire)` in push(). The other options describe non-bugs. " +
+      "Unsigned subtraction is modular, so `t - head` stays correct across wraparound as long as " +
+      "N divides 2^64, which any power of two does; that is precisely why free-running indices " +
+      "are used. And a thread's relaxed load of an atomic only it writes always returns its own " +
+      "latest store, by sequenced-before plus coherence. Production queues additionally put head " +
+      "and tail on separate cache lines and keep a producer-local cached copy of head so the " +
+      "shared line is read only when the queue looks full.",
+    references: [
+      "https://en.cppreference.com/w/cpp/atomic/memory_order",
+    ],
+  },
+  {
+    id: "concurrency-shared-ptr-global-race-01",
+    category: "concurrency",
+    difficulty: "medium",
+    title: "Copying a global std::shared_ptr while another thread reassigns it",
+    tags: ["shared_ptr", "reference-counting", "data-race", "atomic-shared-ptr", "cpp20"],
+    type: "trace",
+    prompt:
+      "A config-reload thread periodically replaces a global std::shared_ptr while many " +
+      "request-handler threads copy it. Nothing else synchronizes them. What is the status of " +
+      "this code?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `std::shared_ptr<const Config> g_cfg = std::make_shared<const Config>();
+
+void reloader() {                                   // thread A, periodically
+    auto fresh = std::make_shared<const Config>(load_from_disk());
+    g_cfg = fresh;                                  // publish the new config
+}
+
+void handler() {                                    // threads B..Z, per request
+    std::shared_ptr<const Config> local = g_cfg;    // take a reference
+    use(*local);
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Safe: shared_ptr updates its reference count with atomic RMWs, so concurrently copying and reassigning one shared_ptr is thread-safe by design.",
+        "Safe on x86-64, where each of the two internal pointers is written with one aligned store, but a data race on weakly ordered CPUs like ARM.",
+        "Safe, because Config is const: the race the standard warns about is on the pointed-to object, and nobody here can mutate that object.",
+        "Data race: the copy reads g_cfg's internal pointers while operator= rewrites them, and can bump the count of a control block already freed.",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "shared_ptr's thread-safety guarantee is narrower than it sounds. Distinct shared_ptr " +
+      "objects that share a control block may be copied, assigned, and destroyed concurrently, " +
+      "because the reference counts are atomic. But [util.smartptr.shared] treats each member " +
+      "function as accessing only the shared_ptr object itself for data-race purposes, so a " +
+      "single shared_ptr *instance* accessed by one thread with a non-const operation " +
+      "(`operator=`) and by another with any operation is an ordinary data race. Here every " +
+      "handler copies the same object, g_cfg, that the reloader assigns. The concrete failure is " +
+      "a use-after-free: a handler loads g_cfg's control-block pointer and is preempted before " +
+      "incrementing; the reloader assigns, drops the old count from 1 to 0, and destroys both " +
+      "the old Config and its control block; the handler resumes and increments a count in " +
+      "freed memory. The atomic refcount is exactly the part that cannot help, because the " +
+      "race is on reading the pointer to it, and a load of two separate words can never be made " +
+      "atomic on x86 by alignment alone. const on the pointee prevents nobody from reassigning " +
+      "the pointer. The fixes are C++20's `std::atomic<std::shared_ptr<const Config>>` with " +
+      "load()/store(), the pre-C++20 `std::atomic_load`/`std::atomic_store` free-function " +
+      "overloads (deprecated in C++20), or a mutex around the copy and the assignment. Note that " +
+      "`std::atomic<std::shared_ptr<T>>` is typically not lock-free: mainstream implementations " +
+      "guard it with an internal lock (libstdc++ uses a lock bit packed into the pointer), so " +
+      "read-mostly hot paths sometimes prefer RCU-style or hazard-pointer schemes instead.",
+    references: [
+      "https://en.cppreference.com/w/cpp/memory/shared_ptr",
+      "https://en.cppreference.com/w/cpp/memory/shared_ptr/atomic2",
+    ],
+  },
+  {
+    id: "concurrency-sched-fifo-lockfree-01",
+    category: "concurrency",
+    difficulty: "medium",
+    title: "SCHED_FIFO threads on one core: spinlock vs CAS-loop push",
+    tags: ["lock-free", "spinlock", "priority-inversion", "sched-fifo", "real-time"],
+    type: "trace",
+    prompt:
+      "Threads H (SCHED_FIFO priority 90) and L (SCHED_FIFO priority 10) are pinned to the " +
+      "same single core. L pushes to a shared stack continuously; H is woken by a timer and " +
+      "pushes once. Version 1 protects a std::vector with an atomic_flag spinlock; version 2 is " +
+      "a Treiber stack whose push() retries compare_exchange_weak. H wakes while L is midway " +
+      "through a push: holding the spinlock in version 1, between loading head and its CAS in " +
+      "version 2. What happens?",
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Both versions hang: H outranks L under SCHED_FIFO, so in either version L never runs to finish its push, and H waits on it indefinitely.",
+        "Only version 1 hangs: H spins on a lock that L cannot release while H is runnable, whereas H's CAS needs nothing from L to succeed.",
+        "Only version 2 hangs: L's stale head keeps H's compare_exchange failing, while the spinlock's test_and_set eventually hands H its turn.",
+        "Neither hangs: the kernel sees H spinning on a lock word owned by L and temporarily boosts L's priority, as it does for pthread mutexes.",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "Under SCHED_FIFO on one CPU, a runnable higher-priority thread runs until it blocks or " +
+      "yields; L is simply never scheduled while H is busy. In version 1 H spins on a flag that " +
+      "only L can clear, so H burns the core forever: priority inversion turned into a " +
+      "permanent hang. Linux's RT throttling (by default 950 ms of every second for RT tasks) " +
+      "does not rescue it, since the leftover slice goes to SCHED_OTHER tasks, and L is an RT " +
+      "task too. The kernel cannot boost L either, because priority inheritance only exists " +
+      "for locks the kernel knows about, such as PI futexes behind a pthread mutex created with " +
+      "PTHREAD_PRIO_INHERIT; a user-space spin on an atomic_flag is invisible to it. Version 2 " +
+      "is fine, and this is precisely the property lock-freedom buys: a thread suspended " +
+      "mid-operation holds nothing others must wait for. H loads the current head, CASes, and " +
+      "succeeds without L ever running. When L resumes, its CAS fails because head moved, and " +
+      "it reloads and retries, so the cost of the conflict lands on the preempted thread. The " +
+      "flip side is that lock-free is not wait-free: if H ran CAS-heavy loops on another core, " +
+      "nothing would bound how many times L's CAS loses, so L could starve. That is unbounded " +
+      "retry, not a hang, and it is why hard real-time paths sometimes require wait-free " +
+      "structures.",
+    references: [
+      "https://man7.org/linux/man-pages/man7/sched.7.html",
+    ],
+  },
+  {
+    id: "concurrency-seqlock-multi-writer-01",
+    category: "concurrency",
+    difficulty: "hard",
+    title: "Seqlock write path called from two writer threads",
+    tags: ["seqlock", "multiple-writers", "torn-read", "data-race"],
+    type: "trace",
+    prompt:
+      "The reader below uses the full seqlock check (retry while s1 is odd or s1 != s2), and " +
+      "readers expect `p.a == -p.b`. write() is now called concurrently from two writer threads " +
+      "with no writer-side lock. What is the consequence?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `struct Pair { long a; long b; };     // invariant: a == -b
+std::atomic<unsigned> seq{0};
+Pair data;
+
+void write(long v) {                 // called from TWO threads, no lock
+    seq.fetch_add(1, std::memory_order_relaxed);     // odd: in progress
+    std::atomic_thread_fence(std::memory_order_release);
+    data.a = v;
+    data.b = -v;
+    seq.fetch_add(1, std::memory_order_release);     // even: done
+}
+
+Pair read() {
+    Pair p; unsigned s1, s2;
+    do {
+        s1 = seq.load(std::memory_order_acquire);
+        p = data;
+        std::atomic_thread_fence(std::memory_order_acquire);
+        s2 = seq.load(std::memory_order_relaxed);
+    } while ((s1 & 1) || s1 != s2);
+    return p;
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Safe: fetch_add is an atomic RMW, so the writers' increments never collide and seq still advances by exactly 2 per completed write.",
+        "Broken: the second writer's increment makes seq even while both writes are in flight, so a reader passes both checks with a torn Pair.",
+        "Readers may spin but never see torn data: overlapping writers leave seq odd for the whole overlap, so readers retry until both finish.",
+        "Safe as long as the parity check stays: `s1 & 1` rejects every snapshot taken while at least one of the two writers is mid-write.",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "The seqlock protocol encodes 'a write is in progress' as 'seq is odd', which is only " +
+      "meaningful if writers are serialized. With two unsynchronized writers, W1's first " +
+      "fetch_add takes seq from 0 to 1, W2's first fetch_add takes it from 1 to 2, and now both " +
+      "are mid-write while seq reads as even. A reader that loads s1 = 2, copies `data` while W1 " +
+      "and W2 are interleaving their stores, and loads s2 = 2 before either writer finishes " +
+      "passes both the parity and equality checks and returns `a` from one writer and `b` from " +
+      "the other. It is worse than a transient torn read: the interleaving W1 `a = v1`, W2 " +
+      "`a = v2`, W2 `b = -v2`, W1 `b = -v1` leaves `data` permanently holding {v2, -v1} with " +
+      "seq at 4, so every later reader returns the broken pair with perfectly valid sequence " +
+      "numbers. The two writers' plain stores to `data` are also a data race with each other, " +
+      "UB with no readers present at all. The first option is true about the counter and " +
+      "irrelevant: the RMWs keep the count exact, but parity no longer means anything. Real " +
+      "seqlocks pair the sequence counter with a writer lock; Linux's seqlock_t is literally a " +
+      "seqcount_t plus a spinlock, and the bare seqcount_t API requires callers to provide " +
+      "their own writer serialization. The remaining caveat from any seqlock applies too: the " +
+      "reader's plain copy of `data` races with the writer under the ISO model, so a strictly " +
+      "conforming version makes the payload fields relaxed atomics.",
+    references: [
+      "https://docs.kernel.org/locking/seqlock.html",
+      "https://en.cppreference.com/w/cpp/atomic/atomic_thread_fence",
+    ],
+  },
+  {
+    id: "concurrency-cas-weak-single-shot-01",
+    category: "concurrency",
+    difficulty: "medium",
+    title: "One-shot compare_exchange_weak claiming a job",
+    tags: ["cas", "compare_exchange_weak", "spurious-failure", "ll-sc", "atomics"],
+    type: "trace",
+    prompt:
+      "Eight threads each call try_start() exactly once. The intent is that run_job() executes " +
+      "exactly once. What does the standard guarantee?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `enum State : int { Idle, Running, Done };
+std::atomic<int> state{Idle};
+
+void try_start() {
+    int expected = Idle;
+    if (state.compare_exchange_weak(expected, Running,
+                                    std::memory_order_acq_rel)) {
+        run_job();
+        state.store(Done, std::memory_order_release);
+    }
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Exactly once: only one CAS can win the Idle to Running transition, and every other call fails because it observes Running.",
+        "Possibly more than once: compare_exchange_weak may report success spuriously, letting two threads into the if body.",
+        "Exactly once, but only because of acq_rel; with relaxed ordering, two threads could both observe Idle and both succeed.",
+        "Possibly zero times: compare_exchange_weak may fail even when state == Idle, and with no retry loop all eight calls can fail.",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "compare_exchange_weak is permitted to fail spuriously: to return false and leave the " +
+      "object unchanged even though its value equalled `expected`. It never succeeds spuriously, " +
+      "and atomicity of the RMW guarantees at most one thread wins the transition at any memory " +
+      "order, relaxed included, so run_job() can never run twice. But at most once is not " +
+      "exactly once. Each of the eight calls makes a single attempt, so if all eight attempts " +
+      "fail spuriously, nobody ever claims the job; the only trace of what happened is that " +
+      "`expected` still reads Idle after each failed call. Whether this " +
+      "happens depends on the hardware, which is why it survives testing. On x86, `lock cmpxchg` " +
+      "never fails spuriously, and neither does the ARMv8.1 LSE `CAS` instruction. On " +
+      "load-linked/store-conditional machines (ARMv7, ARMv8.0 without LSE, POWER, RISC-V " +
+      "LR/SC), weak CAS is a single LL/SC pair, and the store-conditional fails whenever the " +
+      "reservation is lost to an interrupt, a context switch, or another core touching the " +
+      "reservation granule, even without any write to `state` itself. The rule of thumb: use " +
+      "the weak form only inside a loop that retries anyway, and compare_exchange_strong (which " +
+      "the implementation turns into its own internal LL/SC retry loop) for a one-shot " +
+      "decision like this one.",
+    references: [
+      "https://en.cppreference.com/w/cpp/atomic/atomic/compare_exchange",
+    ],
+  },
+  {
+    id: "concurrency-iriw-01",
+    category: "concurrency",
+    difficulty: "hard",
+    title: "Two readers observing two independent release stores",
+    tags: ["atomics", "memory-order", "iriw", "multi-copy-atomicity", "seq-cst"],
+    type: "trace",
+    prompt:
+      "Four threads run w1, w2, r1, and r2 once each, concurrently. Is the outcome " +
+      "`a == 1, b == 0, c == 1, d == 0` allowed? In that outcome r1 saw x's store but not y's, " +
+      "while r2 saw y's store but not x's.",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `std::atomic<int> x{0}, y{0};
+int a, b, c, d;
+
+void w1() { x.store(1, std::memory_order_release); }
+void w2() { y.store(1, std::memory_order_release); }
+
+void r1() {
+    a = x.load(std::memory_order_acquire);
+    b = y.load(std::memory_order_acquire);
+}
+
+void r2() {
+    c = y.load(std::memory_order_acquire);
+    d = x.load(std::memory_order_acquire);
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Allowed by the standard; whether hardware shows it depends on the CPU: never on x86 or ARMv8, but observable on POWER.",
+        "Forbidden: each reader's acquire keeps its second load after its first, so the two readers must agree on which store came first.",
+        "Forbidden on every target, because modifications to std::atomic objects are observed by all threads in one global order.",
+        "Allowed only because the stores are not seq_cst; making just the two stores seq_cst while keeping acquire loads forbids it.",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "This is the IRIW litmus test (independent reads of independent writes). Acquire/release " +
+      "only creates happens-before between a release store and an acquire load that reads from " +
+      "it; it imposes no single order on stores to *different* locations that all threads must " +
+      "agree on. Coherence is per-object: everyone agrees on the modification order of x, and " +
+      "separately of y, but nothing relates the two. The acquire on r1's first load does keep its " +
+      "second load after it, and likewise for r2, so each reader individually sees a consistent " +
+      "prefix; the readers simply disagree about which write happened first, and the outcome is " +
+      "allowed. Forbidding it requires the single total order S over seq_cst operations, and " +
+      "the loads must participate in S: making only the stores seq_cst leaves the acquire loads " +
+      "outside S, so the outcome is still allowed. On hardware the question is multi-copy " +
+      "atomicity, whether a store becomes visible to all other cores at the same instant. x86-TSO " +
+      "is multi-copy atomic for other cores' stores, and ARMv8 was revised in 2017 to be " +
+      "'other-multi-copy-atomic', so with ordered loads neither exhibits the outcome. POWER is " +
+      "not: a store can propagate to an SMT sibling sharing a store buffer or to a nearby core " +
+      "before reaching others, and the outcome is observed in practice (ARMv7 permitted it as " +
+      "well). That is why seq_cst loads on POWER are compiled with a heavyweight `hwsync` before " +
+      "each load: the cost exists specifically to rule out IRIW. Code tested only on x86 or " +
+      "ARMv8 can silently depend on a guarantee the standard does not give at acquire/release.",
+    references: [
+      "https://en.cppreference.com/w/cpp/atomic/memory_order",
+      "https://www.cl.cam.ac.uk/~pes20/cpp/cpp0xmappings.html",
+    ],
+  },
 ];

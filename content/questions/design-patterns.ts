@@ -2248,4 +2248,604 @@ int main() {
       "say), or the two should be built in a fixed order by one owner that isn't a singleton.",
     references: ["https://en.cppreference.com/w/cpp/language/storage_duration#Static_local_variables"],
   },
+  {
+    id: "design-patterns-observer-unsubscribe-reentrancy-39",
+    category: "design-patterns",
+    difficulty: "hard",
+    title: "Observer that unsubscribes during notification",
+    tags: ["observer", "reentrancy", "iterator-invalidation", "std-function", "undefined-behavior"],
+    type: "trace",
+    prompt:
+      "The first handler is meant to fire once and then remove itself. What happens when this " +
+      "program runs?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <functional>
+#include <iostream>
+#include <vector>
+
+class Button {
+public:
+    using Handler = std::function<void()>;
+    int subscribe(Handler h) {
+        handlers_.push_back({nextId_, std::move(h)});
+        return nextId_++;
+    }
+    void unsubscribe(int id) {
+        for (auto it = handlers_.begin(); it != handlers_.end(); ++it)
+            if (it->id == id) { handlers_.erase(it); return; }
+    }
+    void click() {
+        for (auto& entry : handlers_) entry.fn();
+    }
+private:
+    struct Entry { int id; Handler fn; };
+    std::vector<Entry> handlers_;
+    int nextId_ = 0;
+};
+
+int main() {
+    Button b;
+    int once = -1;
+    once = b.subscribe([&] { std::cout << "once\\n"; b.unsubscribe(once); });
+    b.subscribe([] { std::cout << "audit\\n"; });
+    b.subscribe([] { std::cout << "render\\n"; });
+
+    b.click();
+    std::cout << "--\\n";
+    b.click();
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Prints once, audit, render, --, audit, render: removal only takes effect on the next click",
+        "Prints once, render, --, audit, render: erase shifts audit into a slot the loop already passed",
+        "Undefined behavior: erase runs under the loop, leaving its cached end() and next element stale",
+        "Throws std::bad_function_call: the loop always reaches the empty std::function erase leaves",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "A range-for evaluates `handlers_.begin()` and `handlers_.end()` once, up front, and keeps both " +
+      "iterators for the whole loop. During the first `click()`, the \"once\" handler calls back into " +
+      "`unsubscribe`, which erases element 0 while the loop is still standing on it. [vector.modifiers] " +
+      "says `erase` invalidates every iterator and reference at or after the erased position, " +
+      "including `end()`. It shifts the remaining entries down by move assignment and destroys the " +
+      "old last element. The loop then increments an invalidated iterator to what is now index 1 " +
+      "(\"render\", so \"audit\" is skipped), then reaches index 2, which is past the new end and holds " +
+      "a destroyed `Entry`. Calling it is undefined behavior. The erase also move-assigned \"audit\" into " +
+      "the very `std::function` whose closure was still executing. This handler happens to touch none " +
+      "of its captures after `unsubscribe` returns, which is the only reason that part survives; one " +
+      "more line using `once` or `b` would read a destroyed closure. Observed behavior differs by " +
+      "standard library. Apple clang/libc++ builds printed \"once\", \"render\", \"render\", \"--\", " +
+      "\"audit\", \"render\" at both `-O0` and `-O2`, because the destroyed slot still held a working " +
+      "copy of the render handler's bytes. GCC 16/libstdc++ builds printed \"once\", \"render\" and then " +
+      "aborted with an uncaught `std::bad_function_call`, because libstdc++ empties a moved-from " +
+      "`std::function`. AddressSanitizer flags a container-overflow read in `click()`. This is the " +
+      "defining hazard of Observer: notification hands control to code the subject doesn't know " +
+      "about, and that code naturally wants to call back into the subject, to unsubscribe, subscribe " +
+      "another handler, or tear the subject down. A subject has to be reentrancy-safe while it " +
+      "notifies, either by iterating over a snapshot of the handler list or by marking removed " +
+      "entries dead and sweeping them after the loop finishes.",
+    references: [
+      "https://en.cppreference.com/w/cpp/container/vector/erase",
+      "https://en.cppreference.com/w/cpp/language/range-for",
+    ],
+  },
+  {
+    id: "design-patterns-composite-parent-pointer-40",
+    category: "design-patterns",
+    difficulty: "hard",
+    title: "Composite file tree with parent back-pointers",
+    tags: ["composite", "raw-pointer", "vector-reallocation", "dangling-pointer", "undefined-behavior"],
+    type: "trace",
+    prompt: "What happens when this program runs?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+#include <string>
+#include <vector>
+
+struct Node {
+    std::string name;
+    Node* parent = nullptr;
+    std::vector<Node> children;
+
+    explicit Node(std::string n, Node* p = nullptr) : name(std::move(n)), parent(p) {}
+
+    Node& add(std::string n) {
+        children.emplace_back(std::move(n), this);
+        return children.back();
+    }
+    std::string path() const {
+        return parent ? parent->path() + "/" + name : name;
+    }
+};
+
+int main() {
+    Node root("root");
+    Node& docs = root.add("docs");
+    Node& readme = docs.add("readme.md");
+    std::cout << readme.path() << "\\n";
+
+    root.add("src");
+    std::cout << root.children[0].children[0].path() << "\\n";
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Prints root/docs/readme.md twice: the parent links travel with the nodes when the vector grows",
+        "Undefined behavior: readme's parent still points at where docs lived before the vector grew",
+        "Prints root/docs/readme.md, then readme.md: the relocated docs node comes out with a null parent",
+        "Compile error: Node can't hold a std::vector<Node> member while Node is still an incomplete type",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "The tree stores children by value in a `std::vector<Node>`, and every child records its parent " +
+      "as a raw `Node*`. The first `root.add` leaves `root.children` with a capacity of one on both " +
+      "libc++ and libstdc++, so `root.add(\"src\")` has to reallocate. [vector.modifiers] says that " +
+      "invalidates every pointer, reference, and iterator into the vector. The \"docs\" node is " +
+      "relocated by its implicit move constructor, which is `noexcept` (so `emplace_back` moves rather " +
+      "than copies). Its own `parent` is still right, because `root` didn't move, and its `children` " +
+      "buffer is handed over wholesale. But \"readme.md\" still holds `this` as it was when " +
+      "`docs.add` ran, the address of the old \"docs\" element, which the reallocation destroyed and " +
+      "freed. The second `path()` recurses through that pointer and reads `name` and `parent` out of " +
+      "freed heap memory: undefined behavior. (The `docs` reference in `main` dangles at the same " +
+      "moment, which is why the snippet re-navigates from `root`.) Apple clang builds printed " +
+      "\"root/docs/readme.md\" and then \"/readme.md\" at `-O0` and `-O2`, the freed bytes happening " +
+      "to decode as a node with an empty name and a null parent. GCC 16 builds crashed with a " +
+      "segmentation fault inside `path()`, and AddressSanitizer reports a heap-use-after-free there. " +
+      "The member itself is fine: since C++17, `std::vector` may be instantiated with an incomplete " +
+      "element type as long as it's complete before the vector is used. Composite invites this bug " +
+      "because upward navigation (paths, bubbling events, removing yourself from your parent) needs a " +
+      "back-pointer, and a back-pointer is only as stable as the storage of the node it names. Give " +
+      "nodes stable addresses by holding children as `std::vector<std::unique_ptr<Node>>` (moving the " +
+      "`unique_ptr` never moves the `Node`), or re-seat every child's `parent` whenever a node is " +
+      "moved or copied.",
+    references: [
+      "https://en.cppreference.com/w/cpp/container/vector/emplace_back",
+      "https://en.cppreference.com/w/cpp/container/vector#Iterator_invalidation",
+    ],
+  },
+  {
+    id: "design-patterns-observer-weak-from-this-41",
+    category: "design-patterns",
+    difficulty: "hard",
+    title: "Observer that attaches itself from its constructor",
+    tags: ["observer", "enable_shared_from_this", "weak_ptr", "constructors", "lifetime"],
+    type: "trace",
+    prompt: "Compiled as C++17 or later. What happens when this program runs?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+#include <memory>
+#include <vector>
+
+class Sensor;
+
+class Dashboard : public std::enable_shared_from_this<Dashboard> {
+public:
+    explicit Dashboard(Sensor& s);
+    void onReading(double v) { std::cout << "reading " << v << "\\n"; }
+};
+
+class Sensor {
+public:
+    void attach(std::weak_ptr<Dashboard> d) { observers_.push_back(std::move(d)); }
+    void publish(double v) {
+        for (auto& w : observers_)
+            if (auto d = w.lock()) d->onReading(v);
+    }
+private:
+    std::vector<std::weak_ptr<Dashboard>> observers_;
+};
+
+Dashboard::Dashboard(Sensor& s) {
+    s.attach(weak_from_this());   // register with the subject on construction
+}
+
+int main() {
+    Sensor sensor;
+    auto dash = std::make_shared<Dashboard>(sensor);
+    sensor.publish(21.5);
+    std::cout << "done\\n";
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Prints only done: the weak_ptr handed to attach() is empty and never becomes valid",
+        "Prints reading 21.5 then done: the weak_ptr starts tracking dash once make_shared returns",
+        "Throws std::bad_weak_ptr: no shared_ptr owns the Dashboard yet when its constructor runs",
+        "Undefined behavior: weak_from_this() runs before the enable_shared_from_this base is ready",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "`enable_shared_from_this` works by holding a private `weak_ptr` to the object, and that " +
+      "`weak_ptr` is assigned by the `shared_ptr` that takes ownership, which can only happen after " +
+      "the object exists. `make_shared` constructs the `Dashboard` first and then hooks up the " +
+      "internal `weak_ptr`. While the constructor body runs it is still empty. Since C++17, " +
+      "`weak_from_this()` simply returns a copy of it, so `attach` receives an empty `weak_ptr`. That " +
+      "copy is an independent object, and filling in the internal one a moment later does nothing to " +
+      "the copy sitting in `Sensor::observers_`. `publish` calls `lock()` on it, gets an empty " +
+      "`shared_ptr`, skips the call, and the program prints only \"done\" and exits normally, with no " +
+      "warning at compile time and nothing to see at runtime. That is what makes this variant worse " +
+      "than the more familiar one: writing `shared_from_this()` in the same spot throws " +
+      "`std::bad_weak_ptr` (undefined behavior before C++17), which at least fails loudly. Nothing " +
+      "here is undefined, though; the base subobject is fully constructed before `Dashboard`'s " +
+      "constructor body runs, it just hasn't been told about its owner yet. Observer pushes people " +
+      "toward this code, because \"an observer subscribes itself when it's created\" is the natural " +
+      "design, and `weak_ptr` is the standard advice for letting observers die without notifying the " +
+      "subject. Registration has to happen after ownership is established: make the constructor " +
+      "private and expose a `static std::shared_ptr<Dashboard> create(Sensor&)` that calls " +
+      "`make_shared` and then `attach`.",
+    references: [
+      "https://en.cppreference.com/w/cpp/memory/enable_shared_from_this",
+      "https://en.cppreference.com/w/cpp/memory/enable_shared_from_this/weak_from_this",
+    ],
+  },
+  {
+    id: "design-patterns-singleton-internal-linkage-42",
+    category: "design-patterns",
+    difficulty: "hard",
+    title: "Singleton accessor defined in a shared header",
+    tags: ["singleton", "linkage", "translation-units", "magic-statics"],
+    type: "trace",
+    prompt:
+      "The three files below are compiled separately and linked into one program. What does it " +
+      "print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `// ---- config.h ----
+#pragma once
+#include <string>
+
+struct Config {
+    std::string logLevel = "info";
+};
+
+static Config& config() {
+    static Config instance;
+    return instance;
+}
+
+void loadSettings();
+
+// ---- settings.cpp ----
+#include "config.h"
+void loadSettings() { config().logLevel = "debug"; }
+
+// ---- main.cpp ----
+#include <iostream>
+#include "config.h"
+
+int main() {
+    loadSettings();
+    std::cout << config().logLevel << "\\n";
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Prints debug: both translation units share the one function-local static inside config()",
+        "Link error: config() is defined in a header that two separate translation units include",
+        "Undefined behavior: the program has two different definitions of config(), an ODR violation",
+        "Prints info: each translation unit gets its own config() and with it its own static Config",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "`static` on a namespace-scope function gives it internal linkage ([basic.link]): the name refers " +
+      "to an entity private to the translation unit that defines it. Every `.cpp` file that includes " +
+      "`config.h` therefore gets its own, separate `config()` function, and each of those functions has " +
+      "its own function-local `static Config instance`. `settings.cpp` sets `logLevel` on its copy, and " +
+      "`main.cpp` reads a different, untouched copy, so the program prints \"info\". Nothing is ill " +
+      "formed. Internal-linkage functions are distinct entities, so there is no ODR violation, and " +
+      "they don't collide at link time, so there is no linker error. Clang and GCC compile it cleanly " +
+      "under `-Wall -Wextra` and both print \"info\" at `-O0` and `-O2`. The usual way to get here is " +
+      "that the accessor was first written without any specifier, the linker complained about multiple " +
+      "definitions of `config()`, and `static` made the error go away. The specifier that was " +
+      "needed is `inline`: an inline function with external linkage is a single entity across every " +
+      "translation unit, and [dcl.inline] guarantees that a static local inside it is one object " +
+      "program-wide. Declaring `config()` in the header and defining it in exactly one `.cpp` works " +
+      "too. The same split happens with a namespace-scope `static Config g_config;` or anything in an " +
+      "unnamed namespace in a header. A singleton is only singular per linkage unit, and a header is " +
+      "the one place where that unit quietly multiplies.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/storage_duration#Linkage",
+      "https://en.cppreference.com/w/cpp/language/inline",
+    ],
+  },
+  {
+    id: "design-patterns-crtp-wrong-derived-43",
+    category: "design-patterns",
+    difficulty: "medium",
+    title: "A second class added to a CRTP printing mixin",
+    tags: ["crtp", "static-polymorphism", "static_cast", "undefined-behavior"],
+    type: "trace",
+    prompt: "What happens when this program is built and run?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+#include <string>
+
+template <typename Derived>
+struct Printable {
+    void print() const {
+        const auto& self = static_cast<const Derived&>(*this);
+        std::cout << self.label() << "\\n";
+    }
+};
+
+struct Invoice : Printable<Invoice> {
+    std::string id = "INV-1001";
+    std::string label() const { return "invoice " + id; }
+};
+
+struct Receipt : Printable<Invoice> {
+    int total = 42;
+    std::string label() const { return "receipt $" + std::to_string(total); }
+};
+
+int main() {
+    Receipt r;
+    r.print();
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Undefined behavior: print() static_casts the Receipt to an Invoice it never was",
+        "Prints receipt $42: label() is looked up on the object's actual type at runtime",
+        "Prints invoice INV-1001: print() runs Invoice's label() with Invoice's defaults",
+        "Compile error: Printable<Invoice> can't be static_cast to Invoice inside a Receipt",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "`Receipt` derives from `Printable<Invoice>`, a copy-paste slip that the compiler has no way to " +
+      "flag. Inside `print()`, `Derived` is `Invoice`, and `static_cast<const Invoice&>(*this)` is a " +
+      "perfectly legal downcast as far as the type system knows, since `Printable<Invoice>` really is " +
+      "a base of `Invoice`. [expr.static.cast] makes such a downcast undefined behavior when the " +
+      "object isn't actually a base subobject of a `Derived`, and here it is a base subobject of a " +
+      "`Receipt`. `self.label()` then calls `Invoice::label` on a `Receipt`, reading its four-byte " +
+      "`int` and whatever stack bytes follow as if they were a `std::string`. Lookup of `label()` is " +
+      "static: CRTP has no runtime dispatch, so `Receipt::label` is never considered. Apple clang " +
+      "builds and GCC 16 at `-O0` printed \"invoice \" followed by an empty id, because the garbage " +
+      "happened to decode as a short empty string. GCC 16 at `-O2` crashed with a segmentation fault. " +
+      "UBSan's `-fsanitize=vptr` check can't help, since neither class is polymorphic. The weakness is " +
+      "built into the pattern: CRTP makes every derived class restate its own name as a template " +
+      "argument and trusts it blindly. The standard defense turns the mistake into a compile error: " +
+      "make `Printable`'s constructor private and declare `friend Derived;`. `Receipt` then can't " +
+      "construct its `Printable<Invoice>` base, because only `Invoice` is a friend. C++23's deducing " +
+      "`this` (`void print(this const auto& self)`) removes the template argument altogether.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/crtp",
+      "https://en.cppreference.com/w/cpp/language/static_cast",
+    ],
+  },
+  {
+    id: "design-patterns-variant-visit-promotion-44",
+    category: "design-patterns",
+    difficulty: "medium",
+    title: "Overloaded-lambda visitor over a settings variant",
+    tags: ["visitor", "std-variant", "std-visit", "overload-resolution", "integral-promotion"],
+    type: "trace",
+    prompt: "What does the third line of output say?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+#include <string>
+#include <variant>
+#include <vector>
+
+template <class... Ts> struct overloaded : Ts... { using Ts::operator()...; };
+template <class... Ts> overloaded(Ts...) -> overloaded<Ts...>;
+
+using Setting = std::variant<int, double, bool, std::string>;
+
+int main() {
+    std::vector<Setting> settings{42, 0.5, true, std::string("dark")};
+    for (const auto& s : settings) {
+        std::visit(overloaded{
+            [](int i)                { std::cout << "int " << i << "\\n"; },
+            [](double d)             { std::cout << "double " << d << "\\n"; },
+            [](const std::string& s) { std::cout << "string " << s << "\\n"; },
+        }, s);
+    }
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Nothing: compile error, since the visitor has no overload for the bool alternative",
+        "Nothing: compile error, since bool converts to int and double and the call is ambiguous",
+        "int 1: the bool alternative is dispatched to the int lambda via integral promotion",
+        "double 1: the bool alternative is dispatched to the double lambda by a conversion",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "`std::visit` doesn't require an overload written for each alternative. It requires only that " +
+      "calling the visitor be well-formed for each one, with ordinary overload resolution choosing " +
+      "the target. For the `bool` alternative, the candidates are `int` (bool to int is an integral " +
+      "promotion, [conv.prom]), `double` (a floating-integral conversion, ranked lower), and " +
+      "`const std::string&` (not viable). Promotion beats conversion, so there's no ambiguity and the " +
+      "`int` lambda wins, printing \"int 1\". Clang and GCC both accept it without a warning under " +
+      "`-Wall -Wextra`. The `true` element really is the `bool` alternative; C++20's P0608 fixed the " +
+      "converting constructor so `bool` no longer captures arguments it shouldn't, but it does nothing " +
+      "about how the visitor is matched. This is the gap in the modern Visitor's \"exhaustiveness for " +
+      "free\" promise. The classic double-dispatch Visitor gets one pure virtual `visit` per type, so a " +
+      "missing one is a compile error. The overloaded-lambda form only proves that every alternative " +
+      "can be *converted* to something the visitor accepts, and C++'s arithmetic conversions are " +
+      "generous enough to cover for missing cases, so a newly added `bool` or `long` can slip into a " +
+      "neighboring handler. To get strict matching, add a catch-all that refuses everything else, " +
+      "such as a visitor struct with `template <class T> void operator()(const T&) const = delete;`, " +
+      "which is an exact match for `bool` and so beats the promotion, turning the missing case back " +
+      "into a compile error.",
+    references: [
+      "https://en.cppreference.com/w/cpp/utility/variant/visit",
+      "https://en.cppreference.com/w/cpp/language/implicit_conversion#Integral_promotion",
+    ],
+  },
+  {
+    id: "design-patterns-flyweight-rehash-45",
+    category: "design-patterns",
+    difficulty: "hard",
+    title: "Flyweight factory backed by std::unordered_map",
+    tags: ["flyweight", "unordered_map", "rehash", "reference-stability", "containers"],
+    type: "trace",
+    prompt: "What happens when this program runs?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <iostream>
+#include <string>
+#include <unordered_map>
+
+struct Glyph {
+    char symbol;
+    std::string font;
+    // imagine a large rasterized bitmap here
+};
+
+class GlyphFactory {
+public:
+    const Glyph& get(char c) {
+        auto [it, inserted] = cache_.try_emplace(c, Glyph{c, "Inter"});
+        return it->second;
+    }
+    std::size_t buckets() const { return cache_.bucket_count(); }
+private:
+    std::unordered_map<char, Glyph> cache_;
+};
+
+int main() {
+    GlyphFactory factory;
+    const Glyph& first = factory.get('A');
+    std::size_t before = factory.buckets();
+
+    for (char c = 'B'; c <= 'z'; ++c) factory.get(c);   // grows the cache well past one bucket array
+
+    std::cout << (factory.buckets() > before) << " " << first.symbol << " " << first.font << "\\n";
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Undefined behavior: rehashing moves every Glyph to a new bucket array, so first dangles",
+        "Prints 1 A and an empty font: the rehash moved first's Glyph out, leaving a moved-from husk",
+        "Implementation-defined: libstdc++ keeps nodes in place on rehash, but libc++ relocates them",
+        "Prints 1 A Inter: rehashing relinks the existing nodes, so references to elements stay valid",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "The code is correct. `std::unordered_map` is node-based: each key/value pair lives in its own " +
+      "heap-allocated node, and the bucket array holds only links to nodes. A rehash allocates a new " +
+      "bucket array and relinks the existing nodes into it without moving or copying a single element. " +
+      "[unord.req.general] spells out the guarantee: rehashing invalidates iterators and changes " +
+      "element order, but it does not invalidate pointers or references to elements. Only erasing an " +
+      "element invalidates references to it. So `first` remains valid after dozens of insertions and " +
+      "several rehashes, and the program prints \"1 A Inter\" on every conforming implementation; " +
+      "Apple clang/libc++ and GCC 16/libstdc++ agree at `-O0` and `-O2`, and AddressSanitizer is " +
+      "silent. The trap lies on the other side. Flyweight's entire contract is that the factory hands " +
+      "out references to shared intrinsic state that clients hold indefinitely, so the cache's " +
+      "reference-stability guarantee is the pattern's correctness argument, not a performance " +
+      "detail. The guarantee rarely gets written down, and it disappears the moment someone swaps the " +
+      "cache for a \"faster\" flat container: `std::vector<Glyph>`, C++23 `std::flat_map`, or open-" +
+      "addressing tables such as `absl::flat_hash_map` all relocate elements as they grow, and every " +
+      "`const Glyph&` handed out earlier would then dangle. If the cache must be flat, hand out " +
+      "indices or `shared_ptr<const Glyph>` instead, or use a container like `absl::node_hash_map` " +
+      "that keeps the node-based guarantee.",
+    references: ["https://en.cppreference.com/w/cpp/container/unordered_map/rehash"],
+  },
+  {
+    id: "design-patterns-command-move-only-46",
+    category: "design-patterns",
+    difficulty: "medium",
+    title: "Command queue taking ownership of a document",
+    tags: ["command", "std-function", "unique_ptr", "move-only", "compile-error"],
+    type: "trace",
+    prompt: "What happens when this program is built and run?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <functional>
+#include <iostream>
+#include <memory>
+#include <queue>
+#include <string>
+
+struct Document {
+    std::string text;
+};
+
+class CommandQueue {
+public:
+    void enqueue(std::function<void()> cmd) { pending_.push(std::move(cmd)); }
+    void runAll() {
+        while (!pending_.empty()) {
+            pending_.front()();
+            pending_.pop();
+        }
+    }
+private:
+    std::queue<std::function<void()>> pending_;
+};
+
+int main() {
+    CommandQueue queue;
+    auto doc = std::make_unique<Document>(Document{"draft"});
+
+    queue.enqueue([d = std::move(doc)] {
+        d->text += " (saved)";
+        std::cout << d->text << "\\n";
+    });
+    queue.runAll();
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Prints draft (saved): the closure is moved into the std::function, so it never needs copying",
+        "Compile error: std::function requires a copy-constructible target, and this closure is move-only",
+        "Compiles, but std::function copies the closure on enqueue, so d is null by the time it runs",
+        "Compile error: d->text can't be modified, because captures of a non-mutable lambda are const",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "`std::function` is a copyable type-erased wrapper, and to copy itself it has to be able to copy " +
+      "whatever it holds, so [func.wrap.func.con] requires the target to be copy-constructible even " +
+      "when you only ever move it. This closure owns a `std::unique_ptr<Document>` captured by " +
+      "init-capture, so its copy constructor is implicitly deleted, and building the " +
+      "`std::function<void()>` parameter from it fails. Clang/libc++ reports \"call to " +
+      "implicitly-deleted copy constructor of '(lambda ...)'\" from inside `function.h` (instantiated " +
+      "by the type-erased `__clone`), and GCC 16/libstdc++ fails a static assertion that says " +
+      "\"std::function target must be copy-constructible\". The `const` capture is not the problem: in " +
+      "a non-`mutable` lambda `d` is a `const std::unique_ptr<Document>`, but `operator->` on a const " +
+      "`unique_ptr` still yields a non-const `Document*`, so `d->text += ...` is fine. Command is " +
+      "exactly where this bites, because a command is supposed to carry everything it needs to run " +
+      "later, which often means owning a resource outright, and `std::function` is the reflexive " +
+      "choice for a command type. C++23's `std::move_only_function<void()>` is the intended fix: " +
+      "swapping it into `CommandQueue` makes the program compile and print \"draft (saved)\" with GCC " +
+      "16 at `-std=c++23` (Apple's libc++ doesn't ship it yet). Before C++23, either hold the resource " +
+      "in a `shared_ptr` or give the command its own move-only type, such as a small hand-rolled " +
+      "type-erased wrapper or a virtual `Command` base held by `unique_ptr`.",
+    references: [
+      "https://en.cppreference.com/w/cpp/utility/functional/function/function",
+      "https://en.cppreference.com/w/cpp/utility/functional/move_only_function",
+    ],
+  },
 ];

@@ -1322,4 +1322,332 @@ double total(const Shape* s, int n) {
       "https://llvm.org/docs/TypeMetadata.html",
     ],
   },
+  {
+    id: "compilers-uninit-read-01",
+    category: "compilers",
+    difficulty: "hard",
+    title: "A local assigned on only one path",
+    tags: ["undefined-behavior", "indeterminate-value", "optimizer"],
+    type: "trace",
+    prompt:
+      "pick is compiled as C++20 at -O2 with Clang or GCC, and some callers pass ready == false. What does the generated code for pick look like?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `int pick(bool ready) {
+    int value;
+    if (ready) value = 42;
+    return value;
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "A branch on ready returning 42 or leftover register contents. The read is unspecified, so the branch must stay.",
+        "A branch on ready returning 42 or 0. A local with no initializer that never gets assigned is zero-initialized.",
+        "An unconditional return of 42. The false path reads an indeterminate int, so any result there is acceptable.",
+        "A compile error. Reading a possibly-uninitialized local is ill-formed, and the compiler's flow analysis must reject it.",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "`value` is an automatic variable with no initializer, so until it is assigned it holds an indeterminate value. Through C++23, [basic.indet] makes evaluating an indeterminate value undefined behavior. The only exceptions are narrow cases for `unsigned char` and `std::byte`, and they do not cover `int`. So the read is undefined, not merely unspecified, and that difference is what lets the optimizer change the function. In LLVM the load on the `!ready` path becomes `undef`, which may be refined to any value at all, so `ready ? 42 : undef` simplifies to plain 42. GCC's SSA form gets there the same way: a PHI node merging 42 with an undefined value folds to 42. Apple Clang 21 and GCC 16 at -O2 on arm64 both compile `pick` to `mov w0, #42; ret`. A test calling `pick(false)` prints 42 at -O2 and leftover stack contents at -O0, and neither result is the program's 'real' behavior. The zero-initialization answer describes static storage duration, not automatic. Nothing here is ill-formed. Clang's `-Wsometimes-uninitialized` (in `-Wall`) flags this function, but the diagnostic is optional, and GCC 16 at `-O2 -Wall` says nothing about it. In Clang, the hardening flag `-ftrivial-auto-var-init=zero` restores a real select, a `csel` between 42 and `wzr`; GCC 16 still folds this particular function to 42 even with that flag. C++26 (P2795) reclassifies the read as erroneous behavior. It is still a bug that implementations are encouraged to diagnose, but the variable holds an implementation-chosen erroneous value instead of giving the optimizer unlimited license, and `[[indeterminate]]` opts a variable back out. Compiler support is still settling, though: GCC 16 at -std=c++26 still emits the same `mov w0, 42`, so the language version is not a fix yet. Initialize the variable.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/default_initialization",
+      "https://en.cppreference.com/w/cpp/language/ub",
+      "https://wg21.link/p2795r5",
+    ],
+  },
+  {
+    id: "compilers-dse-01",
+    category: "compilers",
+    difficulty: "medium",
+    title: "Scrubbing a password buffer before returning",
+    tags: ["dead-store-elimination", "as-if-rule", "security"],
+    type: "trace",
+    prompt:
+      "readPassword and checkHash are defined in another translation unit, and there is no LTO. Compiled at -O2, does the memset that scrubs password survive into the generated code?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <cstddef>
+#include <cstring>
+
+bool readPassword(char* buf, std::size_t n);
+bool checkHash(const char* pw);
+
+bool login() {
+    char password[64];
+    if (!readPassword(password, sizeof password)) return false;
+    bool ok = checkHash(password);
+    std::memset(password, 0, sizeof password);   // scrub the secret
+    return ok;
+}`,
+      highlightLines: [11],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "It survives. password escaped into checkHash, so the compiler must assume that function kept a pointer to read later.",
+        "It is removed. password's lifetime ends at the return, so nothing can observe the zeros, and the stores are dead.",
+        "It survives. memset is a call into libc, and the optimizer cannot delete calls to a library whose body it cannot see.",
+        "It is removed only with LTO, which lets the compiler inline checkHash and prove that it kept no copy of the pointer.",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "Dead store elimination removes stores whose values no later read can observe, and the as-if rule makes this legal for any store. `password` is a local array whose lifetime ends when `login` returns. After the memset, nothing reads it, and after the return any read through a saved pointer would be undefined behavior. No conforming program can see the zeros. The compiler also knows exactly what `memset` does: it is a builtin with defined semantics, not an opaque call, so it is a store like any other and subject to the same elimination. Apple Clang 21 and GCC 16 at -O2 both emit the calls to `readPassword` and `checkHash` and then return, with no memset and no zeroing stores at all. At -O0 the `memset` call is still there, which is how this bug survives code review and debug testing. The escape argument has the timing backwards. Passing the buffer to `checkHash` keeps the stores before that call alive, because the callee may read them. It cannot make stores after the call observable, since any pointer `checkHash` kept dangles once the frame is gone. LTO is not needed, since nothing about this reasoning depends on what the callees do. This is CWE-14, and the fix is a function the compiler is not allowed to treat as a plain store: `memset_s` (C11 Annex K; available on macOS, where Clang keeps the call), `explicit_bzero` (glibc 2.25+ and the BSDs), C23 `memset_explicit`, or `SecureZeroMemory` on Windows. A write through a `volatile` pointer also works. Even then, copies of the secret that the compiler spilled to other stack slots or left in registers are not scrubbed.",
+    references: [
+      "https://en.cppreference.com/w/c/string/byte/memset",
+      "https://cwe.mitre.org/data/definitions/14.html",
+    ],
+  },
+  {
+    id: "compilers-integer-promotion-01",
+    category: "compilers",
+    difficulty: "hard",
+    title: "Multiplying two uint16_t values",
+    tags: ["integer-promotion", "signed-overflow", "undefined-behavior"],
+    type: "trace",
+    prompt:
+      "Compiled with Clang or GCC at -O2 on a target with 32-bit int, what does this program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <cstdint>
+#include <cstdio>
+
+std::uint32_t area(std::uint16_t w, std::uint16_t h) {
+    std::uint32_t a = w * h;
+    if (a > 0x7FFFFFFFu) std::puts("huge");
+    return a;
+}
+
+int main() {
+    std::printf("%u\\n", area(0xFFFF, 0xFFFF));
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "huge, then 4294836225. Every operand is unsigned, unsigned arithmetic never overflows, and the product fits in 32 bits.",
+        "1. The multiply happens in uint16_t, the common type of its operands, so 0xFFFF * 0xFFFF wraps around to 0x0001.",
+        "Unpredictable. The int product is negative, and converting a negative int to uint32_t is implementation-defined.",
+        "Only 4294836225. w and h promote to int, the multiply overflows, and the compiler may assume a never exceeds INT_MAX.",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "Integral promotion ([conv.prom]) runs before the multiplication. `std::uint16_t` is `unsigned short`, its rank is below `int`, and a 32-bit `int` can represent every value it holds, so both operands are promoted to signed `int`, not to `unsigned`. So `w * h` is an `int` multiplication, and 65535 * 65535 = 4294836225 exceeds INT_MAX. Signed overflow is undefined behavior per [expr.pre]. The conversion to `uint32_t` afterward is not the problem: conversion to an unsigned type has always been defined as reduction modulo 2^32, so the implementation-defined answer has it backwards. Since overflow is assumed never to happen, value range propagation concludes that a product of two non-negative ints lies in [0, INT_MAX], so `a > 0x7FFFFFFF` is always false and the branch is deleted. Apple Clang 21 and GCC 16 at -O2 on arm64 compile `area` to a single `mul w0, w1, w0; ret`, and the program prints 4294836225 with no huge. The hardware multiply still wraps to the bits you expected, so the returned value looks right, and that is why this bug passes tests. Only the comparison that depends on the result shows the problem. `-fsanitize=undefined` reports `signed integer overflow: 65535 * 65535 cannot be represented in type 'int'`, and in that build the branch survives and huge prints. The fix is to force unsigned arithmetic before the multiply: `std::uint32_t{w} * h`, or `1u * w * h`. The same trap catches `uint16_t` in hash and checksum code, but not `uint8_t` (255 * 255 fits easily) or `uint32_t` (which does not promote on a 32-bit-int target). On a target with 16-bit int, `unsigned short` promotes to `unsigned int` instead and the UB disappears.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/implicit_conversion#Integral_promotion",
+      "https://en.cppreference.com/w/cpp/language/operator_arithmetic#Overflows",
+    ],
+  },
+  {
+    id: "compilers-char-aliasing-01",
+    category: "compilers",
+    difficulty: "hard",
+    title: "The same loop over vectors of uint8_t and uint16_t",
+    tags: [
+      "strict-aliasing",
+      "vectorization",
+      "char-aliasing",
+      "loop-invariant-code-motion",
+    ],
+    type: "trace",
+    prompt:
+      "Both functions are compiled with Clang or GCC at -O2 for arm64, using libc++ or libstdc++. How does the generated code for the two loops differ?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+void scale8(std::vector<std::uint8_t>& v, std::uint8_t k) {
+    for (std::size_t i = 0; i < v.size(); ++i) v[i] *= k;
+}
+
+void scale16(std::vector<std::uint16_t>& v, std::uint16_t k) {
+    for (std::size_t i = 0; i < v.size(); ++i) v[i] *= k;
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "scale8 reloads the vector's begin and end pointers every iteration and stays scalar. scale16 is vectorized.",
+        "Both vectorize the same way: size() is a const member function, so its result is treated as loop-invariant.",
+        "scale8 vectorizes better. Sixteen uint8_t lanes fit in a 128-bit register, against only eight uint16_t lanes.",
+        "Neither vectorizes. v is a reference, so a store in either loop may change the vector's size between iterations.",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "`std::uint8_t` is a typedef for `unsigned char` on every mainstream platform, and [basic.lval]p11 lets a `char`, `unsigned char`, or `std::byte` glvalue access an object of any type. That exemption is what makes byte-wise copying legal, and it also limits alias analysis. The store `v[i] *= k` is an `unsigned char` store, so as far as the optimizer knows it might modify any object in memory, including the `begin` and `end` pointers inside `v` itself. After every store the compiler must reload both pointers to re-evaluate `v.size()` and `v[i]`, the trip count cannot be computed up front, and the vectorizer gives up. Apple Clang 21 and GCC 16 at -O2 on arm64 both compile `scale8` to a scalar byte loop with an `ldp` of begin and end inside the loop body. In `scale16`, type-based alias analysis says a `uint16_t` store cannot modify an object of pointer type, so the loads are hoisted, the trip count is fixed, and both compilers emit NEON `mul` on 8 x 16-bit lanes with a scalar remainder loop. The reference argument applies only to the byte version, because strict aliasing is exactly what rules it out for `uint16_t`. A `const` member function promises nothing about the object staying unchanged between calls, so `size()` gets no special treatment either. The fix is to make the loop bounds local values the stores cannot reach. A range-for loop does this, because it copies the begin and end iterators into locals, and with that change both compilers vectorize `scale8` to 16-byte lanes. Hoisting `auto* p = v.data(); auto n = v.size();` by hand works too. The same pessimization hits any loop that writes through `char*` or `uint8_t*` while reading its bounds or base pointer from memory, such as a struct member or a global.",
+    references: [
+      "https://en.cppreference.com/w/cpp/language/reinterpret_cast#Type_aliasing",
+    ],
+  },
+  {
+    id: "compilers-interposition-01",
+    category: "compilers",
+    difficulty: "hard",
+    title: "A helper called from an exported function in a shared library",
+    tags: [
+      "semantic-interposition",
+      "shared-libraries",
+      "inlining",
+      "visibility",
+    ],
+    type: "trace",
+    prompt:
+      "lib.cpp is built with GCC at -O2 -fPIC -shared for x86-64 Linux, with default visibility and no other flags. Does api inline the body of scale?",
+    snippet: {
+      language: "cpp",
+      filename: "lib.cpp",
+      code: `int scale(int x) { return x * 3; }
+
+int api(int x) { return scale(x) + 1; }`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "Yes. Both are in one translation unit, and the ODR guarantees that any other definition of scale has the same body.",
+        "Yes. -fPIC only changes how data and globals are addressed; calls within a single translation unit are unaffected.",
+        "No. Position-independent code cannot contain direct calls, so every call inside a shared library goes via the PLT.",
+        "No. scale is an exported symbol that another ELF module may interpose at load time, so GCC calls it through the PLT.",
+      ],
+      correctIndex: 3,
+    },
+    explanation:
+      "ELF dynamic linking lets symbol interposition replace a default-visibility function exported from a shared library: if the executable or an earlier-loaded library (an `LD_PRELOAD` shim, say) defines `scale`, every reference to `scale` resolves to that definition, including the call inside `api`. GCC's default `-fsemantic-interposition` honors this. Under `-fPIC`, an exported function that is not `inline` is treated as replaceable at load time, so GCC will not inline it, will not propagate constants or other facts from its body into callers, and emits `call scale@PLT`. The PIC answer is wrong on the mechanics: a `static` or hidden-visibility function in the same library gets an ordinary pc-relative `call`, and the PLT is only for symbols the dynamic linker might rebind. The ODR answer is how Clang reasons, not how GCC does. The standard has no concept of shared libraries, and a preloaded replacement with a different body is effectively an ODR violation, so Clang assumes it never happens and inlines by default. Clang targeting x86_64-linux-gnu at -O2 -fPIC compiles `api` to `leal (%rdi,%rdi,2), %eax; incl %eax; retq`, and switches to `callq _Z5scalei@PLT` only when `-fsemantic-interposition` is passed explicitly. Both compilers are conforming; this is a toolchain policy choice, not a rule of the language. The cost on GCC can be large. Python 3.10 started building with `-fno-semantic-interposition` and reported speedups of up to 30% for interpreters built as a shared library. The fixes, roughly in order of preference: give helpers internal linkage (`static` or an anonymous namespace), build with `-fvisibility=hidden` and export only the real API, or pass `-fno-semantic-interposition`. GCC also never treats functions declared `inline` as interposable. `-Bsymbolic` at link time binds the calls locally but does not restore the inlining, since that decision was made at compile time.",
+    references: [
+      "https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html#index-fsemantic-interposition",
+      "https://docs.python.org/3/whatsnew/3.10.html#optimizations",
+    ],
+  },
+  {
+    id: "compilers-fp-identities-01",
+    category: "compilers",
+    difficulty: "medium",
+    title: "Four floating-point identities",
+    tags: ["floating-point", "constant-folding", "ieee-754", "signed-zero"],
+    type: "trace",
+    prompt:
+      "Compiled with Clang or GCC at -O2 and no fast-math flags of any kind, which of these functions compile to a bare ret that hands x back unchanged?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `double addZero(double x) { return x + 0.0; }
+double subZero(double x) { return x - 0.0; }
+double mulOne(double x)  { return x * 1.0; }
+double mulZero(double x) { return x * 0.0; }`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "subZero and mulOne. x + 0.0 maps -0.0 to +0.0, and x * 0.0 must give NaN or -0.0 for some inputs.",
+        "All four. IEEE 754 specifies each of these results exactly, so folding them is constant folding, not reassociation.",
+        "addZero, subZero, and mulOne. Only mulZero is kept, because x * 0.0 yields NaN when x is infinite or NaN.",
+        "None. Each operation may raise an IEEE exception flag, so every one of them has to execute at run time.",
+      ],
+      correctIndex: 0,
+    },
+    explanation:
+      "An algebraic identity can be folded only if it holds for every IEEE 754 input, including signed zeros, infinities, and NaN. `x * 1.0` is exactly `x` for every input. `x - 0.0` is too: for `x = -0.0`, `-0.0 - 0.0` is `-0.0` under round-to-nearest, and NaNs and infinities pass through unchanged. `x + 0.0` fails at one input: `-0.0 + 0.0` is `+0.0`, so `addZero(-0.0)` must return a value with the sign bit cleared. `x * 0.0` fails for many: it is NaN when x is infinite or NaN, and `-0.0` when x is negative. Apple Clang 21 and GCC 16 at -O2 on arm64 compile `subZero` and `mulOne` to a bare `ret`, and keep a real `fadd` and `fmul` against a zeroed register for the other two. The two folds that do happen rest on assumptions about the default environment. Under round-toward-negative, `+0.0 - 0.0` is `-0.0`, and a signaling NaN would be quieted and raise the invalid flag. Without `#pragma STDC FENV_ACCESS ON` or `-frounding-math`, compilers may assume round-to-nearest, masked exceptions whose flags nobody reads, and no signaling NaNs. The same assumption is why an inexact constant expression such as `0.1 + 0.2` folds at compile time, and why the answer saying every operation must execute is wrong. Fast-math flags relax these one at a time: `-fno-signed-zeros` lets `addZero` fold as well, and full `-ffast-math`, which adds `-ffinite-math-only`, turns `mulZero` into a constant `0.0`. The general point: a floating-point rewrite that holds algebraically must still hold for every value, including signed zeros, infinities, and NaN.",
+    references: [
+      "https://en.cppreference.com/w/cpp/numeric/fenv",
+      "https://gcc.gnu.org/wiki/FloatingPointMath",
+    ],
+  },
+  {
+    id: "compilers-fast-math-01",
+    category: "compilers",
+    difficulty: "hard",
+    title: "A NaN guard in a fast-math translation unit",
+    tags: ["fast-math", "floating-point", "nan", "undefined-behavior"],
+    type: "trace",
+    prompt:
+      "sanitize.cpp is compiled with -O2 -ffast-math; main.cpp is compiled with plain -O2. Both compilers agree on the result. What does the program print?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `// sanitize.cpp   (built with -O2 -ffast-math)
+#include <cmath>
+
+double sanitize(double x) {
+    if (std::isnan(x)) return 0.0;
+    return x;
+}
+
+// main.cpp       (built with -O2)
+#include <cstdio>
+#include <cstdlib>
+
+double sanitize(double x);
+
+int main() {
+    std::printf("%f\\n", sanitize(std::strtod("nan", nullptr)));
+}`,
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "0.000000. Fast-math loosens rounding and reassociation, but classification functions such as isnan stay exact.",
+        "nan. -ffast-math includes -ffinite-math-only, so the compiler may assume x is never NaN and delete the check.",
+        "0.000000. The NaN is created in main.cpp, which was compiled without the flag, so its NaN semantics are kept.",
+        "A crash. -ffast-math unmasks floating-point exceptions, so the NaN from strtod raises SIGFPE when it is used.",
+      ],
+      correctIndex: 1,
+    },
+    explanation:
+      "`-ffast-math` is a bundle, and one of its parts is `-ffinite-math-only`: permission to assume that no floating-point argument or result is NaN or infinite. Under that assumption, `std::isnan(x)` is always false, so the guard is dead code. Apple Clang 21 and GCC 16 at -O2 -ffast-math both compile `sanitize` to a bare `ret`, and also fold `x != x`, the traditional hand-written NaN test, to `false`. The program prints nan. Built without the flag, the same source prints 0.000000. This is how a fast-math build becomes undefined behavior rather than merely imprecise. Clang's documentation describes these flags as assumptions about the program's values, and in LLVM IR they become `nnan` and `ninf` markers whose violation produces a poison value. Feeding a NaN into code compiled under that assumption is out of contract, the same way violating `restrict` is. The flag applies per translation unit, but that only decides where the assumption is made. It does not matter which unit created the NaN. `sanitize.cpp` assumes its input is finite, and the NaN arrives from outside anyway. Nor does fast-math unmask traps: `-fno-trapping-math` is also in the bundle, and it assumes the opposite. Two practical consequences: never compile input-validation code with `-ffast-math` or `-Ofast`, and if a hot TU needs the speed, check for NaN at the boundary in a TU built without it, or test the bits through `std::bit_cast` to an integer, which is not a floating-point operation and so is outside the assumption. The parts can also be enabled separately, for example `-fno-math-errno -fassociative-math` for reduction loops without `-ffinite-math-only`. At link time on x86, the GCC driver also adds `crtfastmath.o` to `-ffast-math` executables, setting flush-to-zero and denormals-are-zero for the whole process.",
+    references: [
+      "https://gcc.gnu.org/wiki/FloatingPointMath",
+      "https://clang.llvm.org/docs/UsersManual.html#controlling-floating-point-behavior",
+    ],
+  },
+  {
+    id: "compilers-null-check-01",
+    category: "compilers",
+    difficulty: "medium",
+    title: "A null check after the first dereference",
+    tags: ["undefined-behavior", "null-pointer", "dead-code-elimination"],
+    type: "trace",
+    prompt:
+      "deviceId is compiled at -O2 with Clang or GCC, using default flags. What happens to the null check on line (2) in the generated code?",
+    snippet: {
+      language: "cpp",
+      filename: "main.cpp",
+      code: `struct Device { int flags; int id; };
+void logMissing();
+
+int deviceId(Device* dev) {
+    int flags = dev->flags;      // (1)
+    if (dev == nullptr) {        // (2)
+        logMissing();
+        return -1;
+    }
+    return (flags & 1) ? dev->id : 0;
+}`,
+      highlightLines: [5, 6],
+    },
+    answerFormat: {
+      kind: "multiple-choice",
+      choices: [
+        "It stays. It guards a call to an external function with side effects, and the as-if rule forbids removing that path.",
+        "It stays at -O2 and is removed only at -O3, the level where GCC and Clang begin inferring non-null from dereferences.",
+        "It is deleted. Line (1) would be UB if dev were null, so the compiler infers that dev is non-null at line (2).",
+        "It stays, but moves above line (1). The optimizer hoists each null check ahead of the first dereference it protects.",
+      ],
+      correctIndex: 2,
+    },
+    explanation:
+      "Dereferencing a null pointer is undefined behavior, so on every execution with defined behavior, `dev` was non-null when line (1) ran. Nothing between (1) and (2) changes `dev`, so the compiler concludes that `dev == nullptr` is false at (2), and the branch, the call to `logMissing`, and the `return -1` are dead code. This is the null-pointer-check deletion that GCC controls with `-fdelete-null-pointer-checks`, on by default for most targets, and that LLVM performs through value tracking. Apple Clang 21 and GCC 16 at -O2 on arm64 both compile `deviceId` to a load of `flags`, a bit test, and an optional load of `id`, with no comparison against zero and no call to `logMissing`. The as-if rule protects only behavior of executions that are defined, and the null path is not one of them. In ordinary user-space code, where page zero is unmapped, a null `dev` faults at line (1) either way, so the deleted check looks harmless. It is not harmless in a kernel or on embedded targets where address zero can be mapped. In 2009 the Linux tun driver read `tun->sk` before checking `tun` for null, GCC deleted the check, and an attacker who mapped page zero turned it into a privilege escalation (CVE-2009-1897). The kernel has built with `-fno-delete-null-pointer-checks` ever since. With that flag both compilers keep the check, and both happen to move it above the load, since `flags` is not needed on the null path. That is a consequence of the flag, not something the optimizer does on its own, so the answer describing a hoisted check is wrong for default builds. The fix in the source is to test the pointer before dereferencing it.",
+    references: [
+      "https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html#index-fdelete-null-pointer-checks",
+      "https://blog.llvm.org/2011/05/what-every-c-programmer-should-know_14.html",
+    ],
+  },
 ];
